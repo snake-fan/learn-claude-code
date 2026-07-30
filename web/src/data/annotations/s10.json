@@ -3,16 +3,16 @@
   "decisions": [
     {
       "id": "prompt-from-state",
-      "title": "The System Prompt Is Built from Runtime State",
-      "description": "Prompt sections are selected from real state: workspace, available tools, memory, and skills. The prompt becomes a product of the runtime rather than a single hardcoded string.",
+      "title": "Model Input Is Built from Runtime State",
+      "description": "Stable prompt sections and dynamic state are assembled at the model boundary: workspace, available tools, memory, and skills. Model input becomes a product of the runtime rather than a single hardcoded string.",
       "alternatives": "A static prompt is easier to inspect, but it goes stale as capabilities change.",
       "zh": {
-        "title": "系统提示词由运行时状态构建",
-        "description": "Prompt section 来自真实状态：workspace、可用工具、memory 和 skills。提示词是运行时的产物，而不是单个硬编码字符串。"
+        "title": "模型输入由运行时状态构建",
+        "description": "稳定 prompt section 与动态状态在模型边界组装：workspace、可用工具、memory 和 skills。模型输入是运行时的产物，而不是单个硬编码字符串。"
       },
       "ja": {
-        "title": "システムプロンプトはランタイム状態から作る",
-        "description": "workspace、利用可能ツール、memory、skills などの実状態から prompt section を選びます。プロンプトは単一の固定文字列ではなくランタイムの産物です。"
+        "title": "モデル入力はランタイム状態から作る",
+        "description": "安定した prompt section と workspace、利用可能ツール、memory、skills などの動的状態をモデル境界で組み立てます。モデル入力は単一の固定文字列ではなくランタイムの産物です。"
       }
     },
     {

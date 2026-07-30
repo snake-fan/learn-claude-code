@@ -1,8 +1,8 @@
 # s12: Task System — 大きな目標を小さなタスクに分割
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s14 → ... → s20
+s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s14 → ... → s20 → s21 → s22
 
 > *"大きな目標を小さなタスクに分け、順序付け、永続化"* — ファイル永続化タスクグラフ、マルチ Agent 協調の基盤。
 >
@@ -24,7 +24,7 @@ s05 の TodoWrite は現在のタスクの実行チェックリストで、セ�
 
 ![Task System Overview](images/task-system-overview.ja.svg)
 
-教学版は基本 agent loop を維持し、タスクシステムに集中するため S11 の完全なエラーリカバリ（RecoveryState、バックオフ、エスカレーション、reactive compact、フォールバックモデル）を省略。追加：5 つの新規タスクツール + `.tasks/` ディレクトリによる永続化 + `blockedBy` 依存チェック。タスクシステムとエラーリカバリは独立したレイヤー：CC ソースコードでは `utils/tasks.ts` は CRUD のみ、`query.ts` の with_retry/RecoveryState がエラーリカバリを担当し、互いに非結合。
+教育版は基本 agent loop を維持し、タスクシステムに集中するため S11 の完全なエラーリカバリ（RecoveryState、バックオフ、エスカレーション、reactive compact、フォールバックモデル）を省略。追加：5 つの教育用ツール + `.tasks/` ディレクトリによる永続化 + `blockedBy` 依存チェック。タスクシステムとエラーリカバリは独立したレイヤーで、タスクモジュールは状態を、query recovery はモデル呼び出し失敗を扱う。
 
 TodoWrite vs Task System：
 
@@ -37,6 +37,9 @@ TodoWrite vs Task System：
 | 分担 | タスク認識を扱わない | `owner` / claim |
 | ステータス | pending / in_progress / completed | pending / in_progress / completed |
 | 粒度 | Agent 自身の手順 | 認識・追跡・アンロックできるタスク |
+| 更新契約 | リスト全体を置換 | 個別レコードを作成・取得・更新・一覧 |
+
+教育用 API は `create_task`、`list_tasks`、`get_task`、`claim_task`、`complete_task` としてライフサイクルを明示する。Claude Code の製品サーフェスはこれらを `TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList` の 4 ツールにまとめ、認識と完了は独立した公式ツールではなく更新操作として扱う。
 
 ---
 
@@ -248,9 +251,9 @@ s13 Background Tasks → 遅い操作はバックグラウンドへ。Agent は�
 
 保存場所：`~/.claude/tasks/{taskListId}/{id}.json`。タスクごとに 1 ファイル。
 
-### 二、TodoWrite のアップグレードではなく、2 つの独立システム
+### 二、目的は近いが、機構は独立
 
-CC では Task System と TodoWrite **は共存**し、`isTodoV2Enabled()` で切り替え（`utils/tasks.ts:133`）— 対話セッションはデフォルトで Task (V2)、非対話/SDK セッションは TodoWrite。環境変数 `CLAUDE_CODE_ENABLE_TASKS` で Task を強制有効化可能。Task は TodoWrite にない機能を持つ：ファイルロック並行保護、依存関係強制、ownership、fs.watch リアクティブ監視、ライフサイクルフック。
+Task ツールと TodoWrite は共存できるが、同じストレージモデルを共有しない。現在の対話型セッションは構造化 Task ツールを既定で使い、TodoWrite は非対話型や Agent SDK などの互換サーフェスに残る。公開範囲はリリースや設定で変わり得る。Task レコードはファイルロック、依存関係、ownership、リアクティブ監視、ライフサイクルフックを追加し、TodoWrite はリスト全体を置換するセッションチェックリストである。
 
 ### 三、並行認識のロック機構
 

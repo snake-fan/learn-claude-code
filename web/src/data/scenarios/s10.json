@@ -1,7 +1,7 @@
 {
   "version": "s10",
-  "title": "System Prompt",
-  "description": "The system prompt is assembled from runtime state and cached by a deterministic context key.",
+  "title": "Context Assembly",
+  "description": "Stable instructions and dynamic runtime state are assembled at the model boundary and cached by a deterministic context key.",
   "steps": [
     {
       "type": "system_event",

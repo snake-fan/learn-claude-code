@@ -1,8 +1,8 @@
 # s02: Tool Use — ツール一つ追加、一行追加だけ
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s20
+s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s20 → s21 → s22
 > *"ツールを一つ追加、ハンドラを一つ追加"* — ループはそのまま。新しいツールをディスパッチマップに登録するだけ。
 >
 > **Harness レイヤー**: ツールディスパッチ — モデルが触れる範囲を拡張。

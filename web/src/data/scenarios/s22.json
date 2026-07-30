@@ -1,0 +1,37 @@
+{
+  "version": "s22",
+  "title": "Goal Loop",
+  "description": "A host-owned completion gate keeps the turn alive until trusted evidence satisfies the active goal.",
+  "steps": [
+    {
+      "type": "user_message",
+      "content": "/goal until tests passed and deploy green",
+      "annotation": "The command defines the condition but sits outside the evidence window."
+    },
+    {
+      "type": "system_event",
+      "content": "goal_started -> evidence window reset",
+      "annotation": "The harness, not the working model, owns the completion gate."
+    },
+    {
+      "type": "assistant_text",
+      "content": "Tests passed and deployment is green.",
+      "annotation": "Assistant prose is not trusted completion evidence."
+    },
+    {
+      "type": "system_event",
+      "content": "goal_evaluated satisfied=false -> continuation queued",
+      "annotation": "An unmet condition pushes the loop into another bounded turn."
+    },
+    {
+      "type": "tool_result",
+      "content": "<task_notification>tests passed; deploy green</task_notification>",
+      "annotation": "Only an allowlisted host event can attach a trusted evidence origin."
+    },
+    {
+      "type": "system_event",
+      "content": "goal_evaluated satisfied=true -> goal_completed",
+      "annotation": "Trusted evidence closes the goal and releases the stop gate."
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # s11: Error Recovery — エラーは終わりではなく、リトライの始まり
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20
+s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20 → s21 → s22
 > *"エラーは終わりではなく、リトライの始まり"* — トークン拡張、コンテキスト圧縮、モデル切り替え。
 >
 > **Harness 層**: 耐障害性 — メインループのエラーを分類し復旧。

@@ -1,11 +1,11 @@
-# s10: System Prompt — 実行時アセンブリ、ハードコードなし
+# s10: Context Assembly — 実行時にモデル入力を組み立てる
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20
-> *"prompt は組み立てるもの、固定するものではない"* — セグメント + オンデマンド結合 + キャッシュ。
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21 → s22
+> *"モデル入力は組み立てるもの、固定するものではない"* — 安定セクション + 実行時状態 + キャッシュ。
 >
-> **Harness レイヤー**: プロンプト — 実行時組み立て、ハードコードなし。
+> **Harness レイヤー**: コンテキスト組み立て — 安定した指示と動的状態をモデル入力にまとめる。
 
 ---
 
@@ -44,7 +44,7 @@ System prompt は、実行時の現在状態に基づいて組み立てられる
 
 ![System Prompt Overview](images/system-prompt-overview.ja.svg)
 
-s10 は prompt アセンブリ機構に焦点を当てる。s08-s09 の能力を背景とするが、圧縮や記憶システムは再実装しない。核心の変更：ハードコードされた `SYSTEM` を独立セクションに分割し、実行時に実際の状態に基づいてオンデマンドで組み立て、結果をキャッシュして再組み立てを回避。
+s10 はコンテキスト管理とエラー回復をつなぐ短い橋渡しセッションである。新しいストレージを追加せず、s08 と s09 も統合しない。両者の出力がモデル境界でどう合流するかを示す：ハードコードされた `SYSTEM` を独立セクションに分割し、実際の実行時状態から組み立て、結果をキャッシュする。
 
 4 つのセクション、2 つの読み込み戦略：
 
@@ -88,7 +88,7 @@ def assemble_system_prompt(context: dict) -> str:
     tools = ", ".join(context.get("enabled_tools", []))
     if tools:
         sections.append(f"Available tools: {tools}.")
-    sections.append(f"Working directory: {context.get("workspace", WORKDIR)}")
+    sections.append(f"Working directory: {context.get('workspace', WORKDIR)}")
 
     # オンデマンド — 実際の状態に基づく、キーワードではない
     memories = context.get("memories", "")
@@ -178,6 +178,8 @@ cd learn-claude-code
 python s10_system_prompt/code.py
 ```
 
+安全上の注意：この集中教材はモデルが渡す `bash` 文字列を `shell=True` で実行し、s03 の permission gate を省略している。破棄可能な workspace だけで実行し、本番 harness では permission と sandbox の境界を戻すこと。
+
 観察のポイント：
 
 1. 出力にロードされたセクションが表示される（`[assembled] sections: ...` ラベル）
@@ -194,62 +196,8 @@ python s10_system_prompt/code.py
 
 ## 次へ
 
-System prompt を実行時に組み立てられるようになった。しかし Agent はエラーでまだクラッシュする。ネットワークの不安定性、API レート制限、出力の切り詰め、コンテキスト超過、これらはバグではなく日常。
+モデル入力を実行時に組み立てられるようになった。しかし Agent はエラーでまだクラッシュする。ネットワークの不安定性、API レート制限、出力の切り詰め、コンテキスト超過、これらはバグではなく日常。
 
 s11 Error Recovery → 4 つのリカバリパス。token のアップグレード、コンテキスト圧縮、指数バックオフ、モデル切り替え。
-
-<details>
-<summary>CC ソースコードの詳細</summary>
-
-> 以下は CC ソースコード `constants/prompts.ts`（914 行）、`constants/systemPromptSections.ts`（68 行）、`context.ts`（189 行）、`utils/api.ts`（718 行）、`utils/systemPrompt.ts`（123 行）、`bootstrap/state.ts` の分析に基づく。
-
-### CC の system prompt にはいくつのセクションがあるか？
-
-数は固定されておらず、feature flag、output style、KAIROS/Proactive モード、ユーザータイプ、token 予算などに影響される。大まかに 2 つのカテゴリ：
-
-**静的セクション**（常にロード）：identity、system、doing_tasks、actions、using_tools、tone_style、output_efficiency など。
-
-**動的セクション**（状態に応じてロード）：session_guidance、memory、ant_model_override、env_info_simple、language、output_style、mcp_instructions、scratchpad、frc、summarize_tool_results、numeric_length_anchors、token_budget、brief など。
-
-`mcp_instructions` は唯一の揮発性セクション（`DANGEROUS_uncachedSystemPromptSection()` で作成）。MCP server はターン間で接続・切断可能なため。
-
-### 組み立て関数
-
-```typescript
-getSystemPrompt(tools, model, additionalWorkingDirs?, mcpClients?): Promise<string[]>
-```
-
-`string[]`（各要素がセクション）を返却。`SYSTEM_PROMPT_DYNAMIC_BOUNDARY` で静的/動的部分を分離。
-
-### cache scope
-
-global cache boundary が有効な場合、静的セクションは 1 つの global cache block にマージされ、動的セクションは global cache を使用しない（`cacheScope: null`）。boundary なしまたは global cache をスキップするパスでのみ org scope にフォールバック。
-
-教学版のキャッシュは文字列の再組み立てを回避するのみ。CC の 3 層キャッシュ：
-
-1. **lodash memoize**: `getSystemContext` と `getUserContext` がセッション中キャッシュ（`context.ts`）
-2. **セクション登録キャッシュ**: `STATE.systemPromptSectionCache` が動的セクションの結果をキャッシュ、`/clear` や `/compact` でクリア
-3. **API レベルキャッシュ**: `splitSysPromptPrefix()`（`api.ts`）が boundary を通じて異なる cache scope のブロックに分割
-
-### getUserContext vs getSystemContext
-
-| | getSystemContext | getUserContext |
-|---|---|---|
-| 内容 | gitStatus、cacheBreaker | CLAUDE.md 内容、currentDate |
-| 注入方式 | system prompt 配列に追加 | `<system-reminder>` ユーザーメッセージとして先頭に配置 |
-| スキップ条件 | カスタム system prompt 時 | 常に実行 |
-
-### モードによる prompt の変化
-
-- **CLAUDE_CODE_SIMPLE**: prompt 全体が 2 行のみ
-- **Proactive/KAIROS**: コンパクト版 prompt が標準セクション全体を置換
-- **Coordinator**: コーディネータ専用 prompt がデフォルトを完全に置換
-- **Agent モード**: Agent 定義の prompt がデフォルトを置換または追加
-
-### 総サイズ
-
-標準インタラクティブモードの system prompt コアは約 20-30KB テキスト。CLAUDE_CODE_SIMPLE は約 150 文字。ユーザーコンテキスト（CLAUDE.md）とシステムコンテキスト（git status）がこれに加算。
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

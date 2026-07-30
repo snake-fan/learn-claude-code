@@ -1,11 +1,13 @@
-# s15: Agent Teams — 一人では無理、チームを組もう
+# s15: Agent Teams — ランタイム実験：永続チームメイト
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s13 → s14 → `s15` → [s16](../s16_team_protocols/) → s17 → s18 → s19 → s20
+s01 → ... → s13 → s14 → `s15` → [s16](../s16_team_protocols/) → s17 → s18 → s19 → s20 → s21 → s22
 > *"一人では無理、チームを組もう"* — ファイル受信箱 + チームメイトスレッド。
 >
 > **Harness 層**: チーム — マルチ Agent 協調、メッセージバス。
+
+> **モジュール 1/2：** s15 と s16 は一つの Agent Teams モジュールに含まれる二つの集中実験。この章でランタイムを構築し、s16 はランタイムを繰り返さず型付き協調プロトコルを追加する。
 
 ---
 
@@ -172,7 +174,7 @@ python s15_agent_teams/code.py
 
 チームメイトは仕事をし、通信できる。しかし、Lead が Alice にシャットダウンを頼む場合、スレッドを強制終了すると書きかけのファイルが残る。丁寧なシャットダウンプロトコルが必要：Lead が shutdown_request を送信、チームメイトは收尾後に終了。
 
-s16 Team Protocols → シャットダウンハンドシェイクとメッセージの取り決め。
+s16 Agent Teams プロトコル実験 → このランタイムにシャットダウンハンドシェイク、計画承認、型付きリクエスト-返信を追加する。
 
 <details>
 <summary>CC ソースコード深掘り</summary>

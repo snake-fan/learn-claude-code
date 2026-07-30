@@ -1,12 +1,14 @@
 # s17: Autonomous Agents — ボードを見て、自分で認領
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s15 → s16 → `s17` → [s18](../s18_worktree_isolation/) → s19 → s20
+s01 → ... → s15 → s16 → `s17` → [s18](../s18_worktree_isolation/) → s19 → s20 → s21 → s22
 
 > *"ボードを見て、自分で認領"* — 空き時にポーリング、仕事があれば開始。
 >
 > **Harness 層**: 自治 — チームメイトが自己組織化、リーダーの割り当て不要。
+
+> **コアと任意項目：** アイドル時の仕事発見と原子的な claim が本章の中心。アイデンティティ再注入は教育版の高度な補助で、初回は読み飛ばしてよい。
 
 ---
 
@@ -142,7 +144,7 @@ BUS.send(name, "lead", summary, "result")
 - **IDLE タイムアウト 60 秒**：12 回ポーリング × 5 秒 = 60 秒。タイムアウト後 summary を送信して終了
 - **shutdown_request は両フェーズで応答**：WORK フェーズは `handle_inbox_message` でディスパッチ、IDLE フェーズは `idle_poll` が直接確認して返信
 
-### 身份再注入
+### 発展（任意）：アイデンティティ再注入
 
 autoCompact（s08）後、チームメイトの messages リストが要約に圧縮される可能性がある。新しい WORK フェーズに入るたびに確認：
 

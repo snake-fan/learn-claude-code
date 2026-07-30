@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-s10: System Prompt — Runtime prompt assembly with caching.
+s10: Context Assembly — Runtime model-input assembly with caching.
 
 Run:  python s10_system_prompt/code.py
 Need: pip install anthropic python-dotenv + .env with ANTHROPIC_API_KEY
@@ -55,7 +55,7 @@ def assemble_system_prompt(context: dict) -> str:
     tools = ", ".join(context.get("enabled_tools", []))
     if tools:
         sections.append(f"Available tools: {tools}.")
-    sections.append(f"Working directory: {context.get("workspace", WORKDIR)}")
+    sections.append(f"Working directory: {context.get('workspace', WORKDIR)}")
 
     # Conditional — memory loaded when MEMORY.md exists and has content
     memories = context.get("memories", "")
@@ -199,7 +199,7 @@ def agent_loop(messages: list, context: dict):
 
 
 if __name__ == "__main__":
-    print("s10: system prompt — runtime assembly")
+    print("s10: context assembly — runtime model input")
     print("Enter a question, press Enter to send. Type q to quit.\n")
     history = []
     context = update_context({}, [])

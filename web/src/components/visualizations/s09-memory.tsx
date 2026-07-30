@@ -34,7 +34,7 @@ const MEMORY_FILES: MemoryFile[] = [
     title: "LCC web paths",
     filename: "lcc_web_paths.md",
     description: "Web app reads root lesson folders and generated JSON.",
-    body: "Build from web/, extract content from s01-s20 lesson directories.",
+    body: "Build from web/, extract content from the root lesson directories.",
   },
   {
     id: "test-command",

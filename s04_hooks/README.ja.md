@@ -1,8 +1,8 @@
 # s04: Hooks — ループに掛ける、ループには書き込まない
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s20
+s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s20 → s21 → s22
 
 > *"ループに掛ける、ループには書き込まない"* — フックがツール実行の前後に拡張ロジックを注入する。
 >

@@ -106,7 +106,7 @@ Claude Code = 一个 agent loop
 
 就这些。这就是全部架构。每一个组件都是 harness 机制 -- 为 agent 构建的栖居世界的一部分。Agent 本身呢？是 Claude。一个模型。由 Anthropic 在人类推理和代码的全部广度上训练而成。Harness 没有让 Claude 变聪明。Claude 本来就聪明。Harness 给了 Claude 双手、双眼和一个工作空间。
 
-这就是 Claude Code 作为教学标本的意义：**它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。** 本仓库的课程（s01-s20）逐步拆解并重组 Claude Code 架构中的 harness 机制。学完之后，你理解的不只是 Claude Code 怎么工作，而是适用于任何领域、任何 agent 的 harness 工程通用原则。
+这就是 Claude Code 作为教学标本的意义：**它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。** 本仓库的课程（s01-s22）逐步拆解并重组 Claude Code 架构中的 harness 机制。学完之后，你理解的不只是 Claude Code 怎么工作，而是适用于任何领域、任何 agent 的 harness 工程通用原则。
 
 启示不是 "复制 Claude Code"。启示是：**最好的 agent 产品，出自那些明白自己的工作是 harness 而非 intelligence 的工程师之手。**
 
@@ -159,7 +159,7 @@ Claude Code = 一个 agent loop
     让 agent 在特定领域高效工作的 harness。
 ```
 
-**20 个递进式课程, 从简单循环到完整 Harness。**
+**22 个递进式课程, 从简单循环到目标闭环。**
 **每个课程添加一个 harness 机制。每个机制有一句格言。**
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 一个工具 + 一个循环 = 一个 Agent
@@ -190,9 +190,9 @@ Claude Code = 一个 agent loop
 >
 > **s14** &nbsp; *"定时触发, 不需要人推"* &mdash; 按时间自动触发任务
 >
-> **s15** &nbsp; *"一个搞不定, 组队来"* &mdash; 持久化队友 + 异步邮箱
+> **s15** &nbsp; *"一个搞不定, 组队来"* &mdash; Agent Teams 运行时实验：持久化队友 + 异步邮箱
 >
-> **s16** &nbsp; *"队友之间要有约定"* &mdash; 用固定的请求-回复格式沟通
+> **s16** &nbsp; *"队友之间要有约定"* &mdash; Agent Teams 协议实验：带类型的请求-回复
 >
 > **s17** &nbsp; *"队友自己看板, 有活就认领"* &mdash; 不需要领导逐个分配, 自组织
 >
@@ -201,6 +201,10 @@ Claude Code = 一个 agent loop
 > **s19** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
 >
 > **s20** &nbsp; *"机制很多，循环一个"* &mdash; 前面所有机制回到一个完整 harness
+>
+> **s21** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 可恢复 journal 支撑确定性 workflow
+>
+> **s22** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 持续工作，直到可信证据满足目标
 
 ---
 
@@ -237,16 +241,16 @@ def agent_loop(messages):
 
 本仓库现在同时保留两条教程线：
 
-- **新版主线：根目录 `s01-s20`**
-  根目录下的 `s01_*` 到 `s20_*` 是新的主版本，也是当前推荐阅读路径。每章包含完整叙事 README、英文/日文译本、可运行的 `code.py`，以及必要的图示。
-- **旧版过渡：`docs/`、`agents/`、当前 `web/`**
-  这些仍保留旧 12 章体系，暂时用于已有读者、旧链接和 Web 平台过渡。
+- **新版主线：根目录 `s01-s22`**
+  根目录下的 `s01_*` 到 `s22_*` 是新的主版本，也是当前推荐阅读路径。每章包含默认英文 README、中文/日文译本、可运行的 `code.py`，以及必要的图示。
+- **旧版过渡：`docs/`、`agents/`**
+  这些仍保留旧 12 章体系，暂时用于已有读者和旧链接过渡。
 
-新读者请从根目录 `s01_agent_loop/` 读到 `s20_comprehensive/`。如果你是从旧链接或当前 Web 平台进入，大概率看到的是旧 12 章版本。旧版章节号和新版不完全一致，不要混用章节号。
+新读者请从根目录 `s01_agent_loop/` 读到 `s22_goal_loop/`。旧版章节号和新版不完全一致，不要混用章节号。
 
 ### 旧版到新版的对应关系
 
-| 旧 12 章版本 | 新 20 章版本 | 主题 |
+| 旧 12 章版本 | 新 22 章版本 | 主题 |
 |---|---|---|
 | 旧 s01 | 新 s01 | Agent Loop |
 | 旧 s02 | 新 s02 | Tool Use |
@@ -260,7 +264,7 @@ def agent_loop(messages):
 | 旧 s10 | 新 s16 | Team Protocols |
 | 旧 s11 | 新 s17 | Autonomous Agents |
 | 旧 s12 | 新 s18 | Worktree Isolation |
-| 新版新增 | s03、s04、s09、s10、s11、s14、s19、s20 | Permission、Hooks、Memory、System Prompt、Error Recovery、Cron、MCP、Comprehensive Agent |
+| 新版新增 | s03、s04、s09、s10、s11、s14、s19、s20、s21、s22 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Comprehensive Agent、Workflow Runtime、Goal Loop |
 
 ## 范围说明 (重要)
 
@@ -277,7 +281,7 @@ def agent_loop(messages):
 
 ## 快速开始
 
-### 新版 20 章主线
+### 新版 22 章主线
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -287,7 +291,7 @@ cp .env.example .env   # 编辑 .env 填入你的 ANTHROPIC_API_KEY
 
 python s01_agent_loop/code.py        # 起点 — 一个循环 + bash
 python s08_context_compact/code.py    # 上下文压缩（复杂章）
-python s20_comprehensive/code.py      # 终点章: 全部机制归到一个循环
+python s22_goal_loop/code.py          # 终点章：用目标闭合循环
 ```
 
 ### 旧版 12 章过渡线
@@ -300,7 +304,7 @@ python agents/s_full.py
 
 ### Web 平台
 
-当前 Web 平台仍读取 `docs/` 中的旧 12 章内容。新版 20 章请直接阅读根目录 `s01-s20`。
+Web 平台从根目录课程生成内容。s21、s22 提供阅读、源码、模拟和架构视图；仅专用首屏可视化保持精简。
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -330,7 +334,7 @@ flowchart TD
 
         S2["<b>第二阶段：做复杂任务</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ 先列计划，再执行<br/><br/><b>s06 Subagent</b><br/>└─ 子节点干活带回结果<br/><br/><b>s08 Context Compact</b><br/>└─ 长下文腾空间"]:::stage2
 
-        S3["<b>第三阶段：记住和恢复</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ 该记记，该忘忘<br/><br/><b>s10 System Prompt</b><br/>└─ 运行时组装<br/><br/><b>s11 Error Recovery</b><br/>└─ 重试换路子"]:::stage3
+        S3["<b>第三阶段：记住和恢复</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ 跨会话持久化与召回<br/><br/><b>s10 Context Assembly</b><br/>└─ 从运行时状态组装模型输入<br/><br/><b>s11 Error Recovery</b><br/>└─ 重试换路子"]:::stage3
 
         S1 ==> S2 ==> S3
     end
@@ -340,18 +344,25 @@ flowchart TD
         direction LR
         S4["<b>第四阶段：让任务长期运行</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ 任务落盘记依赖<br/><br/><b>s13 Background Tasks</b><br/>└─ 慢操作丢后台<br/><br/><b>s14 Cron Scheduler</b><br/>└─ 按时自动触发"]:::stage4
 
-        S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ 队友 + 邮箱通信<br/><br/><b>s16 Team Protocols</b><br/>└─ 固定收发格式<br/><br/><b>s17 Autonomous Agents</b><br/>└─ 自己看板认领活<br/><br/><b>s18 Worktree Isolation</b><br/>└─ 隔离目录"]:::stage5
+        S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>Agent Teams 模块</b><br/>├─ s15 运行时实验：队友 + 邮箱<br/>└─ s16 协议实验：带类型的请求-回复<br/><br/><b>s17 Autonomous Agents</b><br/>└─ 自己看板认领活<br/><br/><b>s18 Worktree Isolation</b><br/>└─ 隔离目录"]:::stage5
 
         S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s19 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s20 Comprehensive Agent</b><br/>└─ 全机制回单循环"]:::stage6
 
         S4 ==> S5 ==> S6
     end
 
-    %% 将两个模块连接起来，形成 Z 字形阅读流
-    Phase1 ===> Phase2
+    %% 第三层：编排与目标闭环
+    subgraph Phase3 ["🎯 第七阶段：编排与目标闭环"]
+        direction LR
+        S7["<b>第七阶段：编排并完成</b><br/>━━━━━━━━━━━━━<br/><b>s21 Workflow Runtime</b><br/>└─ 脚本拥有固定编排<br/><br/><b>s22 Goal Loop</b><br/>└─ 可信证据决定何时停止"]:::stage1
+        S6 ==> S7
+    end
+
+    %% 将三个模块连接起来，形成 Z 字形阅读流
+    Phase1 ===> Phase2 ===> Phase3
 
     %% 应用背景样式
-    class Phase1,Phase2 groupBox
+    class Phase1,Phase2,Phase3 groupBox
 ```
 
 ## 全部章节
@@ -367,42 +378,46 @@ flowchart TD
 | [s07](./s07_skill_loading/) | Skill Loading | `SkillManifest` / 按需注入 |
 | [s08](./s08_context_compact/) | Context Compact | snip / micro / budget / auto 四层压缩 |
 | [s09](./s09_memory/) | Memory | selection / extraction / consolidation |
-| [s10](./s10_system_prompt/) | System Prompt | 运行时组装 / 分段拼接 |
+| [s10](./s10_system_prompt/) | Context Assembly | 运行时状态 / 稳定分段 / 模型输入 |
 | [s11](./s11_error_recovery/) | Error Recovery | token 升级 / fallback 模型 / 重试策略 |
 | [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / 磁盘持久化 |
 | [s13](./s13_background_tasks/) | Background Tasks | 线程执行 / 通知队列 |
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | 持久化调度 / 会话级触发 |
-| [s15](./s15_agent_teams/) | Agent Teams | `MessageBus` / 收件箱 / 权限冒泡 |
-| [s16](./s16_team_protocols/) | Team Protocols | 关机握手 / 计划审批 |
+| [s15](./s15_agent_teams/) | Agent Teams：运行时实验 | `MessageBus` / 收件箱 / 权限冒泡 |
+| [s16](./s16_team_protocols/) | Agent Teams：协议实验 | 类型消息 / 关机握手 / 计划审批 |
 | [s17](./s17_autonomous_agents/) | Autonomous Agents | 空闲循环 / 自动认领 |
 | [s18](./s18_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / 任务-目录绑定 |
 | [s19](./s19_mcp_plugin/) | MCP Plugin | 多传输 / 通道路由 / 工具池组装 |
 | [s20](./s20_comprehensive/) | Comprehensive Agent | 全部机制归到一个循环 |
+| [s21](./s21_workflow_runtime/) | Workflow Runtime | 脚本编排 / 后台运行 / journal 续跑 |
+| [s22](./s22_goal_loop/) | Goal Loop | 目标闸门 / 可信证据 / 自动续轮 |
 
 ## 项目结构
 
 ```
 learn-claude-code/
   s01_agent_loop/          # 每章一个文件夹
-    README.md              #   中文源文档（完整叙事）
-    README.en.md           #   英文译本
+    README.md              #   默认英文文档（完整叙事）
+    README.zh.md           #   中文译本
     README.ja.md           #   日文译本
     code.py                #   独立可运行代码
     images/                #   SVG 流程图
   s02_tool_use/
   ...
   s19_mcp_plugin/
-  s20_comprehensive/       # 终点章
+  s20_comprehensive/
+  s21_workflow_runtime/
+  s22_goal_loop/           # 终点章
   agents/                  # 旧 12 章可运行副本 + s_full.py
   skills/                  # s07 使用的 skill 文件
   docs/                    # 旧 12 章文档，过渡期保留
-  web/                     # 当前仍基于 docs/ 旧版内容生成
+  web/                     # 从根目录课程生成
   tests/
 ```
 
 ## 学完之后 -- 从理解到落地
 
-20 个课程走完, 你已经从内到外理解了 harness 工程的运作原理。两种方式把知识变成产品:
+22 个课程走完, 你已经从内到外理解了 harness 工程的运作原理。两种方式把知识变成产品:
 
 ### Kode Agent CLI -- 开源 Coding Agent CLI
 

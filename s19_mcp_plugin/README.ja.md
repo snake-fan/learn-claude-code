@@ -1,8 +1,8 @@
 # s19: MCP Tools — 外部ツール、標準プロトコル
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s17 → s18 → `s19` → [s20](../s20_comprehensive/)
+s01 → ... → s17 → s18 → `s19` → [s20](../s20_comprehensive/) → s21 → s22
 
 > *"外部ツール、標準プロトコル"* — 発見、組み立て、呼び出し。Agent はツールを誰が書いたか知る必要がない。
 >

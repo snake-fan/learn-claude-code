@@ -21,6 +21,8 @@ export const VERSION_ORDER = [
   "s18",
   "s19",
   "s20",
+  "s21",
+  "s22",
 ] as const;
 
 export const LEARNING_PATH = VERSION_ORDER;
@@ -108,10 +110,10 @@ export const VERSION_META: Record<string, {
     prevVersion: "s08",
   },
   s10: {
-    title: "System Prompt",
-    subtitle: "Assembled at Runtime, Never Hardcoded",
-    coreAddition: "Runtime prompt assembly",
-    keyInsight: "The system prompt is a generated product of policy, tools, skills, and context.",
+    title: "Context Assembly",
+    subtitle: "Build Model Input from Runtime State",
+    coreAddition: "Runtime context assembly",
+    keyInsight: "Stable instructions and dynamic state should be assembled deliberately at the model boundary.",
     layer: "planning",
     prevVersion: "s09",
   },
@@ -148,16 +150,16 @@ export const VERSION_META: Record<string, {
     prevVersion: "s13",
   },
   s15: {
-    title: "Agent Teams",
-    subtitle: "One Agent Isn't Enough, Form a Team",
+    title: "Agent Teams: Runtime Lab",
+    subtitle: "Persistent Teammates and Mailboxes",
     coreAddition: "Teammate mailboxes",
     keyInsight: "Persistent teammates let work continue in parallel without stuffing every thought into one context.",
     layer: "collaboration",
     prevVersion: "s14",
   },
   s16: {
-    title: "Team Protocols",
-    subtitle: "Teammates Need Agreements",
+    title: "Agent Teams: Protocol Lab",
+    subtitle: "Typed Requests, Replies, and Handshakes",
     coreAddition: "Shared coordination protocols",
     keyInsight: "Multi-agent systems need explicit message contracts, not vibes.",
     layer: "collaboration",
@@ -195,6 +197,22 @@ export const VERSION_META: Record<string, {
     layer: "collaboration",
     prevVersion: "s19",
   },
+  s21: {
+    title: "Workflow Runtime",
+    subtitle: "Scripts Own Fixed Orchestration",
+    coreAddition: "Resumable workflow runtime",
+    keyInsight: "When orchestration has a fixed shape, code can make it parallel, deterministic, and resumable.",
+    layer: "concurrency",
+    prevVersion: "s20",
+  },
+  s22: {
+    title: "Goal Loop",
+    subtitle: "Trusted Evidence Decides When to Stop",
+    coreAddition: "Goal completion gate",
+    keyInsight: "A durable goal keeps the loop working until trusted evidence satisfies an explicit condition.",
+    layer: "planning",
+    prevVersion: "s21",
+  },
 };
 
 export const LAYERS = [
@@ -208,7 +226,7 @@ export const LAYERS = [
     id: "planning" as const,
     label: "Planning & Control",
     color: "#10B981",
-    versions: ["s05", "s06", "s07", "s10", "s11"],
+    versions: ["s05", "s06", "s07", "s10", "s11", "s22"],
   },
   {
     id: "memory" as const,
@@ -220,7 +238,7 @@ export const LAYERS = [
     id: "concurrency" as const,
     label: "Concurrency & Scheduling",
     color: "#F59E0B",
-    versions: ["s13", "s14"],
+    versions: ["s13", "s14", "s21"],
   },
   {
     id: "collaboration" as const,

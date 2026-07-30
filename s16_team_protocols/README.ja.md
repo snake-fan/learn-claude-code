@@ -1,11 +1,13 @@
-# s16: Team Protocols — チームメイト間には取り決めが必要
+# s16: Agent Teams — プロトコル実験：型付き協調
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s14 → s15 → `s16` → [s17](../s17_autonomous_agents/) → s18 → s19 → s20
+s01 → ... → s14 → s15 → `s16` → [s17](../s17_autonomous_agents/) → s18 → s19 → s20 → s21 → s22
 > *"チームメイト間には取り決めが必要"* — request-response パターンが全てのネゴシエーションを駆動。
 >
 > **Harness 層**: プロトコル — Agent 間の構造化ハンドシェイク。
+
+> **モジュール 2/2：** s15 でチームメイトランタイムとメールボックスを構築した。この章で変えるのは協調契約だけであり、リクエスト、返信、相関 ID、状態遷移を扱う。
 
 ---
 

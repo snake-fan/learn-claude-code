@@ -1,7 +1,7 @@
 {
   "version": "s16",
-  "title": "Team Protocols",
-  "description": "Typed requests, request ids, and response matching turn team chat into a protocol.",
+  "title": "Agent Teams: Protocol Lab",
+  "description": "The second Agent Teams lab adds typed requests, request ids, and response matching to the s15 runtime.",
   "steps": [
     {
       "type": "user_message",

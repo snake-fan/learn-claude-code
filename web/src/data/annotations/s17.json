@@ -31,16 +31,16 @@
     },
     {
       "id": "identity-reinjection",
-      "title": "Identity Is Re-injected on Each Autonomous Turn",
-      "description": "Autonomous agents need a stable sense of who they are and what they are allowed to do. Re-injecting identity keeps a teammate from drifting into the lead's responsibilities.",
-      "alternatives": "A one-time identity prompt is shorter, but long-running loops are prone to context drift.",
+      "title": "Advanced Teaching Workaround: Identity Re-injection",
+      "description": "The simplified lesson re-injects identity after its compaction heuristic. This is optional teaching scaffolding; production compaction should preserve stable system instructions instead.",
+      "alternatives": "Keep identity in stable system instructions and preserve that boundary through compaction.",
       "zh": {
-        "title": "每个自治回合都重新注入身份",
-        "description": "自治 agent 需要稳定知道自己是谁、允许做什么。重新注入身份可以防止队友逐渐漂移到 lead 的职责上。"
+        "title": "进阶教学补丁：身份重注入",
+        "description": "简化课程在压缩启发式触发后重新注入身份。这是选学脚手架；生产实现应在压缩时保留稳定的 system 指令。"
       },
       "ja": {
-        "title": "各自律ターンでアイデンティティを再注入する",
-        "description": "自律エージェントには、自分が誰で何を許可されているかという安定した認識が必要です。アイデンティティを再注入することで、チームメイトがリードの責務へ漂うことを防ぎます。"
+        "title": "発展用の教育補助：アイデンティティ再注入",
+        "description": "簡略化した教材は圧縮ヒューリスティック後にアイデンティティを再注入します。これは任意の足場であり、本番実装では圧縮を越えて安定した system 指示を保持すべきです。"
       }
     }
   ]

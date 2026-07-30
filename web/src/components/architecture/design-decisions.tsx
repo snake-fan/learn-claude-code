@@ -26,6 +26,8 @@ import s17Annotations from "@/data/annotations/s17.json";
 import s18Annotations from "@/data/annotations/s18.json";
 import s19Annotations from "@/data/annotations/s19.json";
 import s20Annotations from "@/data/annotations/s20.json";
+import s21Annotations from "@/data/annotations/s21.json";
+import s22Annotations from "@/data/annotations/s22.json";
 
 interface Decision {
   id: string;
@@ -62,6 +64,8 @@ const ANNOTATIONS: Record<string, AnnotationFile> = {
   s18: s18Annotations as AnnotationFile,
   s19: s19Annotations as AnnotationFile,
   s20: s20Annotations as AnnotationFile,
+  s21: s21Annotations as AnnotationFile,
+  s22: s22Annotations as AnnotationFile,
 };
 
 interface DesignDecisionsProps {

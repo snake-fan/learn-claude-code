@@ -1,23 +1,23 @@
-# s10: System Prompt — 运行时组装，不硬编码
+# s10: Context Assembly — Build Model Input at Runtime
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20
-> *"prompt 是组装出来的, 不是写死的"* — 分段 + 按需拼接 + 缓存。
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21 → s22
+> *"Model input is assembled, not hardcoded"* — Stable sections + runtime state + caching.
 >
-> **Harness 层**: 提示 — 运行时组装, 不硬编码。
+> **Harness Layer**: Context assembly — turn stable instructions and dynamic state into model input.
 
 ---
 
-## 问题
+## The Problem
 
-从 s01 到 s09，system prompt 都是一行硬编码：
+From s01 to s09, the system prompt was always one hardcoded line:
 
 ```python
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks."
 ```
 
-s01 够用，只有 bash、read、write 三个工具。但到 s09，Agent 已经有记忆、有压缩、有技能加载。prompt 该提的能力越来越多：
+That worked for s01 — only bash, read, write. But by s09, the agent has memory, compression, skill loading. The prompt needs to describe more and more capabilities:
 
 ```python
 SYSTEM = (
@@ -26,44 +26,44 @@ SYSTEM = (
     "Before starting any multi-step task, use todo_write. "
     "Skills are available via list_skills and load_skill. "
     "Relevant memories are injected below when available. "
-    # ... 加一个能力就多一段
+    # ... add a capability, add a line
 )
 ```
 
-三个问题：
+Three problems:
 
-1. **换项目要重写整个 prompt**，不知道哪些该改、哪些该留
-2. **修改一处可能影响全局**，加一段工具描述可能跟前面的指令冲突
-3. **每次请求都带全部内容**，即使当前对话用不到某些段落也浪费 token
+1. **Switching projects requires rewriting the entire prompt** — no way to know what to change and what to keep
+2. **One change can break others** — adding a tool description might conflict with earlier instructions
+3. **Every request carries everything** — even when the current conversation doesn't need certain sections, they waste tokens
 
-System prompt 应该是运行时根据当前状态组装的配置：哪些工具启用、哪些上下文可见、哪些记忆相关、哪些内容必须保持稳定以命中 prompt cache。
-
----
-
-## 解决方案
-
-![System Prompt Overview](images/system-prompt-overview.svg)
-
-s10 聚焦 prompt 组装机制。以 s08-s09 的能力为背景，但不重复实现压缩和记忆系统。核心变动：把硬编码的 `SYSTEM` 拆成独立段落（section），运行时根据真实状态按需拼接，缓存结果避免重复组装。
-
-四个 section，两种加载策略：
-
-| Section | 加载策略 | 内容 | 判断依据 |
-|---------|---------|------|---------|
-| identity | 始终 | 你是谁、怎么做事 | 始终存在 |
-| tools | 始终 | 可用工具列表 | `enabled_tools` |
-| workspace | 始终 | 工作目录 | 始终存在 |
-| memory | 按需 | 相关记忆内容 | `.memory/MEMORY.md` 是否存在 |
-
-关键设计：section 是否加载取决于真实状态（工具是否存在、文件是否存在），不是消息里的关键词。
+The system prompt should be a configuration assembled at runtime based on current state: which tools are enabled, which context is visible, which memories are relevant, and which content must remain stable to hit prompt cache.
 
 ---
 
-## 工作原理
+## The Solution
 
-### PROMPT_SECTIONS: 分段定义
+![System Prompt Overview](images/system-prompt-overview.en.svg)
 
-把一大段字符串拆成字典，每个 key 是一个主题：
+s10 is a short bridge between context management and recovery. It does not add another storage system or merge s08 with s09. It shows where their outputs meet the model boundary: split the hardcoded `SYSTEM` into independent sections, assemble them from real runtime state, and cache the result.
+
+Four sections, two loading strategies:
+
+| Section | Strategy | Content | Condition |
+|---------|----------|---------|-----------|
+| identity | always | who you are, how to work | always present |
+| tools | always | available tool list | `enabled_tools` |
+| workspace | always | working directory | always present |
+| memory | on-demand | relevant memory content | whether `.memory/MEMORY.md` exists |
+
+Key design: whether a section loads depends on real state (tools exist, files exist), not keywords in messages.
+
+---
+
+## How It Works
+
+### PROMPT_SECTIONS: Topic-Keyed Fragments
+
+Split the monolithic string into a dictionary, each key is a topic:
 
 ```python
 PROMPT_SECTIONS = {
@@ -71,26 +71,26 @@ PROMPT_SECTIONS = {
 }
 ```
 
-每个 section 独立维护。修改 `tools` 不影响 `identity`，新增 `memory` 不动 `workspace`。
+Each section is maintained independently. Changing `tools` doesn't affect `identity`; adding `memory` doesn't touch `workspace`.
 
-### assemble_system_prompt: 按需拼接
+### assemble_system_prompt: On-Demand Assembly
 
-不是所有 section 每次都需要。当前没有记忆文件，加载 memory section 只是浪费 token。根据 context 的真实状态决定加载哪些：
+Not every section is needed every turn. No memory files? Loading the memory section just wastes tokens. Assembly is based on real state in context:
 
 ```python
 def assemble_system_prompt(context: dict) -> str:
     sections = []
 
-    # 始终加载
+    # Always loaded
     sections.append(PROMPT_SECTIONS["identity"])
 
-    # 从 context 动态获取 tools 和 workspace
+    # Dynamic — tools and workspace from context
     tools = ", ".join(context.get("enabled_tools", []))
     if tools:
         sections.append(f"Available tools: {tools}.")
-    sections.append(f"Working directory: {context.get("workspace", WORKDIR)}")
+    sections.append(f"Working directory: {context.get('workspace', WORKDIR)}")
 
-    # 按需加载 — 基于真实状态，不是关键词
+    # On-demand — based on real state, not keywords
     memories = context.get("memories", "")
     if memories:
         sections.append(f"Relevant memories:\n{memories}")
@@ -98,13 +98,13 @@ def assemble_system_prompt(context: dict) -> str:
     return "\n\n".join(sections)
 ```
 
-"始终加载"的是每轮都需要的：身份、工具、工作目录。"按需加载"的只在特定条件下才有用。
+"Always loaded" sections are needed every turn: identity, tools, workspace. "On-demand" sections are only useful under specific conditions.
 
-为什么不全加载？token 有成本（system prompt 每轮计费），信息越少 LLM 越专注（无关指令是噪音）。
+Why not load everything? Tokens have cost (system prompt is billed every turn), and fewer instructions means more focused output (irrelevant instructions are noise).
 
-### get_system_prompt: 缓存避免重复拼接
+### get_system_prompt: Cache to Avoid Re-Assembly
 
-上下文没变时（同一轮对话的多次 LLM 调用，context 相同），重新拼接是浪费。用确定性序列化检测变化，命中缓存直接返回：
+When context hasn't changed (multiple LLM calls in the same turn with the same context), re-assembling is wasteful. Use deterministic serialization to detect changes and return cached result:
 
 ```python
 def get_system_prompt(context: dict) -> str:
@@ -117,13 +117,13 @@ def get_system_prompt(context: dict) -> str:
     return _last_prompt
 ```
 
-用 `json.dumps` 而不是 `hash()`：Python 内置 `hash()` 有进程随机化，不适合做稳定 cache key，而且遇到 list/dict 会报 `unhashable type`。
+`json.dumps` instead of `hash()`: Python's built-in `hash()` has process randomization (unsuitable for stable cache keys) and throws `unhashable type` on nested dicts/lists.
 
-注意：这里的缓存只是"避免重复拼接字符串"，和 CC 的 API prompt cache 不是一回事。CC 的 prompt cache 通过 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 分隔静态和动态部分，静态部分命中 global cache，不因动态内容变化而失效。
+Note: this cache only avoids redundant string assembly within a process. It's not the same as CC's API prompt cache, which uses `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` to separate static and dynamic parts — the static parts hit global cache and don't invalidate when dynamic content changes.
 
-### context: 真实状态，不是关键词猜测
+### context: Real State, Not Keyword Guessing
 
-context 反映当前运行态的真实状态：
+Context reflects the actual runtime state:
 
 ```python
 def update_context(context: dict, messages: list) -> dict:
@@ -139,9 +139,9 @@ def update_context(context: dict, messages: list) -> dict:
     }
 ```
 
-`enabled_tools` 列出实际注册的工具。`memories` 检查 `.memory/MEMORY.md` 是否存在。section 加载基于这些真实状态，不在消息里搜关键词。
+`enabled_tools` lists actually registered tools. `memories` checks whether `.memory/MEMORY.md` exists. Section loading is based on this real state, not searching for keywords in messages.
 
-### 合起来跑
+### Putting It Together
 
 ```python
 def agent_loop(messages: list, context: dict):
@@ -150,106 +150,54 @@ def agent_loop(messages: list, context: dict):
         response = client.messages.create(
             model=MODEL, system=system, messages=messages,
             tools=TOOLS, max_tokens=8000)
-        # ... 工具执行 ...
+        # ... tool execution ...
         context = update_context(context, messages)
         system = get_system_prompt(context)
 ```
 
-每轮循环开头拿一次 system prompt。context 变了就重新组装，没变就返回缓存。
+At the start of each loop iteration, get the system prompt. If context changed, re-assemble; if not, return cached version.
 
 ---
 
-## 相对 s09 的变更
+## Changes From s09
 
-| 组件 | 之前 (s09) | 之后 (s10) |
-|------|-----------|-----------|
-| prompt | 硬编码 SYSTEM 字符串 | PROMPT_SECTIONS + assemble_system_prompt |
-| 缓存 | 无 | get_system_prompt（json.dumps 检测 + 缓存） |
-| 新函数 | — | assemble_system_prompt, get_system_prompt, update_context |
-| 工具 | bash, read_file, write_file (3) | bash, read_file, write_file (3) — 不变 |
-| 循环 | 用固定 SYSTEM | 用 get_system_prompt(context) |
+| Component | Before (s09) | After (s10) |
+|-----------|-------------|-------------|
+| prompt | Hardcoded SYSTEM string | PROMPT_SECTIONS + assemble_system_prompt |
+| caching | None | get_system_prompt (json.dumps detection + cache) |
+| new functions | — | assemble_system_prompt, get_system_prompt, update_context |
+| tools | bash, read_file, write_file (3) | bash, read_file, write_file (3) — unchanged |
+| loop | Uses fixed SYSTEM | Uses get_system_prompt(context) |
 
 ---
 
-## 试一下
+## Try It
 
 ```sh
 cd learn-claude-code
 python s10_system_prompt/code.py
 ```
 
-观察重点：
+Safety note: this focused teaching script still executes the model's `bash` string with `shell=True` and omits s03's permission gate. Run it only in a disposable workspace; production harnesses must restore permission and sandbox boundaries.
 
-1. 输出中能看到哪些 section 被加载了（`[assembled] sections: ...` 标签）
-2. 连续对话时，缓存命中显示 `[cache hit]`
-3. 创建 `.memory/MEMORY.md` 文件后，下一轮 memory section 自动加载
+What to watch for:
 
-试试这些 prompt：
+1. Output shows which sections were loaded (`[assembled] sections: ...` label)
+2. Cache hits show `[cache hit]` during continued conversation
+3. Creating `.memory/MEMORY.md` makes the memory section appear on the next turn
 
-1. `Read the file README.md`（观察始终加载的三个 section）
-2. `Create a file called .memory/MEMORY.md with content "- [test](test.md) — test memory"`（写入记忆索引）
-3. `Read the file code.py`（观察 memory section 是否出现）
+Try these prompts:
+
+1. `Read the file README.md` (observe the three always-loaded sections)
+2. `Create a file called .memory/MEMORY.md with content "- [test](test.md) — test memory"` (write a memory index)
+3. `Read the file code.py` (observe whether the memory section appears)
 
 ---
 
-## 接下来
+## What's Next
 
-System prompt 可以运行时组装了，但 Agent 碰到错误还是会崩。网络抖动、API 限流、输出被截断、上下文超限，这些不是 bug，是常态。
+The model input can now be assembled at runtime. But the agent still crashes on errors. Network hiccups, API rate limits, truncated output, context overflow — these aren't bugs, they're normal.
 
-s11 Error Recovery → 四条恢复路径。升级 token、压缩上下文、指数退避、切换模型。
-
-<details>
-<summary>深入 CC 源码</summary>
-
-> 以下基于 CC 源码 `constants/prompts.ts`（914 行）、`constants/systemPromptSections.ts`（68 行）、`context.ts`（189 行）、`utils/api.ts`（718 行）、`utils/systemPrompt.ts`（123 行）、`bootstrap/state.ts` 的分析。
-
-### CC 的 system prompt 有多少 section？
-
-数量不固定，受 feature flag、output style、KAIROS/Proactive 模式、用户类型、token 预算等影响。大致分两类：
-
-**静态 section**（始终加载）：identity、system、doing_tasks、actions、using_tools、tone_style、output_efficiency 等。
-
-**动态 section**（按状态加载）：session_guidance、memory、ant_model_override、env_info_simple、language、output_style、mcp_instructions、scratchpad、frc、summarize_tool_results、numeric_length_anchors、token_budget、brief 等。
-
-`mcp_instructions` 是唯一的易失性 section（通过 `DANGEROUS_uncachedSystemPromptSection()` 创建），因为 MCP server 可以在轮次间连接和断开。
-
-### 组装函数
-
-```typescript
-getSystemPrompt(tools, model, additionalWorkingDirs?, mcpClients?): Promise<string[]>
-```
-
-返回 `string[]`（每个元素是一个 section），由 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 分隔静态和动态部分。
-
-### cache scope
-
-启用 global cache boundary 时，静态 section 合并成一个 global cache block，动态 section 不使用 global cache（`cacheScope: null`）。没有 boundary 或跳过 global cache 的路径才会走 org scope。
-
-教学版的缓存只避免重复拼接字符串。CC 的三层缓存：
-
-1. **lodash memoize**：`getSystemContext` 和 `getUserContext` 在会话中缓存（`context.ts`）
-2. **section 注册缓存**：`STATE.systemPromptSectionCache` 缓存动态 section 结果，`/clear` 或 `/compact` 时清除
-3. **API 级缓存**：`splitSysPromptPrefix()`（`api.ts`）把 prompt 按 boundary 分成不同 cache scope 的块
-
-### getUserContext vs getSystemContext
-
-| | getSystemContext | getUserContext |
-|---|---|---|
-| 内容 | gitStatus、cacheBreaker | CLAUDE.md 内容、currentDate |
-| 注入方式 | 追加到 system prompt 数组 | 前置为 `<system-reminder>` 用户消息 |
-| 何时跳过 | 自定义 system prompt 时 | 始终运行 |
-
-### 模式如何改变 prompt
-
-- **CLAUDE_CODE_SIMPLE**：整个 prompt 只有 2 行
-- **Proactive/KAIROS**：用紧凑版 prompt 替换所有标准 section
-- **Coordinator**：用协调器专用 prompt 完全替换
-- **Agent 模式**：Agent 定义的 prompt 替换或追加到默认 prompt
-
-### 总大小
-
-标准交互模式下 system prompt 核心约 20-30KB 文本。CLAUDE_CODE_SIMPLE 约 150 字符。用户上下文（CLAUDE.md）和系统上下文（git status）在此基础上累加。
-
-</details>
+s11 Error Recovery → four recovery paths. Upgrade tokens, compress context, exponential backoff, switch models.
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

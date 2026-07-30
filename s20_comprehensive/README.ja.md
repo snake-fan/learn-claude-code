@@ -1,8 +1,8 @@
 # s20: Comprehensive Agent — すべての仕組みを 1 つのループへ
 
-[中文](README.md) · [English](README.en.md) · [日本語](README.ja.md)
+[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s18 → s19 → `s20`
+s01 → ... → s18 → s19 → `s20` → [s21](../s21_workflow_runtime/) → s22
 
 > *"仕組みは多い、ループは 1 つ"* — tools、permissions、memory、tasks、teams、plugins はすべて同じ `while True` に接続される。
 >
@@ -26,7 +26,7 @@ s01 → ... → s18 → s19 → `s20`
 - worktree isolation
 - MCP external tool integration
 
-難しいのは機能を積み上げることではない。それぞれの仕組みが loop のどこに接続されるかを見抜くことだ。S20 は終点章であり、すべての component を 1 つの harness に戻す。
+難しいのは機能を積み上げることではない。それぞれの仕組みが loop のどこに接続されるかを見抜くことだ。S20 は統合チェックポイントであり、これまでの component を 1 つの harness に戻してから、s21-s22 が編成と目標完了を外側に追加する。
 
 ---
 
@@ -122,6 +122,8 @@ S20 には 2 層の plan がある：
 - task graph: cross-session、dependency-aware、claimable な task file。`.tasks/task_*.json` に保存。
 
 前者は単独 agent の drift を防ぐ。後者は team coordination の土台になる。
+
+目的は近いが実装は別である。`todo_write` は現在のセッションのチェックリスト全体を置き換え、task record は安定 ID と個別のライフサイクル更新を持つ。次節の独立した `task` ツールは「隔離 subagent を一度派遣する」意味であり、Task System ではない。
 
 ### Subagent と Team
 
@@ -247,4 +249,6 @@ while True:
 
 Claude Code の複雑さは「別の agent brain」ではない。成熟した harness の複雑さだ。model は判断と action selection を担当する。harness は environment、tools、permissions、memory、teams、external capabilities を整理する。
 
-これが本コースの終点だ：仕組みは多い、ループは 1 つ。
+これは本コースの統合チェックポイントだ：仕組みは多い、ループは 1 つ。
+
+次へ：[s21 Workflow Runtime](../s21_workflow_runtime/) — 編成の形が固定なら、多数の会話ターンではなく、決定的で再開可能なコードへ移す。

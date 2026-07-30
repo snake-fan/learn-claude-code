@@ -1,7 +1,7 @@
 {
   "version": "s15",
-  "title": "Agent Teams",
-  "description": "A lead agent can spawn teammate loops and coordinate through file-backed mailboxes.",
+  "title": "Agent Teams: Runtime Lab",
+  "description": "The first Agent Teams lab builds persistent teammate loops and file-backed mailboxes.",
   "steps": [
     {
       "type": "user_message",
