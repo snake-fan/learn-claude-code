@@ -181,10 +181,10 @@ export const VERSION_META: Record<string, {
     prevVersion: "s17",
   },
   s19: {
-    title: "Comprehensive Agent",
-    subtitle: "All Mechanisms, One Loop",
+    title: "Integrated Harness",
+    subtitle: "Many Mechanisms, One Loop",
     coreAddition: "Integrated harness",
-    keyInsight: "The complete harness is still one loop, surrounded by the systems introduced across the course.",
+    keyInsight: "The integrated harness is still one loop, surrounded by the systems introduced across the course.",
     layer: "collaboration",
     prevVersion: "s18",
   },

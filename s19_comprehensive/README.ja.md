@@ -1,4 +1,4 @@
-# s19: Comprehensive Agent — すべての仕組みを 1 つのループへ
+# s19: Integrated Harness — 多くの仕組みを 1 つのループへ
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
@@ -6,7 +6,7 @@ s01 → ... → s17 → s18 → `s19` → [s20](../s20_workflow_runtime/) → s2
 
 > *"仕組みは多い、ループは 1 つ"* — tools、permissions、memory、tasks、teams、plugins はすべて同じ `while True` に接続される。
 >
-> **Harness レイヤー**: 総合 — s01-s18 の仕組みを 1 つの実行可能なシステムへ戻す。
+> **Harness レイヤー**: 統合 — s01-s18 の仕組みを 1 つの実行可能なシステムへ戻す。
 
 ---
 
@@ -34,7 +34,7 @@ s01 → ... → s17 → s18 → `s19` → [s20](../s20_workflow_runtime/) → s2
 
 ![System Architecture](images/system-architecture.ja.svg)
 
-S19 は新しい mechanism を追加せず、前章までの component を 1 つの完全な harness に統合する：
+S19 は新しい mechanism を追加せず、前章までの component を同じ harness に統合する：
 
 ```text
 user input

@@ -201,7 +201,7 @@ async def sample_workflow(ctx, args):
 
 ## Changes from s19
 
-| | s19 Comprehensive Agent | s20 Workflow Runtime |
+| | s19 Integrated Harness | s20 Workflow Runtime |
 |--|-----------|---------------------|
 | Loop | One model-driven loop | Main loop unchanged; deterministic orchestration added above it |
 | Who decides the next step | Model decides each round | Script declares the orchestration in advance |

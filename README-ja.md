@@ -262,7 +262,7 @@ def agent_loop(messages):
 | 旧 s10 | 現行 s15 | Team Protocols |
 | 旧 s11 | 現行 s16 | Autonomous Agents |
 | 旧 s12 | 現行 s17 | Worktree Isolation |
-| 現行版のみ | s03、s04、s09、s10、s11、s14、s18、s19、s20、s21 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Comprehensive Agent、Workflow Runtime、Goal Loop |
+| 現行版のみ | s03、s04、s09、s10、s11、s14、s18、s19、s20、s21 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Integrated Harness、Workflow Runtime、Goal Loop |
 
 ## コースの範囲
 
@@ -335,7 +335,7 @@ flowchart TD
 
         S5["<b>第5段階：複数 Agent の協作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ チームメイト + 配信 + プロトコル<br/><br/><b>s16 Autonomous Agents</b><br/>└─ 実行可能な仕事をボードから認領<br/><br/><b>s17 Worktree Isolation</b><br/>└─ 別ディレクトリで作業"]:::stage5
 
-        S6["<b>第6段階：外部能力と統合</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ スキルを必要時に展開<br/><br/><b>s18 MCP Plugin</b><br/>└─ 外部ツールを同じプールへ<br/><br/><b>s19 Comprehensive Agent</b><br/>└─ すべてを1つのループへ"]:::stage6
+        S6["<b>第6段階：外部能力と統合</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ スキルを必要時に展開<br/><br/><b>s18 MCP Plugin</b><br/>└─ 外部ツールを同じプールへ<br/><br/><b>s19 Integrated Harness</b><br/>└─ すべてを1つのループへ"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -375,7 +375,7 @@ flowchart TD
 | [s16](./s16_autonomous_agents/) | Autonomous Agents | タスクボード走査 / 原子的認領 / 自己組織化 |
 | [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / タスク-ディレクトリ紐付け |
 | [s18](./s18_mcp_plugin/) | MCP Plugin | ツール発見 / 名前空間 / ツールプール組み立て |
-| [s19](./s19_comprehensive/) | Comprehensive Agent | すべての仕組みを 1 つのループへ |
+| [s19](./s19_comprehensive/) | Integrated Harness | すべての仕組みを 1 つのループへ |
 | [s20](./s20_workflow_runtime/) | Workflow Runtime | スクリプト編成 / バックグラウンド実行 / ジャーナル再開 |
 | [s21](./s21_goal_loop/) | Goal Loop | 目標ゲート / 信頼できる証拠 / 自動継続 |
 

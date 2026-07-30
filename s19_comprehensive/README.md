@@ -1,4 +1,4 @@
-# s19: Comprehensive Agent — All Mechanisms, One Loop
+# s19: Integrated Harness — Many Mechanisms, One Loop
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
@@ -6,7 +6,7 @@ s01 → ... → s17 → s18 → `s19` → [s20](../s20_workflow_runtime/) → s2
 
 > *"Many mechanisms, one loop"* — tools, permissions, memory, tasks, teams, and plugins all hang off the same `while True`.
 >
-> **Harness layer**: Comprehensive — put the mechanisms from s01-s18 into one runnable system.
+> **Harness layer**: Integration — put the mechanisms from s01-s18 into one runnable system.
 
 ---
 
@@ -34,7 +34,7 @@ The hard part is not piling up features. The hard part is seeing where each mech
 
 ![System Architecture](images/system-architecture.en.svg)
 
-S19 does not introduce a new mechanism. It connects the components from the earlier chapters in one complete harness:
+S19 does not introduce a new mechanism. It connects the components from the earlier chapters in one integrated harness:
 
 ```text
 user input

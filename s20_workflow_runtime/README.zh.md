@@ -201,7 +201,7 @@ async def sample_workflow(ctx, args):
 
 ## 相对 s19 的变更
 
-| | s19 综合体 | s20 Workflow Runtime |
+| | s19 Agent Harness 集成 | s20 Workflow Runtime |
 |--|-----------|---------------------|
 | 循环 | 单个、模型驱动 | 主循环不变；上面加一层确定的编排 |
 | 谁决定下一步 | 模型逐轮决定 | 脚本预先写好编排流程 |

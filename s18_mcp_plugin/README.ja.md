@@ -176,7 +176,7 @@ Agent は標準プロトコルで外部ツールに接続できるようにな�
 
 tools、permissions、hooks、todo、task graph、memory、compact、background work、cron、teams、worktree、MCP は、別々の例ではなく同じ loop に接続されるべきです。
 
-s19 Comprehensive Agent → s01-s18 の仕組みを 1 つの完全な harness に統合。仕組みは多く、loop は 1 つ。
+s19 Integrated Harness → s01-s18 の仕組みを 1 つの harness に統合。仕組みは多く、loop は 1 つ。
 
 
 <!-- translation-sync: zh@v2, en@v2, ja@v2 -->

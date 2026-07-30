@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-s19: Comprehensive Agent — all course mechanisms in one loop.
+s19: Integrated Harness — many mechanisms in one loop.
 
 Run:  python s19_comprehensive/code.py
 Need: pip install anthropic python-dotenv pyyaml + .env with ANTHROPIC_API_KEY
@@ -2259,7 +2259,7 @@ def async_event_loop(history: list, context: dict):
 
 if __name__ == "__main__":
     CLI_ACTIVE = True
-    print("s19: comprehensive agent")
+    print("s19: integrated harness")
     print("Enter a question, press Enter to send. Type q to quit.\n")
     history = []
     context = update_context({}, [])

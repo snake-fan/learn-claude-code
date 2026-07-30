@@ -57,7 +57,7 @@
     "s16": "自律エージェント",
     "s17": "Worktree 分離",
     "s18": "MCP ツール",
-    "s19": "Comprehensive Agent",
+    "s19": "Integrated Harness",
     "s20": "Workflow Runtime",
     "s21": "Goal Loop"
   },
@@ -87,7 +87,7 @@
     "s16": "自律エージェントサイクル",
     "s17": "Worktree タスク分離",
     "s18": "MCP ツールブリッジ",
-    "s19": "Comprehensive Agent Turn",
+    "s19": "Integrated Harness のターン",
     "s20": "Workflow Runtime",
     "s21": "目標完了ゲート"
   }

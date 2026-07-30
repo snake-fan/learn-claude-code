@@ -57,7 +57,7 @@
     "s16": "Autonomous Agents",
     "s17": "Worktree Isolation",
     "s18": "MCP Tools",
-    "s19": "Comprehensive Agent",
+    "s19": "Agent Harness 集成",
     "s20": "Workflow Runtime",
     "s21": "Goal Loop"
   },
@@ -87,7 +87,7 @@
     "s16": "Autonomous Agent Cycle",
     "s17": "Worktree Task Isolation",
     "s18": "MCP Tool Bridge",
-    "s19": "Comprehensive Agent Turn",
+    "s19": "Agent Harness 集成流程",
     "s20": "Workflow Runtime",
     "s21": "目标完成闸门"
   }

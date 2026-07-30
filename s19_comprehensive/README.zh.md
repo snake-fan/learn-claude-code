@@ -1,4 +1,4 @@
-# s19: Comprehensive Agent — 全部机制，归到一个循环
+# s19: Agent Harness 集成 — 多种机制，一个循环
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
@@ -6,7 +6,7 @@ s01 → ... → s17 → s18 → `s19` → [s20](../s20_workflow_runtime/) → s2
 
 > *"机制很多，循环一个"* — 工具、权限、记忆、任务、团队、插件都挂在同一个 while True 上。
 >
-> **Harness 层**: 综合 — 把 s01-s18 的机制放回同一个可运行系统。
+> **Harness 层**: 集成 — 把 s01-s18 的机制放回同一个可运行系统。
 
 ---
 
@@ -34,7 +34,7 @@ s01 → ... → s17 → s18 → `s19` → [s20](../s20_workflow_runtime/) → s2
 
 ![System Architecture](images/system-architecture.svg)
 
-S19 不再引入新机制，而是把前面各章的组件接入一个完整 harness：
+S19 不再引入新机制，而是把前面各章的组件集成到同一个 harness：
 
 ```text
 用户输入

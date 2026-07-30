@@ -176,7 +176,7 @@ The Agent can now connect external tools through a standard protocol. The first 
 
 Tools, permissions, hooks, todo, task graph, memory, compact, background work, cron, teams, worktrees, and MCP should all attach to the same loop, not live in separate examples.
 
-s19 Comprehensive Agent → Combine the mechanisms from s01-s18 into one complete harness. Many mechanisms, one loop.
+s19 Integrated Harness → Combine the mechanisms from s01-s18 into one harness. Many mechanisms, one loop.
 
 
 <!-- translation-sync: zh@v2, en@v2, ja@v0 -->

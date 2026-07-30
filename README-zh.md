@@ -198,7 +198,7 @@ Claude Code = 一个 agent loop
 >
 > **s18** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
 >
-> **s19** &nbsp; *"机制很多，循环一个"* &mdash; 前面所有机制回到一个完整 harness
+> **s19** &nbsp; *"机制很多，循环一个"* &mdash; 前面所有机制集成到同一个 harness
 >
 > **s20** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 可恢复 journal 支撑确定性 workflow
 >
@@ -262,7 +262,7 @@ def agent_loop(messages):
 | 旧 s10 | 新 s15 | Team Protocols |
 | 旧 s11 | 新 s16 | Autonomous Agents |
 | 旧 s12 | 新 s17 | Worktree Isolation |
-| 新版新增 | s03、s04、s09、s10、s11、s14、s18、s19、s20、s21 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Comprehensive Agent、Workflow Runtime、Goal Loop |
+| 新版新增 | s03、s04、s09、s10、s11、s14、s18、s19、s20、s21 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Agent Harness 集成、Workflow Runtime、Goal Loop |
 
 ## 课程边界
 
@@ -335,7 +335,7 @@ flowchart TD
 
         S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ 队友 + 消息投递 + 协作协议<br/><br/><b>s16 Autonomous Agents</b><br/>└─ 自己看板认领就绪任务<br/><br/><b>s17 Worktree Isolation</b><br/>└─ 隔离目录"]:::stage5
 
-        S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s18 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s19 Comprehensive Agent</b><br/>└─ 全机制回单循环"]:::stage6
+        S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s18 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s19 Agent Harness 集成</b><br/>└─ 全机制回单循环"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -376,7 +376,7 @@ flowchart TD
 | [s16](./s16_autonomous_agents/) | Autonomous Agents | 扫描任务板 / 原子认领 / 自组织 |
 | [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / 任务-目录绑定 |
 | [s18](./s18_mcp_plugin/) | MCP Plugin | 工具发现 / 命名空间 / 工具池组装 |
-| [s19](./s19_comprehensive/) | Comprehensive Agent | 全部机制归到一个循环 |
+| [s19](./s19_comprehensive/) | Agent Harness 集成 | 全部机制归到一个循环 |
 | [s20](./s20_workflow_runtime/) | Workflow Runtime | 脚本编排 / 后台运行 / journal 续跑 |
 | [s21](./s21_goal_loop/) | Goal Loop | 目标闸门 / 可信证据 / 自动续轮 |
 

@@ -190,7 +190,7 @@ If you are starting now, read the root-level `s01_agent_loop/` through `s21_goal
 | old s10 | new s15 | Team Protocols |
 | old s11 | new s16 | Autonomous Agents |
 | old s12 | new s17 | Worktree Isolation |
-| new only | s03, s04, s09, s10, s11, s14, s18, s19, s20, s21 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Comprehensive Agent, Workflow Runtime, Goal Loop |
+| new only | s03, s04, s09, s10, s11, s14, s18, s19, s20, s21 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Integrated Harness, Workflow Runtime, Goal Loop |
 
 ---
 
@@ -240,7 +240,7 @@ This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism
 >
 > **s18** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
 >
-> **s19** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one complete harness
+> **s19** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one integrated harness
 >
 > **s20** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
 >
@@ -284,7 +284,7 @@ flowchart TD
 
         S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ teammates + delivery + protocols<br/><br/><b>s16 Autonomous Agents</b><br/>└─ claim ready work from the board<br/><br/><b>s17 Worktree Isolation</b><br/>└─ separate directories"]:::stage5
 
-        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s18 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s19 Comprehensive Agent</b><br/>└─ all mechanisms, one loop"]:::stage6
+        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s18 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s19 Integrated Harness</b><br/>└─ all mechanisms, one loop"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -326,7 +326,7 @@ flowchart TD
 | [s16](./s16_autonomous_agents/) | Autonomous Agents | task-board scan / atomic claim / self-organization |
 | [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / task-directory binding |
 | [s18](./s18_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
-| [s19](./s19_comprehensive/) | Comprehensive Agent | all mechanisms around one loop |
+| [s19](./s19_comprehensive/) | Integrated Harness | all mechanisms around one loop |
 | [s20](./s20_workflow_runtime/) | Workflow Runtime | script orchestration / background execution / journal resume |
 | [s21](./s21_goal_loop/) | Goal Loop | goal gate / trusted evidence / automatic continuation |
 

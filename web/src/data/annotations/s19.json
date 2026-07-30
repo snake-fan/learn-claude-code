@@ -3,16 +3,16 @@
   "decisions": [
     {
       "id": "composition-over-new-loop",
-      "title": "The Final Agent Composes Previous Layers",
-      "description": "The comprehensive agent does not replace the loop with a new architecture. It composes memory, tasks, skills, background work, teams, worktrees, and MCP around the same core model-tool-result cycle.",
+      "title": "The Harness Composes Previous Layers",
+      "description": "The integrated harness does not replace the loop with a new architecture. It composes memory, tasks, skills, background work, teams, worktrees, and MCP around the same core model-tool-result cycle.",
       "alternatives": "A new orchestration framework would look more impressive, but it would hide the continuity across the course.",
       "zh": {
-        "title": "最终 Agent 是组合既有层，而不是换掉循环",
-        "description": "综合 Agent 没有用新架构替换循环，而是把 memory、task、skill、后台任务、团队、worktree、MCP 组合到同一个模型-工具-结果循环周围。"
+        "title": "Harness 组合既有层，而不是换掉循环",
+        "description": "集成后的 Harness 没有用新架构替换循环，而是把 memory、task、skill、后台任务、团队、worktree、MCP 组合到同一个模型-工具-结果循环周围。"
       },
       "ja": {
-        "title": "最終エージェントは既存レイヤーの合成",
-        "description": "総合エージェントはループを新しい構造で置き換えません。memory、task、skill、バックグラウンド処理、チーム、worktree、MCP を同じ model-tool-result サイクルの周囲に合成します。"
+        "title": "Harness は既存レイヤーを統合する",
+        "description": "統合された Harness はループを新しい構造で置き換えません。memory、task、skill、バックグラウンド処理、チーム、worktree、MCP を同じ model-tool-result サイクルの周囲に合成します。"
       }
     },
     {

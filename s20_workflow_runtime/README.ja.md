@@ -201,7 +201,7 @@ async def sample_workflow(ctx, args):
 
 ## s19 からの変更点
 
-| | s19 Comprehensive Agent | s20 Workflow Runtime |
+| | s19 Integrated Harness | s20 Workflow Runtime |
 |--|-----------|---------------------|
 | loop | 1 つ、モデル駆動 | main loop は不変。その上に決定的 orchestration を追加 |
 | 次の step を決めるもの | モデルが毎ラウンド判断 | script が orchestration flow を事前に定義 |

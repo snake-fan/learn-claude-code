@@ -1,7 +1,7 @@
 {
   "version": "s19",
-  "title": "Comprehensive Agent",
-  "description": "The final agent composes context assembly, tools, memory, teams, background work, cron, worktrees, and MCP.",
+  "title": "Integrated Harness",
+  "description": "The harness composes context assembly, tools, memory, teams, background work, cron, worktrees, and MCP.",
   "steps": [
     {
       "type": "user_message",
@@ -51,7 +51,7 @@
     {
       "type": "assistant_text",
       "content": "Release preparation is ready: checks passed, docs are updated in the teammate worktree, and deployment status is available.",
-      "annotation": "The comprehensive agent returns a single user-facing outcome."
+      "annotation": "The integrated harness returns a single user-facing outcome."
     }
   ]
 }

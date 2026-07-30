@@ -176,7 +176,7 @@ python s18_mcp_plugin/code.py
 
 工具、权限、hooks、todo、任务图、记忆、压缩、后台、cron、团队、worktree、MCP 这些机制应该挂在同一个循环上，而不是散在 19 个 demo 里。
 
-s19 Comprehensive Agent → 把 s01-s18 的机制合回一个完整 harness。机制很多，循环一个。
+s19 Agent Harness 集成 → 把 s01-s18 的机制合回同一个 harness。机制很多，循环一个。
 
 
 <!-- translation-sync: zh@v2, en@v0, ja@v0 -->

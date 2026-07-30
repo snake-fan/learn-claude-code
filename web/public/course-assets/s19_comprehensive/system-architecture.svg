@@ -21,7 +21,7 @@
   <rect width="920" height="620" rx="8" fill="#fafbfc"/>
   <rect x="0" y="0" width="920" height="46" rx="8" fill="url(#header)"/>
   <rect x="0" y="38" width="920" height="8" fill="url(#header)"/>
-  <text x="460" y="29" text-anchor="middle" fill="#fff" font-size="17" font-weight="700">s19 Comprehensive Agent — 全部机制挂在同一个循环上</text>
+  <text x="460" y="29" text-anchor="middle" fill="#fff" font-size="17" font-weight="700">s19 Agent Harness 集成 — 多种机制，一个循环</text>
 
   <!-- Main loop band -->
   <rect x="40" y="76" width="840" height="212" rx="8" fill="#eef2ff" stroke="#2563eb" stroke-width="1.8"/>
