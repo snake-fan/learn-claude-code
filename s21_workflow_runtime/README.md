@@ -8,9 +8,7 @@ s01 → ... → s19 → s20 → `s21` → [s22](../s22_goal_loop/)
 >
 > **Harness layer**: Orchestration — a deterministic multi-agent script runtime above the single-agent loop.
 
-> **Source boundary:** Product details in this chapter are a clean-room behavioral reconstruction of Claude Code 2.1.177. Names and limits may change in later releases; `code.py` is an offline teaching model, not copied product source.
->
-> The teaching CLI emits `async_launched` and then awaits completion in one process for deterministic output. It demonstrates the lifecycle and journal, not a concurrently running main loop.
+`code.py` keeps the demo deterministic: it emits `async_launched` and then awaits completion in one process. This demonstrates the lifecycle and journal without requiring a long-running background service.
 
 ---
 
@@ -26,9 +24,9 @@ Making the model drive this process one round at a time in the main loop is slow
 
 ## Put the Plan in Code, Not in a Sequence of Chat Turns
 
-Claude Code includes a `Workflow` tool in its tool pool. You, or the model when it enters a high-intensity mode, provide a script that expresses deterministic orchestration through a few simple primitives: `agent()`, `parallel()`, `pipeline()`, and `phase()`.
+Add a `Workflow` tool to the harness tool pool. The user or model provides a script that expresses deterministic orchestration through a few simple primitives: `agent()`, `parallel()`, `pipeline()`, and `phase()`.
 
-The main loop sees only one `tool_use` and immediately receives a "started in the background" result. Real execution continues inside the background runtime, which reports progress in real time and records every step in a journal on disk. Intermediate script results live in variables instead of taking space in conversation history. When restarted with `resumeFromRunId`, unchanged `agent()` calls hit the journal cache and reuse previous results, resuming from the checkpoint.
+The main loop sees only one `tool_use` and immediately receives a "started in the background" result. Real execution continues inside the background runtime, which reports progress in real time and records every step in a journal on disk. Intermediate script results live in variables instead of taking space in conversation history. When restarted with `resume_from_run_id`, unchanged `agent()` calls hit the journal cache and reuse previous results, resuming from the checkpoint.
 
 ![Workflow Runtime Overview](images/workflow-runtime-overview.svg)
 
@@ -45,7 +43,7 @@ async def sample_workflow(ctx, args):
 
 ## The Workflow Tool: Start in the Background; the Main Loop Sees One Call
 
-`Workflow`, also known as `RunWorkflow`, lives in the main agent's tool pool. You may explicitly ask to "run this workflow," invoke a saved `/command`, or let the model enter a high-intensity path automatically. In each case, the model emits a `Workflow(...)` tool call.
+`Workflow` lives in the main agent's tool pool. The user can request a saved workflow, or the model can select the tool when a task matches a known orchestration. In either case, the model emits one `Workflow(...)` tool call.
 
 The tool parses the arguments, validates metadata, checks permissions, registers a local workflow task, and immediately returns "started asynchronously." The main loop does not block and can continue with other work while the workflow runs in the background. This is the claim-ticket pattern from s13 at a larger scale: hand over the ticket now, notify the user when the result is ready.
 
@@ -60,11 +58,9 @@ class WorkflowTool:
         ...                                                                # The rest proceeds in the background
 ```
 
-> The real Claude Code immediately returns `{status:'async_launched', taskId, taskType:'local_workflow', runId, summary, transcriptDir, scriptPath}`, then sends a notification when the background task finishes.
+## Workflow Metadata: Validate Before Launch
 
-## Script and Meta: The First Line Must Be Correct
-
-The script's first line must be `export const meta = { name, description, phases }`, and it must contain only literals: no variables, function calls, or string concatenation. The runtime parses it before executing any code. `name` and `description` identify the task in the UI, while `phases` names groups in the progress display.
+Each workflow registers a metadata object with `name`, `description`, and optional `phases`. The runtime validates it before executing any workflow code. `name` and `description` identify the task in the UI, while `phases` names groups in the progress display.
 
 Invalid input raises `WorkflowInputError` immediately and is rejected during registration. This is the same idea as validating cron expressions in s14: do not wait until execution to discover a bad script.
 
@@ -85,8 +81,6 @@ def validate_meta(meta):
         raise WorkflowInputError("meta.phases must contain non-empty strings")
     return meta
 ```
-
-> The real Claude Code's `parseWorkflowScript` requires meta to be the first line and a pure literal. The teaching version accepts a dict directly to simplify this part.
 
 ## Orchestration Primitives: A Small Set Is Enough for Every Flow
 
@@ -113,8 +107,6 @@ async def pipeline(self, items, *stages):
     return await asyncio.gather(*[run_item(it, i) for i, it in enumerate(items)])
 ```
 
-> The real Claude Code injects same-named primitives into the script VM. It also exposes `args`, `budget` with total/spent/remaining values, an agent limit of up to 1000, and a concurrency semaphore.
-
 ## Structured Output: Do Not Let Subagents Return Essays
 
 `agent({schema})` requires a subagent to return a JSON object matching the schema, internally through one structured-output call. The runtime validates the result and retries once if it does not match. Downstream code receives a regular object instead of a long essay that must be parsed again.
@@ -132,8 +124,6 @@ if schema is not None:
             raise WorkflowInputError(f"agent({{schema}}) returned invalid output: {err}")
 ```
 
-> The real Claude Code combines `SimpleJsonSchema`, a `StructuredOutput` tool, and schema-aware retries to enforce the output format.
-
 ## Background Tasks and Progress Events
 
 `LocalWorkflowTask` maintains status and token usage and emits an SDK-style event stream: `task_started` → a sequence of `task_progress` events containing phase changes, subagent starts, and log batches → one final `task_notification` reporting completion, failure, or stop, plus output files, token count, tool calls, and elapsed time.
@@ -147,11 +137,9 @@ class LocalWorkflowTask:
         print(f"  progress   {ptype} ...")
 ```
 
-> The real Claude Code folds progress into task state and sends it to the UI and SDK as `task_progress.workflow_progress`.
-
 ## Storage: Snapshot + Journal for Resuming after Interruptions
 
-Each run writes five artifacts under `~/.claude/projects/<project>/<session>/`: a `<runId>.json` snapshot, `<runId>.output.json` output, `<runId>.journal.jsonl` journal, a `scripts/<runId>.js` script copy, and subagent transcripts under `subagents/workflows/<runId>/`. Reusable workflows that you save live in `.claude/workflows/` at project scope or `~/.claude/workflows/` at user scope.
+The minimal runtime stores each run under `s21_workflow_runtime/.runtime/`: a `<runId>.json` snapshot, `<runId>.output.json` output, and `<runId>.journal.jsonl` journal. A production harness may also persist the workflow script and subagent transcripts, but the key requirement is that the snapshot and journal share a stable `runId`.
 
 The journal is the core of checkpointed resume. It records every `agent()` result one line at a time:
 
@@ -165,7 +153,7 @@ class WorkflowJournal:
 
 ## Resume: Continue by runId and Reuse Everything Unchanged
 
-Calling `Workflow({scriptPath, resumeFromRunId, args})` reruns the script, but every `agent()` computes a deterministic semantic key. If that key is present in the journal, it returns the cached result without executing again. Every unchanged call hits the cache; only a changed call and the downstream steps that depend on it actually rerun.
+Calling the workflow again with `resume_from_run_id` reruns the script, but every `agent()` computes a deterministic semantic key. If that key is present in the journal, it returns the cached result without executing again. Every unchanged call hits the cache; only a changed call and the downstream steps that depend on it actually rerun.
 
 The key detail is that keys cannot depend on concurrency order. Agents in `parallel` and `pipeline` finish in nondeterministic order. If "the nth completion" became the key, cache entries would map to the wrong calls on the next run. A key therefore uses a stable hash of call content, including type, label, prompt, and schema, rather than a shared counter:
 
@@ -181,11 +169,9 @@ if cached is not MISS:
     return cached
 ```
 
-> The real Claude Code uses the same idea: deterministic semantic keys plus a journal cache. Resuming within the same session returns cached results for completed `agent()` calls and runs only the remaining ones.
-
 ## Determinism: Reproducibility Makes Resume Meaningful
 
-Resume works only if the script is reproducible. The runtime therefore removes nondeterministic sources such as `Date.now()`, no-argument `new Date()`, and `Math.random()` from the script context, and does not expose native Node APIs. The same script plus the same arguments produces the same keys and a 100% cache hit. The teaching version obtains the same property through stable key hashing; the real version runs the entire JavaScript inside a sandboxed VM with those sources removed.
+Resume works only if the workflow is reproducible. The minimal Python runtime uses stable hashes and a deterministic mock runner, so the same workflow plus the same arguments produces the same keys. A production harness should also isolate workflow code and remove uncontrolled clocks, randomness, filesystem access, and other sources of nondeterminism.
 
 ## See It Run
 

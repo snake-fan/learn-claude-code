@@ -40,7 +40,7 @@
   <!-- Workflow tool_use -->
   <rect x="284" y="130" width="196" height="52" rx="6" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.5"/>
   <text x="382" y="151" text-anchor="middle" fill="#1a1a1a" font-size="11" font-weight="700" font-family="monospace">Workflow({script, args})</text>
-  <text x="382" y="169" text-anchor="middle" fill="#888888" font-size="8.5" font-family="monospace">(or name | scriptPath) · resumeFromRunId</text>
+  <text x="382" y="169" text-anchor="middle" fill="#888888" font-size="8.5" font-family="monospace">(or name | script) · resume_from_run_id</text>
   <line x1="480" y1="156" x2="518" y2="156" stroke="#22c55e" stroke-width="2" marker-end="url(#arrow-green)"/>
 
   <!-- tool_result -->
@@ -104,7 +104,7 @@
 
   <!-- Journal -> Script VM: resume cached -->
   <path d="M 662 449 L 500 449 L 500 382" fill="none" stroke="#888888" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-gray)"/>
-  <text x="556" y="443" text-anchor="middle" fill="#888888" font-size="9" font-weight="600">resumeFromRunId -&gt; cached agent()</text>
+  <text x="556" y="443" text-anchor="middle" fill="#888888" font-size="9" font-weight="600">resume_from_run_id -&gt; cached agent()</text>
 
   <!-- ===== Cross arrows between lanes ===== -->
   <!-- launch (outer Workflow tool_use -> inner runtime), left side -->

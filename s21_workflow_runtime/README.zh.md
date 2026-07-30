@@ -8,9 +8,7 @@ s01 → ... → s19 → s20 → `s21` → [s22](../s22_goal_loop/)
 >
 > **Harness 层**: 编排 — 在单 agent 循环之上，加一层确定的多 agent 脚本运行时。
 
-> **来源边界：** 本章产品细节来自对 Claude Code 2.1.177 的 clean-room 行为重建。后续版本可能更改名称与限制；`code.py` 是离线教学模型，不是产品源码复制。
->
-> 教学 CLI 会先发出 `async_launched`，随后在同一进程等待完成，以保证输出可复现。它演示的是生命周期与 journal，不是并发运行的主循环。
+`code.py` 为了让演示保持确定，会先发出 `async_launched`，随后在同一进程里等待执行完成。这样不用启动常驻后台服务，也能看清生命周期和 journal。
 
 ---
 
@@ -26,9 +24,9 @@ s01 → ... → s19 → s20 → `s21` → [s22](../s22_goal_loop/)
 
 ## 计划写在代码里，不是靠聊天一轮轮凑
 
-Claude Code 在工具池里放了一个 `Workflow` 工具。你（或者模型在高强度模式下触发）给它一段脚本，脚本用 `agent() / parallel() / pipeline() / phase()` 这几个简单的原语，把编排写成确定的代码。
+在 harness 的工具池里加入一个 `Workflow` 工具。用户或模型给它一段脚本，脚本用 `agent() / parallel() / pipeline() / phase()` 这几个简单的原语，把编排写成确定的代码。
 
-主循环这边只看到一次 `tool_use`，立刻拿到"已在后台启动"的返回：真正的执行在后台运行时里推进，实时上报进度，所有过程都写到磁盘的 journal 文件里。脚本里的中间结果存在变量里，不会塞进对话历史占地方。下次用 `resumeFromRunId` 重启时，没改过的 `agent()` 直接命中 journal 缓存，直接用之前的结果，断点续跑。
+主循环这边只看到一次 `tool_use`，立刻拿到"已在后台启动"的返回：真正的执行在后台运行时里推进，实时上报进度，所有过程都写到磁盘的 journal 文件里。脚本里的中间结果存在变量里，不会塞进对话历史占地方。下次用 `resume_from_run_id` 重启时，没改过的 `agent()` 直接命中 journal 缓存，直接用之前的结果，断点续跑。
 
 ![Workflow Runtime 总览](images/workflow-runtime-overview.svg)
 
@@ -45,7 +43,7 @@ async def sample_workflow(ctx, args):
 
 ## Workflow 工具：后台启动，主循环只看到一次调用
 
-`Workflow`（别名 `RunWorkflow`）就在主 agent 的工具池里。触发可能来自你显式说"跑一下这个 workflow"、一个保存好的 `/命令`，或者模型自动进入高强度路径，这时候模型会发一个 `Workflow(...)` 的工具调用。
+`Workflow` 就在主 agent 的工具池里。用户可以要求运行一个保存好的 workflow，模型也可以在任务匹配已知编排时选择这个工具；两种情况最终都只发出一次 `Workflow(...)` 工具调用。
 
 工具收到后会解析参数、校验 meta 信息、过权限检查、注册一个本地 workflow 任务，然后立刻返回"已异步启动"。主循环不阻塞，该干嘛干嘛；workflow 自己在后台跑。这其实就是 s13 后台任务那套"凭条模式"的放大版：先给你个取件条，结果好了再通知你。
 
@@ -60,11 +58,9 @@ class WorkflowTool:
         ...                                                                # 剩下的后台慢慢跑
 ```
 
-> 真实 Claude Code：工具会立刻返回 `{status:'async_launched', taskId, taskType:'local_workflow', runId, summary, transcriptDir, scriptPath}`，后台任务跑完了再通知。
+## Workflow 元数据：启动前先校验
 
-## 脚本和 meta：第一行必须写对
-
-脚本的第一行必须是 `export const meta = { name, description, phases }`，而且必须是纯字面量，不能有变量、函数调用、字符串拼接。运行时在执行任何代码之前先解析它：`name` 和 `description` 用来显示任务和 UI，`phases` 给进度条分组命名。
+每个 workflow 都要注册一个元数据对象，包含 `name`、`description` 和可选的 `phases`。运行时会在执行任何 workflow 代码之前校验它：`name` 和 `description` 用来标识任务，`phases` 给进度条分组命名。
 
 不对的输入直接抛 `WorkflowInputError`，注册的时候就拦住——这和 s14 校验 cron 表达式是一个思路：坏脚本别让它跑到执行的时候才炸。
 
@@ -85,8 +81,6 @@ def validate_meta(meta):
         raise WorkflowInputError("meta.phases 必须包含非空字符串")
     return meta
 ```
-
-> 真实 Claude Code：`parseWorkflowScript` 强制 meta 必须是第一行且是纯字面量；教学版直接收一个 dict，简化了这部分。
 
 ## 编排原语：就这几个，够写所有流程
 
@@ -113,8 +107,6 @@ async def pipeline(self, items, *stages):
     return await asyncio.gather(*[run_item(it, i) for i, it in enumerate(items)])
 ```
 
-> 真实 Claude Code：同名原语由 VM 注入脚本上下文；还提供 `args`、`budget`（总预算/已花/剩余）、agent 数量上限（最多 1000 个）、并发信号量这些控制。
-
 ## 结构化输出：别让子 agent 回来写散文
 
 `agent({schema})` 会强制子 agent 返回一个匹配 schema 的 JSON 对象（内部通过一次结构化输出调用实现），运行时会按 schema 校验结果，不对就重试一次。这样下游代码拿到的是规整的对象，不是需要再解析的一大段散文。
@@ -132,8 +124,6 @@ if schema is not None:
             raise WorkflowInputError(f"agent({{schema}}) 输出不合法: {err}")
 ```
 
-> 真实 Claude Code：用 `SimpleJsonSchema` + `StructuredOutput` 工具 + schema 重试机制保证输出格式。
-
 ## 后台任务和进度事件
 
 `LocalWorkflowTask` 维护状态和 token 用量，向外发一条 SDK 风格的事件流：`task_started` → 一串 `task_progress`（包含阶段切换、子 agent 启动、日志输出这些批次）→ 最后一个 `task_notification`（完成/失败/停止，带输出文件、token 数、工具调用数、耗时）。
@@ -147,11 +137,9 @@ class LocalWorkflowTask:
         print(f"  进度   {ptype} ...")
 ```
 
-> 真实 Claude Code：进度会折叠进任务状态，作为 `task_progress.workflow_progress` 发给 UI 和 SDK。
-
 ## 存储：快照 + journal，断了能续
 
-跑完会写五样东西，都存在 `~/.claude/projects/<项目>/<会话>/` 目录下：快照 `<runId>.json`、输出 `<runId>.output.json`、journal `<runId>.journal.jsonl`、脚本副本 `scripts/<runId>.js`、子 agent 的对话记录 `subagents/workflows/<runId>/`。你自己保存的常用 workflow 放在 `.claude/workflows/`（项目级）或 `~/.claude/workflows/`（用户级）。
+这个最小运行时把每次运行的数据存在 `s21_workflow_runtime/.runtime/`：快照 `<runId>.json`、输出 `<runId>.output.json` 和 journal `<runId>.journal.jsonl`。生产级 harness 还可以保存 workflow 脚本与子 agent 对话记录，但关键约束是快照和 journal 必须共享稳定的 `runId`。
 
 journal 是断点续跑的核心，它一条一条记下来每个 `agent()` 的结果：
 
@@ -165,7 +153,7 @@ class WorkflowJournal:
 
 ## resume：用 runId 续跑，没改的直接用缓存
 
-调用 `Workflow({scriptPath, resumeFromRunId, args})` 会重新跑脚本，但每个 `agent()` 会算一个确定的语义 key：key 在 journal 里有记录，就直接返回缓存的结果（不重跑），没改过的全部命中缓存；只有改过的那个以及它后面的步骤才会真的跑。
+带着 `resume_from_run_id` 再次调用 workflow 时，脚本会重新执行，但每个 `agent()` 都会计算一个确定的语义 key：key 在 journal 里有记录，就直接返回缓存结果；只有改过的调用以及依赖它的后续步骤才会真的运行。
 
 这里有个关键点：key 不能依赖并发顺序。`parallel` 和 `pipeline` 里 agent 完成的顺序是不确定的，用"第几个完成"当 key，两次跑缓存就对错位了。所以 key 是根据调用内容（类型、标签、prompt、schema）算的稳定哈希，不是一个会竞争的计数器：
 
@@ -181,11 +169,9 @@ if cached is not MISS:
     return cached
 ```
 
-> 真实 Claude Code：同样是"确定语义 key + journal 缓存"的思路；同会话内续跑时，已经完成的 `agent()` 直接返回缓存，后面的才实跑。
-
 ## 确定性：能复现，续跑才有意义
 
-续跑要能工作，脚本首先得可复现。所以运行时会把 `Date.now()`、无参 `new Date()`、`Math.random()` 这些不确定的东西从脚本上下文里去掉，也不给 Node 原生 API。同一份脚本 + 同样的参数 → 同样的 key → 100% 缓存命中。教学版用稳定哈希算 key 达到同样的效果（真实版是把整段 JS 脚本跑在去掉了这些不确定源的沙箱 VM 里）。
+续跑要能工作，workflow 首先得可复现。这个最小 Python 运行时使用稳定哈希和确定性的 mock runner，让同一份 workflow + 同样的参数产生同样的 key。生产级 harness 还应该隔离 workflow 代码，并移除不受控的时钟、随机数、文件系统访问等不确定来源。
 
 ## 跑起来看看
 

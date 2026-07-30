@@ -1,9 +1,5 @@
 """
-s22_goal_loop — /goal session goal loop (teaching version)
-
-Clean-room behavioral reconstruction of Claude Code's `/goal` command. Grounded
-in @anthropic-ai/claude-code@2.1.177 observed behavior
-(reverse-research/cc_goal_loop), NOT leaked source.
+s22_goal_loop — minimal /goal session loop for a teaching harness
 
 Idea:
   s01-s21 end a turn when the model emits no tool_use. `/goal` adds a
@@ -27,12 +23,12 @@ Idea:
 Run:
   python code.py          # /goal until tests pass + deploy green; watch the gate
 
-Teaching simplifications (vs real /goal and runtime.mjs):
+Implementation choices:
   - The evaluator is a deterministic keyword check, not a small/fast model.
   - One mock task-notification produces the trusted evidence; the loop / monitor
     / background-task plane (s13/s14) is out of scope — this chapter is just the
     goal gate.
-  - The evidence trust boundary is the faithful part: only task-notification /
+  - The evidence trust boundary is the important part: only task-notification /
     monitor-line origins count as evidence, so the `/goal` command text, the
     continuation reminder, and plain assistant prose can NOT satisfy the goal.
     Ordinary `submit()` calls cannot set those labels; only the host-event
@@ -68,7 +64,7 @@ class Message:
 
 
 # ============================================================
-# CommandQueue — continuation prompts live here (mirrors CommandQueue)
+# CommandQueue — continuation prompts live here
 # ============================================================
 class CommandQueue:
     PRIORITY = {"now": 0, "next": 1, "later": 2}
@@ -102,7 +98,7 @@ class CommandQueue:
 
 
 # ============================================================
-# GoalRuntime — the turn-completion gate (mirrors GoalRuntime)
+# GoalRuntime — the turn-completion gate
 # ============================================================
 class GoalRuntime:
     def __init__(self, transcript, queue):
@@ -148,9 +144,8 @@ class GoalRuntime:
         return "\n".join(out)
 
     def goal_satisfied(self):
-        # Real Claude Code routes this to a small/fast evaluator model reading
-        # the evidence window. The teaching version is a deterministic keyword
-        # check so the lifecycle is reproducible.
+        # A production harness can route this evidence window to a separate
+        # evaluator model. The demo uses a deterministic keyword policy.
         objective = self.active["objective"].lower()
         evidence = self.evidence_text().lower()
         wants_tests = "test" in objective
@@ -193,7 +188,7 @@ class GoalRuntime:
 
 
 # ============================================================
-# Session — the main loop host with a Stop gate (mirrors submit / drain)
+# Session — the main loop host with a Stop gate
 # ============================================================
 class Session:
     def __init__(self):

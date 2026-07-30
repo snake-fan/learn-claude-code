@@ -8,8 +8,6 @@ s01 → ... → s20 → s21 → `s22`
 >
 > **Harness layer**: Goal closure — a program-controlled completion gate at the end of each turn.
 
-> **Source boundary:** Product details in this chapter are a clean-room behavioral reconstruction of Claude Code 2.1.177. Names and limits may change in later releases; `code.py` is an offline teaching model, not copied product source.
-
 ---
 
 From s01 through s21, how does a conversation turn end? When the model stops emitting `tool_use`, the loop simply executes `return`. That is fine for one-shot work: finish and stop.
@@ -20,7 +18,7 @@ This thread was present from the first chapter. s01 explained that exiting the l
 
 ## /goal: Add a Gate at the End of Every Turn
 
-Entering `/goal <condition>` sets a session-scoped stopping condition. The program stores it as the active goal. After each turn, an independent lightweight model acts as evaluator and checks whether trusted evidence in the transcript satisfies the condition. If evidence is insufficient, the gate blocks the attempted stop and queues a "keep working" prompt for the next round. If it is sufficient, the goal is cleared and marked complete.
+Entering `/goal <condition>` sets a session-scoped stopping condition. The program stores it as the active goal. After each turn, an evaluator checks whether trusted evidence in the transcript satisfies the condition. If evidence is insufficient, the gate blocks the attempted stop and queues a "keep working" prompt for the next round. If it is sufficient, the goal is cleared and marked complete.
 
 ![Goal Loop Overview](images/goal-loop-overview.svg)
 
@@ -40,8 +38,6 @@ if not has_tool_use(response):
 
 The program controls this gate. It is not the model restraining itself. The model does not even know the gate exists; it simply receives another round of input and continues working.
 
-> In the real Claude Code, `/goal` is a session-scoped Stop hook governed by workspace trust and hook restrictions. The code contains markers such as `active_goal`, `goal_status`, `goal_met`, and `tengu_goal_achieved`.
-
 ## Setting a Goal: Evidence Starts after the Command
 
 `set_goal` stores an active goal containing the objective text, a maximum-turn budget, counters, and `start_index`, the beginning of the evidence window. It uses the transcript's current length, placing the `/goal` command itself outside the window. This is the first defense: a command cannot prove its own completion.
@@ -54,8 +50,6 @@ def set_goal(self, objective, max_turns=20):
         "max_turns": max_turns, "checks": 0, "continuation_turns": 0,
     }
 ```
-
-> In the real Claude Code, `GoalRuntime.setGoal()` stores the active goal, start position, counters, and budget, then `resetEvidenceStart()` aligns the window to the position after command submission.
 
 ## The Evaluator: Trust Concrete Evidence Only
 
@@ -79,9 +73,7 @@ def evidence_text(self):
 
 The effect is clear. The same sentence, `tests passed`, does not count when typed by you, but does count when delivered by a background task notification. The model cannot bluff its way out by saying "I finished." This is the final appearance of the trust boundary repeated throughout the course. s16 said protocols rely on fields, not interpretation. s19 said annotations are claims and claims may be false. s22 says completion evidence is trusted by origin, not by content alone.
 
-The teaching version's `goal_satisfied()` uses deterministic keyword matching. The real version asks a separate lightweight model to judge the evidence window.
-
-> In the real Claude Code, the evaluator is a lightweight model separate from the working model, marked as `evaluatorModel` and the `default small fast model`. It judges evidence in the conversation rather than trusting arbitrary text.
+The minimal `goal_satisfied()` uses deterministic keyword matching so the demo stays offline and reproducible. A production harness can replace this policy with a separate lightweight evaluator model, while keeping the same trusted evidence boundary.
 
 ## Three Gate States: Completed, Continuing, or Over Budget
 
@@ -106,8 +98,6 @@ def evaluate_after_turn(self):
 
 The continuation prompt explicitly says not to treat itself as evidence, and the evidence filter excludes it. That completes the three layers against false positives: the command does not count, the reminder does not count, and ordinary conversation does not count. The budget follows the old rule from s11: every automatic retry mechanism needs a limit. Otherwise, a goal that can never be satisfied becomes a perpetual money-burning machine.
 
-> In the real Claude Code, `evaluateAfterTurn` emits a `goal_evaluated` event and either completes, queues a continuation, or stops blocking. The default budget is 20 turns.
-
 ## Keep Continuation Prompts Separate from External Asynchronous Messages
 
 Continuation prompts enter the same `CommandQueue`, but they are not consumed in the same way as external asynchronous events such as task-completion notifications and monitor lines. `dequeue` has a switch, and consumption of the external inbox skips goal continuations by default.
@@ -121,9 +111,7 @@ def dequeue(self, include_goal_continuations=True):
     return None
 ```
 
-Why separate them? A real model test exposed a bug where the model consumed the continuation prompt together with an external notification and marked the goal complete before background evidence arrived. With the paths separated, goal progression is an explicit step and cannot be carried along accidentally by asynchronous events.
-
-> In the real Claude Code, `drainCommandQueue` defaults to `includeGoalContinuations=false`, separating goal-continuation consumption from the external asynchronous inbox.
+Why separate them? If one consumer drains continuation prompts together with external notifications, a reminder can be mistaken for new evidence before the background result arrives. With the paths separated, goal progression is an explicit step and cannot be carried along accidentally by asynchronous events.
 
 ## See It Run
 

@@ -8,8 +8,6 @@ s01 → ... → s20 → s21 → `s22`
 >
 > **Harness 層**: Goal closure — turn 終端に program-controlled completion gate を追加します。
 
-> **情報源の境界：** この章の製品詳細は Claude Code 2.1.177 の clean-room 行動再構成に基づく。後続リリースで名称や制限は変わり得る。`code.py` はオフライン教材モデルであり、製品ソースの複製ではない。
-
 ---
 
 s01 から s21 まで、会話の 1 turn はどう終わったでしょうか。モデルが `tool_use` を出さなくなると、loop はそのまま `return` しました。one-shot task なら問題ありません。終わったら止まります。
@@ -20,7 +18,7 @@ s01 から s21 まで、会話の 1 turn はどう終わったでしょうか。
 
 ## /goal: 各 turn の終端に gate を追加する
 
-`/goal <condition>` を入力すると session-scoped stopping condition を設定します。program は active goal として保存し、各 turn の後に独立した lightweight model を evaluator として使い、transcript 内の trusted evidence が condition を満たすか確認します。不足なら gate が停止を拒み、次ラウンドへ「作業を続ける」prompt を queue します。十分なら goal を消して complete とします。
+`/goal <condition>` を入力すると session-scoped stopping condition を設定します。program は active goal として保存し、各 turn の後に evaluator が transcript 内の trusted evidence を condition と照合します。不足なら gate が停止を拒み、次ラウンドへ「作業を続ける」prompt を queue します。十分なら goal を消して complete とします。
 
 ![Goal Loop Overview](images/goal-loop-overview.svg)
 
@@ -40,8 +38,6 @@ if not has_tool_use(response):
 
 この gate を制御するのは program です。モデルが自分を律しているのではありません。モデルは gate の存在すら知らず、次のラウンドの入力を受け取って作業を続けるだけです。
 
-> 実際の Claude Code では `/goal` は session-scoped Stop hook で、workspace trust と hook restriction の管理下にあります。コードには `active_goal`、`goal_status`、`goal_met`、`tengu_goal_achieved` などの marker があります。
-
 ## Goal の設定: Evidence は command の後から数える
 
 `set_goal` は active goal として、goal text、最大 turn budget、counter、そして evidence window の開始点 `start_index` を保存します。現在の transcript length を使うため、`/goal` command 自身は window の外です。これが最初の防御です。command が自分自身の完了を証明することはできません。
@@ -54,8 +50,6 @@ def set_goal(self, objective, max_turns=20):
         "max_turns": max_turns, "checks": 0, "continuation_turns": 0,
     }
 ```
-
-> 実際の Claude Code では `GoalRuntime.setGoal()` が active goal、開始位置、counter、budget を保存し、submit 後に `resetEvidenceStart()` で window を command 後へそろえます。
 
 ## Evaluator: 実在する evidence だけを信頼する
 
@@ -79,9 +73,7 @@ def evidence_text(self):
 
 効果は明確です。同じ `tests passed` でも、あなたが入力したものは数えず、background task notification が持ち帰ったものだけを数えます。モデルは「完了した」と自分で言うだけでは goal を complete にできません。これはコース全体に繰り返し現れた trust boundary の最後の登場です。s16 は protocol が理解ではなく field に依存すると言い、s19 は annotation が申告であり、申告は嘘をつけると言い、s22 は completion evidence を content ではなく origin で信頼します。
 
-教材版の `goal_satisfied()` は決定的な keyword matching です。実際の版は evidence window を別の lightweight model へ渡して判定します。
-
-> 実際の Claude Code の evaluator は作業モデルとは別の lightweight model で、`evaluatorModel`、`default small fast model` と記されています。任意の text を信じず、会話内の evidence を判断します。
+最小版の `goal_satisfied()` は決定的な keyword matching を使い、demo を offline かつ再現可能に保ちます。production harness では、この policy を独立した lightweight evaluator model に置き換えられますが、trusted evidence boundary はそのまま維持します。
 
 ## Gate の 3 状態: Completed / continuing / budget 超過
 
@@ -106,8 +98,6 @@ def evaluate_after_turn(self):
 
 continuation prompt には、わざわざ自身を evidence にしないよう書き、filter でも除外します。これで false positive を防ぐ 3 層がそろいます。command text、reminder text、ordinary conversation のいずれも数えません。budget は s11 の古い規則に従います。automatic retry mechanism には必ず上限が必要です。そうでなければ、永遠に satisfied にならない goal が費用を燃やし続けます。
 
-> 実際の Claude Code の `evaluateAfterTurn` は `goal_evaluated` event を出し、結果に応じて complete、continuation queue、gate の解除を行います。default budget は 20 turn です。
-
 ## Continuation prompt と外部 asynchronous message を分ける
 
 continuation prompt は同じ `CommandQueue` に入りますが、task completion notification や monitor line といった外部 asynchronous event とは別の方法で消費します。`dequeue` には switch があり、外部 inbox を消費するときは goal continuation を既定で skip します。
@@ -121,9 +111,7 @@ def dequeue(self, include_goal_continuations=True):
     return None
 ```
 
-なぜ分けるのでしょう。実際の model test では、モデルが continuation prompt を外部 notification と一緒に消費し、background evidence が到着する前に goal を complete と判定する bug が起きました。分離後は goal の進行が明示的な 1 step になり、asynchronous event に偶然運ばれません。
-
-> 実際の Claude Code の `drainCommandQueue` は既定で `includeGoalContinuations=false` とし、goal continuation の消費を外部 asynchronous inbox から分けます。
+なぜ分けるのでしょう。同じ consumer が continuation prompt と外部 notification を一緒に取り出すと、background result が届く前に reminder text を新しい evidence と誤認する可能性があります。分離後は goal の進行が明示的な 1 step になり、asynchronous event に偶然運ばれません。
 
 ## 実際に動かす
 

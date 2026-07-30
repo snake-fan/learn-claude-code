@@ -8,9 +8,7 @@ s01 → ... → s19 → s20 → `s21` → [s22](../s22_goal_loop/)
 >
 > **Harness 層**: Orchestration — single-agent loop の上に、決定的な multi-agent script runtime を追加します。
 
-> **情報源の境界：** この章の製品詳細は Claude Code 2.1.177 の clean-room 行動再構成に基づく。後続リリースで名称や制限は変わり得る。`code.py` はオフライン教材モデルであり、製品ソースの複製ではない。
->
-> 教材 CLI は `async_launched` を出した後、再現可能な出力のため同じプロセスで完了を待つ。示すのは lifecycle と journal であり、main loop の並行実行そのものではない。
+`code.py` は demo を決定的に保つため、`async_launched` を出した後、同じ process で完了を待ちます。常駐 background service を用意しなくても、lifecycle と journal を確認できます。
 
 ---
 
@@ -26,9 +24,9 @@ s01 から s20 まで、loop は常にモデル駆動で 1 step ずつ進みま�
 
 ## 計画は chat のラウンドを重ねず、コードに書く
 
-Claude Code の tool pool には `Workflow` ツールがあります。あなたが渡すか、モデルが high-intensity mode で起動した script は、`agent() / parallel() / pipeline() / phase()` という少数の primitive を使い、orchestration を決定的なコードとして表します。
+harness の tool pool に `Workflow` ツールを追加します。ユーザーまたはモデルが渡す script は、`agent() / parallel() / pipeline() / phase()` という少数の primitive を使い、orchestration を決定的なコードとして表します。
 
-main loop から見えるのは 1 回の `tool_use` だけで、すぐ「バックグラウンドで起動済み」という結果を受け取ります。本当の実行は background runtime で進み、進捗をリアルタイムに報告し、全過程をディスク上の journal へ記録します。script の中間結果は変数に保存され、会話履歴の場所を取りません。`resumeFromRunId` で再開すると、変更されていない `agent()` は journal cache に当たり、以前の結果を直接使って checkpoint から続行します。
+main loop から見えるのは 1 回の `tool_use` だけで、すぐ「バックグラウンドで起動済み」という結果を受け取ります。本当の実行は background runtime で進み、進捗をリアルタイムに報告し、全過程をディスク上の journal へ記録します。script の中間結果は変数に保存され、会話履歴の場所を取りません。`resume_from_run_id` で再開すると、変更されていない `agent()` は journal cache に当たり、以前の結果を直接使って checkpoint から続行します。
 
 ![Workflow Runtime Overview](images/workflow-runtime-overview.svg)
 
@@ -45,7 +43,7 @@ async def sample_workflow(ctx, args):
 
 ## Workflow ツール: バックグラウンド起動、main loop には 1 回の call だけ
 
-`Workflow`（別名 `RunWorkflow`）は main Agent の tool pool にあります。明示的に「この workflow を実行」と頼む、保存済みの `/command` を使う、またはモデルが自動で high-intensity path へ入ると、モデルが `Workflow(...)` の tool call を出します。
+`Workflow` は main Agent の tool pool にあります。ユーザーが保存済み workflow の実行を求めるか、タスクが既知の orchestration に一致したときにモデルがこのツールを選びます。どちらも 1 回の `Workflow(...)` tool call になります。
 
 ツールは argument を parse し、meta 情報を検証し、permission check を通し、local workflow task を登録すると、すぐ「非同期で起動済み」と返します。main loop は block せず別の仕事を続け、workflow は background で実行されます。これは s13 の引換券 pattern を拡大したものです。先に引換券を渡し、結果ができたら通知します。
 
@@ -60,11 +58,9 @@ class WorkflowTool:
         ...                                                                # 残りはバックグラウンドで進む
 ```
 
-> 実際の Claude Code は `{status:'async_launched', taskId, taskType:'local_workflow', runId, summary, transcriptDir, scriptPath}` をすぐ返し、background task の完了後に通知します。
+## Workflow metadata: 起動前に検証する
 
-## Script と meta: 1 行目を正しく書く
-
-script の 1 行目は必ず `export const meta = { name, description, phases }` とし、変数、関数呼び出し、文字列連結を含まない純粋な literal でなければなりません。runtime はコードを一切実行する前に parse します。`name` と `description` は task と UI の表示に使い、`phases` は progress bar の group 名を定義します。
+各 workflow は `name`、`description`、任意の `phases` を持つ metadata object を登録します。runtime は workflow code を実行する前に検証します。`name` と `description` は task と UI の表示に使い、`phases` は progress bar の group 名を定義します。
 
 不正な入力はすぐ `WorkflowInputError` になり、登録時に止まります。s14 の cron 式検証と同じ考えです。不正な script が実行時まで進んでから壊れないようにします。
 
@@ -85,8 +81,6 @@ def validate_meta(meta):
         raise WorkflowInputError("meta.phases は空でない文字列だけを含む必要があります")
     return meta
 ```
-
-> 実際の Claude Code の `parseWorkflowScript` は、meta を 1 行目の純粋な literal に限定します。教材版は dict を直接受け取り、この部分を簡略化しています。
 
 ## Orchestration primitive: この少数だけで、すべての flow を書ける
 
@@ -113,8 +107,6 @@ async def pipeline(self, items, *stages):
     return await asyncio.gather(*[run_item(it, i) for i, it in enumerate(items)])
 ```
 
-> 実際の Claude Code は同名 primitive を script VM の context へ注入します。さらに `args`、total/spent/remaining を持つ `budget`、最大 1000 Agent の上限、concurrency semaphore も提供します。
-
 ## 構造化出力: Subagent に散文を返させない
 
 `agent({schema})` は、schema に一致する JSON object を subagent に要求します。内部では structured output call を 1 回使い、runtime が結果を schema で検証し、不一致なら 1 回 retry します。下流コードが受け取るのは規則的な object であり、再 parse が必要な長文ではありません。
@@ -132,8 +124,6 @@ if schema is not None:
             raise WorkflowInputError(f"agent({{schema}}) の出力が不正です: {err}")
 ```
 
-> 実際の Claude Code は `SimpleJsonSchema`、`StructuredOutput` ツール、schema-aware retry を組み合わせ、出力形式を保証します。
-
 ## Background task と progress event
 
 `LocalWorkflowTask` は status と token usage を管理し、SDK style の event stream を外へ出します。`task_started` → phase change、subagent start、log batch を含む一連の `task_progress` → 完了、失敗、停止に加え、output file、token 数、tool call 数、所要時間を含む最後の `task_notification` です。
@@ -147,11 +137,9 @@ class LocalWorkflowTask:
         print(f"  progress   {ptype} ...")
 ```
 
-> 実際の Claude Code は進捗を task state へまとめ、`task_progress.workflow_progress` として UI と SDK へ送ります。
-
 ## 保存: Snapshot + journal で中断から再開する
 
-各 run は `~/.claude/projects/<project>/<session>/` に 5 種類を書きます。`<runId>.json` snapshot、`<runId>.output.json` output、`<runId>.journal.jsonl` journal、`scripts/<runId>.js` の script copy、`subagents/workflows/<runId>/` の subagent transcript です。保存した再利用可能な workflow は project scope の `.claude/workflows/` または user scope の `~/.claude/workflows/` に置きます。
+この最小 runtime は各 run を `s21_workflow_runtime/.runtime/` に保存します。`<runId>.json` snapshot、`<runId>.output.json` output、`<runId>.journal.jsonl` journal です。production harness では workflow script や subagent transcript も保存できますが、snapshot と journal が安定した `runId` を共有することが重要です。
 
 journal は checkpoint resume の中心で、各 `agent()` の結果を 1 行ずつ記録します。
 
@@ -165,7 +153,7 @@ class WorkflowJournal:
 
 ## Resume: runId から続行し、変更のないものを再利用する
 
-`Workflow({scriptPath, resumeFromRunId, args})` を呼ぶと script を再実行しますが、各 `agent()` は決定的な semantic key を計算します。journal に key があれば、再実行せず cached result を返します。変更のない call はすべて cache hit し、変更された call とそれに依存する後続 step だけが本当に動きます。
+`resume_from_run_id` を渡して workflow を再度呼ぶと script を再実行しますが、各 `agent()` は決定的な semantic key を計算します。journal に key があれば、再実行せず cached result を返します。変更された call と、それに依存する後続 step だけが本当に動きます。
 
 key は concurrency の完了順に依存してはいけません。`parallel` と `pipeline` の Agent は不定の順番で完了します。「何番目に完了したか」を key にすると、次回の cache が別の call へ対応してしまいます。そのため key は競合する counter ではなく、call の内容、つまり type、label、prompt、schema の stable hash です。
 
@@ -181,11 +169,9 @@ if cached is not MISS:
     return cached
 ```
 
-> 実際の Claude Code も「決定的 semantic key + journal cache」という考えです。同じ session で resume すると、完了済み `agent()` は cached result を直接返し、その後だけを実行します。
-
 ## 決定性: Resume に意味を持たせる再現性
 
-resume が動くには、まず script が再現可能でなければなりません。runtime は `Date.now()`、引数なしの `new Date()`、`Math.random()` などの非決定的なものを script context から取り除き、Node native API も渡しません。同じ script + 同じ argument → 同じ key → 100% cache hit になります。教材版は stable hash で同じ性質を得ます。実際の版は、非決定的な source を除いた sandbox VM で JavaScript 全体を実行します。
+resume が動くには、workflow が再現可能でなければなりません。この最小 Python runtime は stable hash と決定的な mock runner を使い、同じ workflow + 同じ argument から同じ key を作ります。production harness では workflow code も隔離し、制御されていない clock、randomness、filesystem access などの非決定的な source を除くべきです。
 
 ## 実際に動かす
 

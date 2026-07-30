@@ -1,9 +1,5 @@
 """
-s21_workflow_runtime — Dynamic Workflow runtime (teaching version)
-
-Clean-room behavioral reconstruction of Claude Code's `Workflow` tool / dynamic
-workflow runtime. Grounded in @anthropic-ai/claude-code@2.1.177 observed
-behavior (reverse-research/cc_workflow), NOT leaked source.
+s21_workflow_runtime — minimal dynamic Workflow runtime for a teaching harness
 
 Idea:
   s01-s20 build a single, model-driven agent loop. s21 adds a deterministic
@@ -16,14 +12,13 @@ Run:
   python code.py          # run the sample workflow, print the event stream
   python code.py resume   # resume the last run; unchanged agent() calls hit cache
 
-Teaching simplifications (vs real runtime.mjs):
+Implementation choices:
   - The "subagent" is a deterministic MockAgentRunner, not a real LLM.
-  - A workflow is a plain async Python function, not a sandboxed JS script
-    string. The real runtime runs the script in an isolated JS VM with
-    Date.now()/Math.random() removed so resume is reproducible.
+  - A workflow is a plain async Python function. A production harness may use a
+    declarative format or run user-authored scripts in an isolated VM.
   - The CLI emits `async_launched` and then awaits completion so the demo stays
-    deterministic. The real tool returns while execution continues in background.
-  - Storage is a local .runtime/ dir instead of ~/.claude/projects/.../workflows/.
+    deterministic. A long-running host can return while execution continues.
+  - Storage is a local .runtime/ directory beside this file.
 """
 
 import asyncio
@@ -33,7 +28,7 @@ import re
 import sys
 from pathlib import Path
 
-# ---- knobs that mirror the real runtime's guards ----
+# ---- runtime guards ----
 AGENT_CAP = 1000                       # hard cap on agent() calls per run
 CONCURRENCY = 8                        # parallelism cap (semaphore)
 STORE = Path(__file__).parent / ".runtime"   # snapshots + journals live here
@@ -50,7 +45,7 @@ def _stable_hash(s: str) -> int:
 
 def create_run_id(meta) -> str:
     # Deterministic in the teaching version so the journal path is predictable
-    # and `resume` lands on the same file. The real runtime mints a random id.
+    # and `resume` lands on the same file.
     return f"wf_{meta['name']}_{_stable_hash(meta['name']) % 10000:04d}"
 
 
@@ -68,15 +63,14 @@ def validate_run_id(run_id):
 # Errors
 # ============================================================
 class WorkflowInputError(Exception):
-    """Bad script / meta / schema input (mirrors WorkflowInputError)."""
+    """Bad workflow, metadata, or schema input."""
 
 
 # ============================================================
 # meta validation
 # ============================================================
 def validate_meta(meta):
-    """Real runtime requires `export const meta = {...}` as the FIRST statement,
-    a pure literal, with name + description (+ optional phases). We take a dict."""
+    """Validate name, description, and optional phases before launch."""
     if not isinstance(meta, dict):
         raise WorkflowInputError("meta must be an object literal")
     if not meta.get("name") or not meta.get("description"):
@@ -251,7 +245,7 @@ class WorkflowJournal:
 # ============================================================
 class Budget:
     """budget.total / spent() / remaining(). Once spent reaches total, agent()
-    calls raise (the real runtime enforces the same ceiling)."""
+    calls raise instead of silently overspending."""
 
     def __init__(self, total=None):
         self.total = total
@@ -313,8 +307,7 @@ class ExecutionLimits:
 
 
 class ExecutionState:
-    """Injected into the workflow script. Provides the orchestration primitives.
-    Mirrors ExecutionState in runtime.mjs."""
+    """Injected into the workflow script with the orchestration primitives."""
 
     def __init__(self, task, journal, runner, budget, args, depth=0, limits=None):
         self.task = task
@@ -415,9 +408,8 @@ class ExecutionState:
 # ============================================================
 class WorkflowTool:
     """The Workflow tool. .call() validates meta, runs the permission check,
-    creates runId/taskId, registers a LocalWorkflowTask, and emits the same
-    lifecycle while this teaching CLI awaits the final result. Supports
-    resumeFromRunId. Mirrors WorkflowTool.call in runtime.mjs."""
+    creates runId/taskId, registers a LocalWorkflowTask, and emits lifecycle
+    events while this teaching CLI awaits the final result. Supports resume."""
 
     async def call(self, meta, script_fn, args=None, resume_from_run_id=None):
         validate_meta(meta)
@@ -479,7 +471,6 @@ def _read_last_run():
 
 # ============================================================
 # Sample workflow: review changed code across dimensions, verify each finding.
-# Mirrors cc_workflow/runtime/workflows/review_workflow.js (pipeline + parallel).
 # ============================================================
 FINDINGS_SCHEMA = {
     "type": "object", "required": ["findings"],
@@ -532,7 +523,7 @@ async def sample_workflow(ctx, args):
     return {"confirmed": confirmed}
 
 
-# saved workflow registry (.claude/workflows/ analogue)
+# Saved workflow registry
 WORKFLOWS = {SAMPLE_META["name"]: (SAMPLE_META, sample_workflow)}
 
 
