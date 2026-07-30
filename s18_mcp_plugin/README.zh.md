@@ -12,11 +12,11 @@ s01 → ... → s16 → s17 → `s18` → [s19](../s19_comprehensive/) → s20 �
 
 ## 问题
 
-s01 到 s17，Agent 的所有工具都是手写的——bash、read、write、task、worktree。每个工具的输入验证、执行逻辑、错误处理，都是你一行行写的。
+s01 到 s17，Agent 的所有工具都是手写的，包括 bash、read、write、task 和 worktree。每个工具的输入验证、执行逻辑、错误处理，都是你一行行写的。
 
 现在你有 3 个外部服务想接入：公司的 Jira API（查 issue、建 ticket）、自建的部署系统（触发 deploy、看日志）、团队的 Notion 知识库（搜文档、建页面）。你不想为每个服务重写一套工具代码。
 
-你需要一个标准协议——外部服务只要实现它，Agent 就能直接调用，不管服务用什么语言写的。
+你需要一个标准协议。外部服务只要实现它，Agent 就能直接调用，不管服务用什么语言写的。
 
 ---
 
@@ -146,7 +146,7 @@ def agent_loop(messages, context):
 | 新类型 | — | MCPClient 类（模拟 tools/list + tools/call） |
 | 命名空间 | — | mcp\_\_server\_\_tool 避免冲突 |
 | 工具描述 | 无标注 | (readOnly)/(destructive) 标注 |
-| prompt 缓存 | 有（s10 起） | 去掉——工具池动态变化后缓存失效 |
+| prompt 缓存 | 有（s10 起） | 去掉，因为工具池动态变化后缓存失效 |
 | Lead 工具 | worktree 与团队工具 | + connect_mcp 和动态发现的 MCP 工具 |
 | Teammate 工具 | 任务、文件、消息与计划工具 | 不变 |
 | 扩展方式 | 写代码加工具 | 标准协议，任意语言实现 server |

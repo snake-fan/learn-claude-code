@@ -40,7 +40,7 @@ if not has_tool_use(response):
 
 ## 设目标：证据从命令之后开始算
 
-`set_goal` 会存一个活跃目标：目标文本、最大轮数预算、计数器，还有 `start_index`——也就是证据窗口的起点。它取当前对话记录的长度，所以 `/goal` 这行命令本身在窗口外面。这是第一道防线：命令自己不能证明自己完成了。
+`set_goal` 会存一个活跃目标：目标文本、最大轮数预算、计数器和 `start_index`。其中，`start_index` 表示证据窗口的起点。它取当前对话记录的长度，所以 `/goal` 这行命令本身在窗口外面。这是第一道防线：命令自己不能证明自己完成了。
 
 ```python
 def set_goal(self, objective, max_turns=20):

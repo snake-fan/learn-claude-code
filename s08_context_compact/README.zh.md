@@ -60,7 +60,7 @@ def snip_compact(messages, max_messages=50):
     return messages[:head_end] + [placeholder] + messages[tail_start:]
 ```
 
-裁掉的是消息本身，只是在切口处多做一步保护；剩下的消息里 `tool_result` 内容仍在累积——第 34 条消息里可能躺着 30KB 的旧文件内容。→ L2。
+裁掉的是消息本身，只是在切口处多做一步保护；剩下的消息里 `tool_result` 内容仍在累积。第 34 条消息里可能躺着 30KB 的旧文件内容。→ L2。
 
 ### L2: micro_compact — 旧工具结果占位
 
@@ -83,7 +83,7 @@ def micro_compact(messages):
     return messages
 ```
 
-旧结果清掉了，但单条新结果可能就有 500KB——一个 `cat` 大文件的输出就能打满上下文。→ L3。
+旧结果清掉了，但单条新结果可能就有 500KB。一次 `cat` 大文件的输出就能打满上下文。→ L3。
 
 ### L3: tool_result_budget — 大结果落盘
 

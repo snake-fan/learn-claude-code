@@ -22,7 +22,7 @@ SYSTEM = (
 )
 ```
 
-6500 行 system prompt。Agent 每次调用 LLM 都带着这些文档——不管是在改 CSS 颜色还是修 SQL 查询。99% 的内容和当前任务无关，白白消耗 token。
+6500 行 system prompt。Agent 每次调用 LLM 都带着这些文档，无论是在改 CSS 颜色还是修 SQL 查询。99% 的内容和当前任务无关，白白消耗 token。
 
 ---
 

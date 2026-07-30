@@ -13,7 +13,7 @@ s01 → s02 → `s03` → [s04](../s04_hooks/) → s05 → ... → s20 → s21
 
 s02 的 Agent 有 5 个工具。file tools 受 `safe_path` 保护，但 bash 不受限制。让它"清理一下项目"，可能执行 `rm -rf /`。
 
-安全不能靠信任模型，要靠代码——在工具执行之前做判断。
+安全边界由代码负责，判断发生在工具执行之前。
 
 ---
 
@@ -21,7 +21,7 @@ s02 的 Agent 有 5 个工具。file tools 受 `safe_path` 保护，但 bash 不
 
 ![Permission Overview](images/permission-overview.svg)
 
-s02 的循环完全保留。唯一的变动在工具执行前插入 `check_permission()`——每个工具调用经过三道闸门，顺序固定：硬拒绝优先，软询问次之，都没命中就放行。
+s02 的循环完全保留。唯一的变动是在工具执行前插入 `check_permission()`。每个工具调用依次经过三道闸门：硬拒绝优先，软询问次之，都没命中就放行。
 
 三道闸门对应三种决策：
 
@@ -54,7 +54,7 @@ def check_deny_list(command: str) -> str | None:
     return None
 ```
 
-**闸门 2**：规则匹配——描述"什么时候需要问用户"。每条规则指定工具和检查条件。
+**闸门 2**负责规则匹配，用来描述"什么时候需要问用户"。每条规则指定工具和检查条件。
 
 ```python
 PERMISSION_RULES = [
@@ -149,7 +149,7 @@ python s03_permission/code.py
 
 ## 接下来
 
-权限检查做了——但每次都在循环里硬编码 `check_permission()`。如果我想在每次工具执行前后加日志？如果想在某些操作后自动触发 git commit？这些扩展逻辑散落在 loop 里，循环很快就会膨胀。
+当前权限检查每次都在循环里硬编码 `check_permission()`。如果我想在每次工具执行前后加日志？如果想在某些操作后自动触发 git commit？这些扩展逻辑散落在 loop 里，循环很快就会膨胀。
 
 s04 Hooks → 给循环加钩子，扩展逻辑挂在钩子上，循环保持干净。
 

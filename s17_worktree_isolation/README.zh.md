@@ -14,7 +14,7 @@ s01 → ... → s15 → s16 → `s17` → [s18](../s18_mcp_plugin/) → s19 → 
 
 s16 中，Alice 和 Bob 都在同一个目录下工作。Alice 的任务是"重构认证模块"，Bob 的任务是"重构 UI 登录页"。
 
-Alice `write_file("config.py", ...)`。Bob 也 `write_file("config.py", ...)`。两个人改同一个文件，互相覆盖。而且无法干净地回滚——分不清哪些改动是谁的。
+Alice `write_file("config.py", ...)`。Bob 也 `write_file("config.py", ...)`。两个人改同一个文件，互相覆盖，而且无法干净地回滚，因为已经分不清每处改动来自谁。
 
 s15-s16 解决了"谁干什么"（任务系统）和"怎么通信"（消息总线），但没解决"在哪干"。
 
@@ -24,7 +24,7 @@ s15-s16 解决了"谁干什么"（任务系统）和"怎么通信"（消息总�
 
 ![Worktree Overview](images/worktree-overview.svg)
 
-Git worktree 让你在同一仓库中创建多个独立的工作目录，每个有自己的分支。Alice 在 `.worktrees/auth-refactor/` 下工作，Bob 在 `.worktrees/ui-login/` 下工作——互不干扰。
+Git worktree 让你在同一仓库中创建多个独立的工作目录，每个目录都有自己的分支。Alice 在 `.worktrees/auth-refactor/` 下工作，Bob 在 `.worktrees/ui-login/` 下工作，两者互不干扰。
 
 沿用 s16 的 MessageBus、协议和自治认领机制。本章新增：
 
@@ -59,7 +59,7 @@ def bind_task_to_worktree(task_id: str, worktree_name: str):
     save_task(task)                     # 状态保持 pending，等队友 claim
 ```
 
-绑定规则：一个任务绑定一个 worktree。绑定不改任务状态——任务仍是 `pending`，队友自动认领时才推进到 `in_progress`。这样 Lead 可以提前创建任务和 worktree，队友 idle 时自然认领带 worktree 的任务。
+绑定规则：一个任务绑定一个 worktree。绑定不会改变任务状态。任务仍是 `pending`，队友自动认领时才推进到 `in_progress`。这样 Lead 可以提前创建任务和 worktree，队友 idle 时自然认领带 worktree 的任务。
 
 ### 队友工具的 cwd 切换
 
@@ -103,7 +103,7 @@ def keep_worktree(name: str) -> str:
     return f"Worktree '{name}' kept for review (branch: wt/{name})"
 ```
 
-Keep = 留着分支，等人工 review 后合并到主分支。Remove = 有改动时默认拒绝，需要 `discard_changes=true` 确认。不自动 complete task——任务完成由队友的 `complete_task` 显式触发。
+Keep = 留着分支，等人工 review 后合并到主分支。Remove = 有改动时默认拒绝，需要 `discard_changes=true` 确认。系统不会自动 complete task，任务完成由队友的 `complete_task` 显式触发。
 
 ### 事件流：可审计
 
@@ -162,7 +162,7 @@ python s17_worktree_isolation/code.py
 
 ## 接下来
 
-Agent 团队能在隔离的工作空间中自组织了。但 Agent 的能力受限于我们给它写的工具——bash、read、write、task...
+Agent 团队能在隔离的工作空间中自组织了，但 Agent 的能力仅限于我们为它编写的 bash、read、write、task 等工具。
 
 如果用户已经有了自己的工具怎么办？比如一个公司内部的 Jira API、一个自建的部署系统？
 
