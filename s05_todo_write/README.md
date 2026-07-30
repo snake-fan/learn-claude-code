@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → `s05` → [s06](../s06_subagent/) → s07 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → `s05` → [s06](../s06_subagent/) → s07 → ... → s20 → s21
 
 > *"An agent without a plan goes wherever the wind blows"* — List the steps first, then execute. Complex tasks are less likely to miss steps.
 >
@@ -81,7 +81,7 @@ TOOLS = [
 TOOL_HANDLERS["todo_write"] = run_todo_write
 ```
 
-**Nag reminder**, when the model hasn't called `todo_write` for 3 consecutive rounds, a reminder is automatically injected (teaching mechanism; CC source has no fixed round-count logic):
+**Nag reminder**: when the model has not called `todo_write` for 3 consecutive rounds, a reminder is automatically injected:
 
 ```python
 if rounds_since_todo >= 3 and messages:
@@ -132,27 +132,5 @@ The Agent can plan now. But if a task is too large, say "refactor the entire aut
 
 → s06 Subagent: Break large tasks into subtasks, each handled by an independent Agent with its own clean context, no cross-contamination.
 
-<details>
-<summary>Dive into CC Source Code</summary>
-
-Claude Code has two planning surfaces with a shared intent but independent storage and tool contracts:
-
-- **TodoWrite**: A session checklist. Each call replaces the whole list, and the teaching version likewise keeps it in process memory and clears it on exit.
-- **Task tools (covered in s12)**: Individually addressable task records with stable IDs, dependency fields, ownership, and persistence.
-
-Current interactive sessions use the structured Task tools by default, while TodoWrite remains available on compatibility surfaces such as non-interactive and Agent SDK usage. Exact exposure can vary by release and configuration. Do not model this as one schema being upgraded in place: they are separate mechanisms, and s05 teaches the lighter checklist contract.
-
-The teaching version omits the `activeForm` field from the real source (`utils/todo/types.ts:8-15`). CC uses it for the UI spinner to show "what's being done"; the teaching version only has terminal output and doesn't need this field.
-
-The teaching version's nag reminder (3 rounds without update triggers injection) is an educational mechanism. The CC source has no fixed "3 rounds" logic; the closest is `TodoWriteTool.ts:72-107` which appends a verification nudge when 3+ todos are all completed without a verification item.
-
-Core increments of the Task System over TodoWrite:
-- File persistence (Claude config directory `tasks/{taskListId}/{taskId}.json`) instead of in-memory list
-- `blockedBy` dependency graph instead of flat list
-- `proper-lockfile` concurrency safety instead of no locking
-- Four separate tools (Create/Get/Update/List) instead of one
-- TaskCreated / TaskCompleted hooks (`TaskCreateTool.ts:80-129`, `TaskUpdateTool.ts:231-260`) for external system integration
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

@@ -22,7 +22,6 @@ export const VERSION_ORDER = [
   "s19",
   "s20",
   "s21",
-  "s22",
 ] as const;
 
 export const LEARNING_PATH = VERSION_ORDER;
@@ -150,68 +149,60 @@ export const VERSION_META: Record<string, {
     prevVersion: "s13",
   },
   s15: {
-    title: "Agent Teams: Runtime Lab",
-    subtitle: "Persistent Teammates and Mailboxes",
-    coreAddition: "Teammate mailboxes",
-    keyInsight: "Persistent teammates let work continue in parallel without stuffing every thought into one context.",
+    title: "Agent Teams",
+    subtitle: "Persistent Teammates and Coordination Protocols",
+    coreAddition: "Team runtime and typed protocols",
+    keyInsight: "A Lead can coordinate persistent teammates when message delivery, approval, and shutdown belong to the runtime.",
     layer: "collaboration",
     prevVersion: "s14",
   },
   s16: {
-    title: "Agent Teams: Protocol Lab",
-    subtitle: "Typed Requests, Replies, and Handshakes",
-    coreAddition: "Shared coordination protocols",
-    keyInsight: "Multi-agent systems need explicit message contracts, not vibes.",
+    title: "Autonomous Agents",
+    subtitle: "Check the Board, Claim the Task",
+    coreAddition: "Autonomous task claiming",
+    keyInsight: "Idle teammates can discover ready work when claiming is atomic and respects task dependencies.",
     layer: "collaboration",
     prevVersion: "s15",
   },
   s17: {
-    title: "Autonomous Agents",
-    subtitle: "Check the Board, Claim the Task",
-    coreAddition: "Autonomous task claiming",
-    keyInsight: "Teammates become useful when they can discover and claim work themselves.",
-    layer: "collaboration",
-    prevVersion: "s16",
-  },
-  s18: {
     title: "Worktree Isolation",
     subtitle: "Separate Directories, No Conflicts",
     coreAddition: "Worktree lifecycle",
     keyInsight: "Parallel agents need isolated filesystems as much as isolated conversations.",
     layer: "collaboration",
-    prevVersion: "s17",
+    prevVersion: "s16",
   },
-  s19: {
+  s18: {
     title: "MCP Tools",
     subtitle: "External Tools, Standard Protocol",
     coreAddition: "MCP tool bridge",
     keyInsight: "External services can become agent tools through a standard discovery and call protocol.",
     layer: "collaboration",
-    prevVersion: "s18",
+    prevVersion: "s17",
   },
-  s20: {
+  s19: {
     title: "Comprehensive Agent",
     subtitle: "All Mechanisms, One Loop",
     coreAddition: "Integrated harness",
-    keyInsight: "The final harness is still one loop, now surrounded by the systems that make it production-shaped.",
+    keyInsight: "The complete harness is still one loop, surrounded by the systems introduced across the course.",
     layer: "collaboration",
-    prevVersion: "s19",
+    prevVersion: "s18",
   },
-  s21: {
+  s20: {
     title: "Workflow Runtime",
     subtitle: "Scripts Own Fixed Orchestration",
     coreAddition: "Resumable workflow runtime",
     keyInsight: "When orchestration has a fixed shape, code can make it parallel, deterministic, and resumable.",
     layer: "concurrency",
-    prevVersion: "s20",
+    prevVersion: "s19",
   },
-  s22: {
+  s21: {
     title: "Goal Loop",
     subtitle: "Trusted Evidence Decides When to Stop",
     coreAddition: "Goal completion gate",
     keyInsight: "A durable goal keeps the loop working until trusted evidence satisfies an explicit condition.",
     layer: "planning",
-    prevVersion: "s21",
+    prevVersion: "s20",
   },
 };
 
@@ -226,7 +217,7 @@ export const LAYERS = [
     id: "planning" as const,
     label: "Planning & Control",
     color: "#10B981",
-    versions: ["s05", "s06", "s07", "s10", "s11", "s22"],
+    versions: ["s05", "s06", "s07", "s10", "s11", "s21"],
   },
   {
     id: "memory" as const,
@@ -238,12 +229,12 @@ export const LAYERS = [
     id: "concurrency" as const,
     label: "Concurrency & Scheduling",
     color: "#F59E0B",
-    versions: ["s13", "s14", "s21"],
+    versions: ["s13", "s14", "s20"],
   },
   {
     id: "collaboration" as const,
     label: "Multi-Agent Platform",
     color: "#EF4444",
-    versions: ["s12", "s15", "s16", "s17", "s18", "s19", "s20"],
+    versions: ["s12", "s15", "s16", "s17", "s18", "s19"],
   },
 ] as const;

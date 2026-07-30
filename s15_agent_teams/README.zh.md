@@ -1,21 +1,32 @@
-# s15: Agent Teams — 运行时实验：持久队友
+# s15: Agent Teams — 团队运行时与协作协议
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s13 → s14 → `s15` → [s16](../s16_team_protocols/) → s17 → s18 → s19 → s20 → s21 → s22
-> *"一个搞不定, 组队来"* — 文件收件箱 + 队友线程。
->
-> **Harness 层**: 团队 — 多 Agent 协作, 消息总线。
+s01 → ... → s13 → s14 → `s15` → [s16](../s16_autonomous_agents/) → s17 → s18 → s19 → s20 → s21
 
-> **模块 1/2：** s15 与 s16 是同一个 Agent Teams 模块中的两次聚焦实验。本章搭建运行时；s16 在不重复运行时的前提下增加带类型的协作协议。
+> *"一个 Agent 顾不过来，就让队友分工协作。"* — 持久队友、消息投递与协作协议。
+>
+> **Harness 层**：团队 — 多个 Agent 如何并行工作，又如何保持可控。
 
 ---
 
 ## 问题
 
-"重构整个后端"涉及认证模块、数据库层、API 路由、测试。一个 Agent 在修 API 路由时，认证模块的细节已经不在上下文里了。上下文窗口就那么大，单个 Agent 的注意力覆盖不了所有模块。
+当我们需要 Agent 帮助我们重构整个后端时，任务可能同时涉及配置加载、认证逻辑和测试。一个 Agent 依次处理所有模块，不但耗时更长，早期细节也会逐渐退出上下文。
 
-s06 的子 Agent 是临时工，叫来干一件事就走了。但有些任务需要能通信、能协作的队友。
+这类任务适合拆给多个 Agent，但用户通常只会描述需求，不会先设计一套团队：
+
+```text
+请重构这个示例后端，分别整理配置加载、认证逻辑和测试，
+保持现有接口兼容，并确保测试通过。
+```
+
+因此，Harness 需要解决的不只是“再启动几个 Agent”，而是四个连续问题：
+
+1. 谁判断任务是否值得并行，以及如何征得用户确认？
+2. 队友如何保留自己的身份和上下文，持续接收工作？
+3. 队友的结果如何自动回到 Lead，而不是依赖模型反复检查邮箱？
+4. 关机与计划审批如何变成可追踪、可执行的协议？
 
 ---
 
@@ -23,133 +34,214 @@ s06 的子 Agent 是临时工，叫来干一件事就走了。但有些任务需
 
 ![Agent Teams Overview](images/agent-teams-overview.svg)
 
-教学代码沿用 S14 的能力（prompt 组装、任务系统、后台执行、cron 调度）。为了聚焦团队机制，省略了完整错误恢复、记忆和技能系统。新增三样：**MessageBus**（文件收件箱）、**spawn_teammate_thread**（启动队友线程）、**inbox 注入**（Lead 接收队友消息并注入 history）。
+s15 在单 Agent Harness 外增加一个由 Lead 管理的团队运行时：
 
-子 Agent vs 队友：
+- **Lead** 保持用户对话，判断是否需要团队，提出分工并等待确认。
+- **队友** 在独立线程中运行自己的 Agent Loop，完成工作后进入空闲。
+- **MessageBus** 用文件邮箱传递普通消息、结果和控制事件。
+- **运行时投递** 自动消费 Lead 的邮箱，把团队事件注入下一轮上下文。
+- **协作协议** 用 `type`、`request_id` 和状态机处理关机与计划审批。
+- **计划闸门** 在计划未批准时拦截队友的 `bash` 和 `write_file`。
 
-| | s06 子 Agent | s15 队友 |
-|---|---|---|
-| 生命周期 | 一次性，用完销毁 | 多轮（教学版限 10 轮，真实 CC 用 idle loop） |
-| 通信 | 只回传结论 | 异步收件箱，随时通信 |
-| 上下文 | 完全隔离 | 通过消息共享信息 |
-| 数量 | 一个主 Agent + 偶尔子 Agent | 一个 Lead + 多个队友 |
+模型负责理解任务与分工，代码负责消息投递、生命周期和协议约束。
 
 ---
 
 ## 工作原理
 
-![Team Topology](images/team-topology.svg)
+### 1. Lead 先提出团队，再等待用户确认
 
-### MessageBus: 文件收件箱
+是否创建团队会改变成本、并发度和可写入范围，不应该被隐藏在一次普通工具调用里。Lead 的 system prompt 明确规定：
 
-每个 Agent（包括 Lead 和队友）有一个 `.jsonl` 邮箱。发消息 = 往对方的文件里 append 一行 JSON。读消息 = 读文件 + 删除（消费式）：
+```python
+"When parallel work would help, first propose a small team with clear "
+"responsibilities and wait for the user's confirmation. Do not call "
+"spawn_teammate before the user confirms."
+```
+
+第一次输入需求时，Lead 只需要说明建议的拆分：
+
+```text
+我建议分成三个方向并行处理：
+- config：整理配置加载
+- auth：重构认证逻辑
+- tests：补齐回归测试
+
+确认后我会启动队友并协调结果。
+```
+
+用户回复“开始吧”后，Lead 才调用 `spawn_teammate`。用户表达目标，Lead 设计团队，用户确认执行边界；三者的职责不会混在一起。
+
+### 2. 每个队友拥有独立循环
+
+s06 的子 Agent 是一次性调用，返回结果后就结束。队友则是持久执行单元：
+
+| | s06 子 Agent | s15 队友 |
+|---|---|---|
+| 生命周期 | 完成一次调用后结束 | `WORK → IDLE → WORK`，直到收到关机请求 |
+| 上下文 | 只服务当前任务 | 在多轮协作中保留 |
+| 通信 | 返回一次结果 | 持续接收消息并上报事件 |
+| 协调 | 主 Agent 单向委派 | Lead 与队友双向协作 |
+
+`spawn_teammate_thread()` 为队友创建独立的 system prompt、messages 和工具集，并把循环放入 daemon 线程。Lead 不必等待某个队友结束，仍可继续派发任务或处理其他结果。
+
+### 3. MessageBus 把通信放在上下文之外
+
+Lead 和队友不能共享同一份 messages，否则一个队友的工具结果会混入另一个队友的推理。`MessageBus` 为每个 Agent 建立 `.mailboxes/<name>.jsonl`：
 
 ```python
 class MessageBus:
-    def send(self, from_agent: str, to_agent: str,
-             content: str, msg_type: str = "message"):
-        msg = {"from": from_agent, "to": to_agent,
-               "content": content, "type": msg_type,
-               "ts": time.time()}
-        inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
-        with open(inbox, "a") as f:
-            f.write(json.dumps(msg) + "\n")
+    def send(self, from_agent, to_agent, content,
+             msg_type="message", metadata=None):
+        msg = {
+            "from": from_agent,
+            "to": to_agent,
+            "content": content,
+            "type": msg_type,
+            "metadata": metadata or {},
+        }
+        with self._changed:
+            append_jsonl(self._path(to_agent), msg)
+            self._changed.notify_all()
 
-    def read_inbox(self, agent: str) -> list[dict]:
-        inbox = MAILBOX_DIR / f"{agent}.jsonl"
-        if not inbox.exists():
-            return []
-        msgs = [json.loads(line) for line in inbox.read_text().splitlines()]
-        inbox.unlink()  # 消费式：读完删除
-        return msgs
+    def wait_for_messages(self, agent):
+        with self._changed:
+            while not self.peek(agent):
+                self._changed.wait()
+            return self._read_unlocked(agent)
 ```
 
-为什么用文件而不是内存队列？教学版选文件是因为直观、跨线程可观察。真实 CC 也用文件收件箱（`~/.claude/teams/{team}/inboxes/`），但加了 `proper-lockfile` 防并发写冲突。教学版的 `read_inbox` 有 read + unlink 竞态，多线程同时读可能丢消息，对教学场景可以接受。
+锁保证同一进程中的多个队友不会同时破坏邮箱文件，`Condition` 让空闲队友等待事件，而不是持续轮询。
 
-### spawn_teammate_thread: 启动队友
+### 4. 收件箱由运行时自动投递
 
-Lead 调用 `spawn_teammate` 工具启动一个队友。队友跑在自己的 daemon 线程里，有自己的 system prompt、自己的 messages、自己的简化工具集：
+`read_inbox()` 是消费式读取：读出后删除邮箱文件。因此，Lead 只保留一个消费入口 `consume_lead_inbox()`：
 
 ```python
-def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
-    system = f"You are '{name}', a {role}. Use tools to complete tasks."
-
-    def run():
-        messages = [{"role": "user", "content": prompt}]
-        sub_tools = [bash, read_file, write_file, send_message]
-        for _ in range(10):           # 最多 10 轮
-            inbox = BUS.read_inbox(name)
-            if inbox:
-                messages.append({"role": "user",
-                    "content": f"<inbox>{json.dumps(inbox)}</inbox>"})
-            response = client.messages.create(
-                model=MODEL, system=system, messages=messages[-20:],
-                tools=sub_tools, max_tokens=8000)
-            # ... 执行工具、处理结果
-        # 完成后发 summary 给 Lead
-        BUS.send(name, "lead", summary, "result")
-
-    threading.Thread(target=run, daemon=True).start()
+def consume_lead_inbox():
+    messages = BUS.read_inbox("lead")
+    for message in messages:
+        if message["type"].endswith("_response"):
+            match_response(...)
+    return messages
 ```
 
-关键设计：
-- **队友有简化工具集**：bash、read、write、send_message。教学版省略了任务和 cron，聚焦通信机制。真实 CC 的队友也有 TaskCreate、TaskUpdate 等工具，任务系统是团队共享的
-- **教学版限 10 轮**：防止队友无限循环。真实 CC 用 idle loop：跑完一轮后发 `idle_notification`，等 inbox 消息，收到后继续，直到 `shutdown_request` 才退出
-- **完成后自动汇报**：`BUS.send(name, "lead", summary)` 把最终结果发到 Lead 的收件箱
+主循环旁的事件线程发现新消息后，会唤醒 Lead：
 
-### Lead 的 inbox 注入
+```text
+MessageBus → consume_lead_inbox
+           → 更新协议状态
+           → [Team events] 注入 history
+           → Lead 开始新一轮
+```
 
-Lead 在每轮主循环结束后检查收件箱。队友发来的消息注入到 history 里，让 LLM 能看到并做出反应：
+`check_inbox` 不再是模型工具。消息何时到达属于运行时职责；模型只需要处理已经送入上下文的事件。
+
+### 5. 结果与空闲是两个不同事件
+
+队友完成一项工作时，运行时依次发送：
+
+```text
+result:            "认证逻辑已重构，相关测试通过。"
+idle_notification: "Waiting for more work."
+```
+
+`result` 回答“这次工作产出了什么”，`idle_notification` 表示“这个队友现在可以接新任务”。如果把两者合成一个模糊的“done”，Lead 就无法区分任务结果和资源状态。
+
+队友进入 IDLE 后不会退出。新普通消息会让它回到 WORK；`shutdown_request` 则让它完成关机握手并结束线程。
+
+### 6. 控制消息使用类型和 request_id
+
+普通消息可以交给模型理解，关机和审批不能依赖自由文本猜测。它们使用结构化消息：
+
+![Team Protocols](images/team-protocols-overview.svg)
 
 ```python
-# 主循环结束后
-inbox = BUS.read_inbox("lead")
-if inbox:
-    inbox_text = "\n".join(
-        f"From {m['from']}: {m['content'][:200]}" for m in inbox)
-    history.append({"role": "user",
-                    "content": f"[Inbox]\n{inbox_text}"})
+@dataclass
+class ProtocolState:
+    request_id: str
+    type: str
+    sender: str
+    target: str
+    status: str
+    payload: str
+
+
+pending_requests: dict[str, ProtocolState] = {}
 ```
 
-教学版在用户输入循环外注入。CC 更精细，Lead 的 `useInboxPoller` 每 1 秒检查一次，有消息就提交为新的 turn，不需要等用户输入。
+关机协议的完整路径是：
 
-### 权限冒泡
-
-教学版省略了权限冒泡。真实 CC 的流程（`permissionSync.ts`、`useSwarmPermissionPoller.ts`）：
-
-1. 队友遇到需要审批的操作 → 发 `permission_request` 到 Lead 收件箱
-2. Lead 的 `useInboxPoller` 检测到请求 → 路由到审批队列
-3. 用户审批后 → Lead 发 `permission_response` 回队友
-4. 队友的 `useSwarmPermissionPoller`（每 500ms 轮询）收到回复 → 继续或拒绝
-
-### 合起来跑
-
-```
-1. Lead: "搭建后端：一个人搞不定，组队吧"
-2. Lead → spawn_teammate("alice", "backend dev", "创建数据库 schema")
-3. Lead → spawn_teammate("bob", "frontend dev", "写 API 客户端")
-4. alice 线程启动 → 自己的 LLM 调用 → bash "python manage.py migrate"
-5. bob 线程启动 → 自己的 LLM 调用 → write_file("client.ts", ...)
-6. alice 完成 → BUS.send("alice", "lead", "Schema done: users, orders tables")
-7. bob 完成 → BUS.send("bob", "lead", "Client written with types")
-8. Lead 下次循环 → inbox 注入 history → LLM 看到 alice 和 bob 的结果
+```text
+Lead 创建 shutdown 请求，状态为 pending
+  → shutdown_request(request_id) 发给队友
+  → 队友完成当前步骤并回复 shutdown_response(request_id)
+  → Lead 用 request_id 找到原请求
+  → pending 变为 approved，队友线程退出
 ```
 
-两个队友并行工作。
+`request_id` 负责关联请求与回复，`type` 防止错误类型的回复修改状态，`status` 防止重复响应被再次处理。
+
+### 7. 计划审批不仅传消息，还约束执行
+
+计划协议沿相反方向流动：
+
+```text
+Lead → plan_request
+队友 → plan_approval_request(request_id, plan)
+Lead → plan_approval_response(request_id, approve, feedback)
+```
+
+只告诉队友“请等待批准”并不可靠，所以工具分发器检查计划状态：
+
+```python
+def _run_teammate_tool(name, block, handlers):
+    gate = plan_gates.get(name, "not_required")
+    if block.name in {"bash", "write_file"} and gate not in {
+        "not_required", "approved"
+    }:
+        return f"Blocked: plan status is {gate}."
+    return handlers[block.name](**block.input)
+```
+
+当状态为 `required`、`pending` 或 `rejected` 时，队友仍可读取文件、提交或修改计划，但不能执行 Shell 或写文件。批准消息到达后，状态变为 `approved`，工具才会放行。
 
 ---
 
-## 相对 s14 的变更
+## 一次完整运行
 
-| 组件 | 之前 (s14) | 之后 (s15) |
-|------|-----------|-----------|
-| Agent 数量 | 1 | 1 Lead + N 队友线程 |
-| 通信 | 无 | MessageBus + .mailboxes/*.jsonl |
-| 新类 | — | MessageBus, active_teammates dict |
-| 新函数 | — | spawn_teammate_thread, run_send_message, run_check_inbox |
-| Lead 工具 | 11 (s14) | + spawn_teammate, send_message, check_inbox (14) |
-| 队友工具 | — | bash, read_file, write_file, send_message (4) |
-| 权限 | 本地决策 | 教学版省略（真实 CC 有冒泡机制） |
+```text
+s15 >> 请重构这个示例后端，分别整理配置加载、认证逻辑和测试，
+       保持现有接口兼容，并确保测试通过。
+
+Lead: 建议由 config、auth、tests 三个方向并行处理，是否开始？
+
+s15 >> 开始吧
+
+[teammate] config spawned
+[teammate] auth spawned
+[teammate] tests spawned
+[bus] auth → lead (result) ...
+[bus] auth → lead (idle_notification) ...
+[wake: 2 team events → new turn]
+Lead: 已收到认证部分结果，继续等待并协调其他队友。
+```
+
+终端中显示的是用户需求、Lead 分工、队友启动、消息流、结果、空闲和关机事件。用户不需要在提示词里指定谁是 Lead，也不需要手动要求检查邮箱。
+
+---
+
+## 相对 s14 的变化
+
+| 组件 | s14 | s15 |
+|---|---|---|
+| Agent 数量 | 一个 Agent | 一个 Lead + 多个持久队友 |
+| 用户交互 | 直接执行任务 | 先提出团队方案，再确认启动 |
+| 通信 | 无 | 文件邮箱 + 自动事件投递 |
+| 生命周期 | 单循环 | 队友 `WORK / IDLE / shutdown` |
+| 结果上报 | 当前 Agent 输出 | `result` 与 `idle_notification` 分离 |
+| 控制协议 | 无 | 关机与计划审批 |
+| 执行约束 | 无团队约束 | 未批准计划会拦截写入类工具 |
 
 ---
 
@@ -160,97 +252,27 @@ cd learn-claude-code
 python s15_agent_teams/code.py
 ```
 
-试试这些 prompt：
+先输入一个自然需求：
 
-1. `Spawn alice as a backend developer. Ask her to create a file called schema.sql with a users table.`
-2. `Check your inbox for alice's result.`
-3. `Spawn bob as a tester. Ask him to check if schema.sql exists and list its contents.`
+```text
+请重构这个示例后端，分别整理配置加载、认证逻辑和测试，
+保持现有接口兼容，并确保测试通过。
+```
 
-观察重点：Lead 如何启动队友？`.mailboxes/` 目录下的 JSONL 文件长什么样？队友完成后 Lead 的 inbox 有没有注入到 history？
+看到 Lead 给出分工后，再回复：
+
+```text
+开始吧
+```
+
+观察终端中的 `spawned`、`result`、`idle_notification`、`plan_approval_*` 和 `shutdown_*` 事件，以及 `.mailboxes/` 中消息写入和消费的过程。
 
 ---
 
 ## 接下来
 
-队友能干活、能通信。但如果 Lead 想让 Alice 关机，直接杀线程会留下写到一半的文件。需要一个体面的关机协议：Lead 发 shutdown_request，队友收尾后退出。
+s15 中，Lead 仍然要明确告诉每个队友做什么。下一章把共享任务看板交给空闲队友，让它们自己发现并认领可执行任务。
 
-s16 Agent Teams 协议实验 → 沿用本章运行时，加入关机握手、计划审批与带类型的请求-回复消息。
+下一章：[s16 Autonomous Agents](../s16_autonomous_agents/)。
 
-<details>
-<summary>深入 CC 源码</summary>
-
-> 以下基于 CC 源码 `spawnMultiAgent.ts`、`useInboxPoller.ts`（969 行）、`useSwarmPermissionPoller.ts`（330 行）、`teammateMailbox.ts`、`teamHelpers.ts` 的完整分析。
-
-### 一、没有中央消息总线，是文件系统
-
-教学版用 `MessageBus` 类收发消息。CC 的做法更直接，每个 Agent 直接写其他 Agent 的收件箱文件。
-
-收件箱路径：`~/.claude/teams/{teamName}/inboxes/{agentName}.json`
-
-写入时用 `proper-lockfile` 文件锁保证并发安全（最多重试 10 次）。每个文件是一个 JSON 数组，append 新消息时读→追加→写回。
-
-### 二、15 种消息类型
-
-CC 的团队通信有 15 种结构化消息（`teammateMailbox.ts`）：
-
-| 类型 | 方向 | 用途 |
-|------|------|------|
-| `plain text` | 双向 | 普通队友间通信 |
-| `idle_notification` | 队友→Lead | 队友完成一轮工作，进入空闲 |
-| `permission_request` | 队友→Lead | 队友需要操作审批 |
-| `permission_response` | Lead→队友 | Lead 审批结果 |
-| `plan_approval_request` | 队友→Lead | 队友提交计划待审 |
-| `plan_approval_response` | Lead→队友 | Lead 审批计划 |
-| `shutdown_request` | Lead→队友 | 请求体面关机 |
-| `shutdown_approved` | 队友→Lead | 确认关机 |
-| `shutdown_rejected` | 队友→Lead | 拒绝关机（附原因） |
-| `task_assignment` | Lead→队友 | 分配任务 |
-| `team_permission_update` | Lead→队友 | 广播权限变更 |
-| `mode_set_request` | Lead→队友 | 修改队友的权限模式 |
-| `sandbox_permission_*` | 双向 | 网络权限请求/回复 |
-| `teammate_terminated` | 系统 | 队友被移除通知 |
-
-文本消息被包装在 `<teammate-message>` XML 标签中交付给模型。
-
-### 三、权限冒泡：双向轮询
-
-教学版省略了权限冒泡。CC 的实际流程（`permissionSync.ts`）：
-
-1. **队友**遇到需要审批的操作 → 发 `permission_request` 到 Lead 的收件箱
-2. **Lead** 的 `useInboxPoller`（每 1 秒轮询）检测到请求 → 路由到 `ToolUseConfirmQueue`
-3. Lead 的 UI 显示审批对话框，带队友名字和颜色
-4. 用户审批后 → Lead 发 `permission_response` 回队友的收件箱
-5. **队友**的 `useSwarmPermissionPoller`（每 500ms 轮询）收到回复 → 继续或拒绝执行
-
-### 四、队友生命周期
-
-CC 的队友由 `spawnTeammate()`（`spawnMultiAgent.ts`）创建：
-
-1. **Spawn**：创建 tmux 窗格（或进程内），分配颜色，写入 team config
-2. **Work**：`useInboxPoller` 每 1 秒检查收件箱 → 有消息就提交为新的 turn
-3. **Idle**：Stop hook 触发 → 发 `idle_notification` 给 Lead
-4. **Shutdown**：Lead 发 `shutdown_request` → 队友回复 `shutdown_approved` → Lead 清理
-
-### 五、Team Config
-
-团队注册表在 `~/.claude/teams/{teamName}/config.json`（`teamHelpers.ts`）：
-
-```json
-{
-  "name": "my-team",
-  "leadAgentId": "lead@my-team",
-  "members": [{
-    "agentId": "researcher@my-team",
-    "name": "researcher",
-    "agentType": "general-purpose",
-    "color": "blue",
-    "isActive": true
-  }]
-}
-```
-
-队友之间不能嵌套（`AgentTool.tsx:273` 明确禁止 "teammates spawning other teammates"）。
-
-</details>
-
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v2, en@v2, ja@v2 -->

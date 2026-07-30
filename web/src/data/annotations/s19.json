@@ -2,45 +2,45 @@
   "version": "s19",
   "decisions": [
     {
-      "id": "normalized-mcp-namespace",
-      "title": "MCP Tools Use a Normalized Namespace",
-      "description": "Discovered tools are exposed as mcp__server__tool. The prefix makes the source explicit and avoids collisions with built-in tools or tools from another server.",
-      "alternatives": "Using the raw tool name is shorter, but search from two servers could overwrite each other.",
+      "id": "composition-over-new-loop",
+      "title": "The Final Agent Composes Previous Layers",
+      "description": "The comprehensive agent does not replace the loop with a new architecture. It composes memory, tasks, skills, background work, teams, worktrees, and MCP around the same core model-tool-result cycle.",
+      "alternatives": "A new orchestration framework would look more impressive, but it would hide the continuity across the course.",
       "zh": {
-        "title": "MCP 工具使用规范化命名空间",
-        "description": "发现到的工具会暴露为 mcp__server__tool。前缀让工具来源明确，也避免和内置工具或其他服务器工具冲突。"
+        "title": "最终 Agent 是组合既有层，而不是换掉循环",
+        "description": "综合 Agent 没有用新架构替换循环，而是把 memory、task、skill、后台任务、团队、worktree、MCP 组合到同一个模型-工具-结果循环周围。"
       },
       "ja": {
-        "title": "MCP ツールは正規化された名前空間を使う",
-        "description": "発見されたツールは mcp__server__tool として公開されます。接頭辞により出所が明確になり、組み込みツールや別サーバーのツールとの衝突を避けます。"
+        "title": "最終エージェントは既存レイヤーの合成",
+        "description": "総合エージェントはループを新しい構造で置き換えません。memory、task、skill、バックグラウンド処理、チーム、worktree、MCP を同じ model-tool-result サイクルの周囲に合成します。"
       }
     },
     {
-      "id": "dynamic-tool-pool",
-      "title": "Tool Discovery Updates the Active Tool Pool",
-      "description": "After connecting to a server, the runtime assembles a new tool pool for the next LLM call. The model can only use MCP tools after discovery has made them visible.",
-      "alternatives": "Preloading every possible MCP tool would create a huge prompt and expose capabilities the user did not request.",
+      "id": "single-source-of-runtime-truth",
+      "title": "Runtime State Has Named Sources",
+      "description": "Context assembly pulls from named sources such as memory, task graph, skills, tool registry, and policy. This keeps a large agent debuggable because each piece of prompt context has an owner.",
+      "alternatives": "Dumping everything into one prompt string is shorter, but it becomes impossible to tell which subsystem caused a bad decision.",
       "zh": {
-        "title": "工具发现会更新活动工具池",
-        "description": "连接服务器后，运行时会为下一次 LLM 调用组装新的工具池。模型只有在发现阶段让 MCP 工具可见之后，才能调用它们。"
+        "title": "运行时状态来自具名来源",
+        "description": "上下文组装从 memory、task graph、skills、tool registry、policy 等具名来源读取。大型 agent 因此仍可调试，因为每块 prompt context 都有清晰归属。"
       },
       "ja": {
-        "title": "ツール発見がアクティブなツールプールを更新する",
-        "description": "サーバー接続後、ランタイムは次の LLM 呼び出し用に新しいツールプールを組み立てます。MCP ツールは発見で可視化された後にのみモデルが利用できます。"
+        "title": "ランタイム状態には名前付きの出所がある",
+        "description": "コンテキスト組み立ては memory、task graph、skills、tool registry、policy などの名前付きソースから取得します。各 prompt context に所有者があるため、大きなエージェントでもデバッグ可能です。"
       }
     },
     {
-      "id": "external-results-append-like-tools",
-      "title": "External Results Reuse the Tool Result Path",
-      "description": "MCP responses are appended to the conversation like ordinary tool results. This keeps the agent loop unchanged while still letting external systems participate.",
-      "alternatives": "A separate external-response channel would make MCP feel special and require extra loop logic.",
+      "id": "recovery-is-first-class",
+      "title": "Recovery Is Part of the Main Flow",
+      "description": "Compaction, error recovery, and asynchronous result collection are normal loop behavior. The harness handles recovery and resumption through named paths instead of scattered exception branches.",
+      "alternatives": "Leaving recovery at the edges makes it harder to see which state is safe to resume.",
       "zh": {
-        "title": "外部结果复用 Tool Result 路径",
-        "description": "MCP 响应会像普通 tool result 一样追加到对话中。这样 agent 循环无需改变，同时外部系统仍然可以参与。"
+        "title": "恢复能力是一等流程",
+        "description": "压缩、错误恢复和异步结果收集都属于正常循环。Harness 通过明确的路径处理恢复与续跑，而不是把逻辑散落在异常分支中。"
       },
       "ja": {
-        "title": "外部結果は tool result 経路を再利用する",
-        "description": "MCP の応答は通常の tool result と同じように会話へ追加されます。エージェントループを変えずに外部システムを参加させられます。"
+        "title": "リカバリは主要フローの一部",
+        "description": "圧縮、エラー回復、非同期結果収集を通常のループ動作として扱います。Harness は回復と再開を名前付きの経路にまとめ、例外分岐へ散らしません。"
       }
     }
   ]

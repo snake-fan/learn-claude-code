@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21 → s22
+s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21
 > *"Produce work on a schedule, decouple scheduling from execution"* — Cron scheduling, durable or session-level.
 >
 > **Harness Layer**: Scheduling — Independent thread checks time, queue delivers triggers.
@@ -21,7 +21,7 @@ s13 lets the agent run slow operations in the background, but every operation is
 
 ![Cron Scheduler Overview](images/cron-scheduler-overview.en.svg)
 
-Teaching code carries forward S13's simplified task system, background execution, and prompt assembly; to stay focused on the scheduler, it omits full error recovery, memory, and skill systems. Added: an independent cron scheduler thread that polls every second, queues matching jobs into `cron_queue`, and a queue processor that delivers them when the agent is idle.
+This chapter adds an independent cron scheduler thread: it checks once per second, writes due jobs to `cron_queue`, and a queue processor delivers them when the agent is idle.
 
 Manual vs Scheduled:
 
@@ -44,8 +44,6 @@ Cron scheduling has four layers:
 2. **Queue**: `cron_queue`, scheduler writes fired jobs
 3. **Queue Processor**: sees non-empty queue and idle agent, starts one agent_loop turn
 4. **Consumer**: agent_loop consumes queue and injects into messages
-
-The teaching version implements a minimal queue processor: `agent_lock` tells whether the agent is idle, and queued cron work is delivered automatically. Real CC's `useQueueProcessor.ts` also handles UI blocking, queue priority, and different message modes.
 
 ### CronJob: Data Structure
 
@@ -253,53 +251,5 @@ One agent can do a lot now: plan, compress, background, schedule. But some tasks
 
 s15 Agent Teams → One agent isn't enough, form a team. Persistent teammates + async inboxes.
 
-<details>
-<summary>Deep Dive into CC Source</summary>
-
-> The following is a complete analysis based on CC source code `CronCreateTool.ts`, `cronScheduler.ts`, `cron.ts`, `cronTasks.ts`, `cronTasksLock.ts`, `useScheduledTasks.ts` (139 lines).
-
-### 1. Three Cron Tools
-
-CC exposes three cron tools to the model: `CronCreate`, `CronDelete`, `CronList`. All controlled by compile-time gate `feature('AGENT_TRIGGERS')` and runtime GrowthBook flag `tengu_kairos_cron`. There's also a `CLAUDE_CODE_DISABLE_CRON` env var for local override.
-
-### 2. Storage: `.claude/scheduled_tasks.json`
-
-```json
-{ "tasks": [{ "id": "abc12345", "cron": "0 9 * * *", "prompt": "...", "recurring": true, "durable": true, "createdAt": 1714567890000 }] }
-```
-
-Durable tasks write to disk; session-only tasks live in `STATE.sessionCronTasks` memory array (lost on process restart). A `.scheduled_tasks.lock` file prevents duplicate firing across multiple sessions of the same project.
-
-### 3. Scheduler: 1-Second Polling
-
-`cronScheduler.ts` checks every second (`CHECK_INTERVAL_MS = 1000`). Whoever holds the lock triggers file tasks; all sessions trigger session-only tasks. A `chokidar` file watcher monitors `scheduled_tasks.json` changes.
-
-### 4. Cron Expression: Standard 5 Fields
-
-Minute hour day month weekday. Supports `*`, `*/N`, `N`, `N-M`, `N-M/S`, `N,M,...`. Doesn't support `L`, `W`, `?`. All times interpreted in local timezone. Day-of-month and day-of-week use OR semantics when both are constrained.
-
-### 5. Jitter (Thundering Herd Prevention)
-
-- Recurring tasks: trigger delay up to 10% of period (max 15 min), deterministic hash based on task ID
-- One-shot tasks: up to 90s early when firing time falls on `:00` or `:30`
-- Jitter config adjustable via GrowthBook, refreshed every 60 seconds
-
-### 6. Auto-Expiration
-
-Recurring tasks auto-expire after 7 days (configurable, max 30 days). Fire one last time before expiry, then auto-delete.
-
-### 7. Job Limit
-
-`MAX_JOBS = 50` (`CronCreateTool.ts:25`). Returns error when exceeded: "Too many scheduled jobs (max 50). Cancel one first."
-
-### 8. Trigger Injection
-
-After firing, enqueued via `enqueuePendingNotification()` with `priority: 'later'` into the command queue. Tagged `workload: WORKLOAD_CRON` — API serves cron-initiated requests at lower QoS when capacity is tight.
-
-### 9. Queue Processor: Automatic Delivery
-
-Real CC auto-triggers processing through `useQueueProcessor.ts:48-60` when no query is active, UI isn't blocked, and queue is non-empty. `queueProcessor.ts:52-87` dispatches commands to `handlePromptSubmit()` by queue priority. The teaching version keeps the core behavior with `queue_processor_loop`: when queued work exists and the agent is idle, it starts one agent_loop turn automatically.
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

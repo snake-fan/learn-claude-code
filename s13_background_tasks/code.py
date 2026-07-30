@@ -16,9 +16,8 @@ Changes from s12:
   - agent_loop: slow ops → background + placeholder, inject notifications
   - Notifications use <task_notification> format, not reused tool_use_id
 
-Note: Teaching code keeps a basic agent loop to stay focused on background
-tasks. S11's full error recovery (RecoveryState, backoff, escalation,
-reactive compact, fallback model) is omitted.
+This chapter keeps the agent loop focused on background tasks. Error recovery
+remains the independent layer introduced in s11.
 """
 
 import os, subprocess, json, time, random, threading

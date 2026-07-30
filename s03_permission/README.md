@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → `s03` → [s04](../s04_hooks/) → s05 → ... → s20 → s21 → s22
+s01 → s02 → `s03` → [s04](../s04_hooks/) → s05 → ... → s20 → s21
 > *"Check permissions before executing"* — The permission pipeline decides which operations need approval.
 >
 > **Harness Layer**: Permission — a gate before tool execution.
@@ -39,7 +39,7 @@ None of the three gates match → execute directly. Most routine operations take
 
 ![Permission Pipeline](images/permission-pipeline.en.svg)
 
-**Gate 1**: A hard deny list. Check first; if matched, return a block message. (Teaching demo: simple string matching is not a reliable security mechanism — command variants and shell expansion can bypass it. CC's approach is in the appendix.)
+**Gate 1**: A hard deny list. Check first; if matched, return a block message. This list uses simple string matching to show where the permission gate sits; it is not a complete security boundary.
 
 ```python
 DENY_LIST = [
@@ -153,80 +153,5 @@ Permission checks are in place — but every check is hardcoded as `check_permis
 
 → s04 Hooks: Add hooks to the loop. Extension logic hangs on hooks; the loop stays clean.
 
-<details>
-<summary>Dive into CC Source Code</summary>
-
-> The following is based on a review of CC source code `types/permissions.ts`, `utils/permissions/permissions.ts`, `toolExecution.ts`, `utils/permissions/yoloClassifier.ts`, `tools/AgentTool/forkSubagent.ts`.
-
-### 1. PermissionResult: Not 3, but 4
-
-The teaching version's three gates (deny → ask → allow) don't fully correspond to CC. CC's `PermissionResult` has 4 behaviors (`types/permissions.ts:241-266`):
-
-| behavior | Meaning | Teaching Version Equivalent |
-|----------|---------|---------------------------|
-| `allow` | Allow directly | Gate 3 passes |
-| `deny` | Deny directly | Gate 1 matches |
-| `ask` | Show dialog to user | Gate 2 matches |
-| `passthrough` | Tool doesn't express opinion, passes to generic pipeline | Not in teaching version |
-
-### 2. Production Verification Stages
-
-CC's tool calls don't go through three gates — they go through multiple stages distributed across `checkPermissionsAndCallTool()` (`toolExecution.ts:599-1745`), hooks, `hasPermissionsToUseToolInner()` (`utils/permissions/permissions.ts:1158-1310`), and classifier logic:
-
-1. **Zod schema validation** (`toolExecution.ts:614-680`) — parameter type checking
-2. **validateInput()** (`toolExecution.ts:682-733`) — tool-level semantic validation
-3. **backfillObservableInput()** (`toolExecution.ts:784`) — backfill legacy fields
-4. **PreToolUse hooks** (`toolExecution.ts:800-862`) — hooks can return allow/deny/ask
-5. **resolveHookPermissionDecision()** (`toolExecution.ts:921-931`) — coordinate hook + pipeline decisions
-6. **hasPermissionsToUseToolInner()** (`permissions.ts:1158-1310`) — multi-layer rule check:
-   - Entire tool disabled by deny rule → `deny`
-   - Entire tool flagged by ask rule → `ask`
-   - `tool.checkPermissions()` tool's own judgment
-   - Tool itself returns deny → `deny`
-   - `requiresUserInteraction()` → `ask`
-   - Content-related ask rules → `ask` (not bypassable)
-   - Security check violation → `ask` (not bypassable)
-   - bypassPermissions mode → `allow`
-   - Entire tool allowed by allow rule → `allow`
-   - passthrough → converted to `ask`
-
-### 3. Deny List: Not One File, but 8 Sources
-
-CC doesn't have a single deny list. Permission rules come from 8 sources (`types/permissions.ts:54-62`):
-
-| Source | Configuration Location |
-|--------|----------------------|
-| `userSettings` | `~/.claude/settings.json` |
-| `projectSettings` | `.claude/settings.json` |
-| `localSettings` | `settings.local.json` |
-| `flagSettings` | Feature flags |
-| `policySettings` | Enterprise management policy |
-| `cliArg` | `--allowedTools` / `--deniedTools` |
-| `command` | Inline command |
-| `session` | In-session temporary authorization |
-
-Each rule format: `{ toolName: "Bash", ruleBehavior: "deny", ruleContent: "npm publish:*" }`. Rules from multiple sources are merged, with higher-priority sources overriding lower ones (low to high: user < project < local < flag < policy, plus cliArg, command, session).
-
-### 4. What is isDestructive()
-
-In CC, `isDestructive` (`Tool.ts:405-406`) is **purely for UI display** — showing a `[destructive]` label in the tool list. It doesn't participate in permission decisions. All tools return `false` by default. Only ExitWorktree (on remove) and MCP tools (depending on `annotations.destructiveHint`) override it.
-
-### 5. YoloClassifier (Auto-Approval)
-
-In CC's auto mode, it doesn't pop a dialog every time. `classifyYoloAction` (`utils/permissions/yoloClassifier.ts:1012`) sends the tool call + conversation context to a classifier LLM to judge safety. It first tries acceptEdits mode simulation (`permissions.ts:620-656`, if acceptEdits allows → auto-approve), then checks the safe tool whitelist (`permissions.ts:658-686`), and finally calls the classifier. If the classifier rejects too many times in a row → falls back to manual approval.
-
-### 6. Permission Bubbling
-
-A sub-Agent's (forked via AgentTool) `permissionMode` is set to `'bubble'` (`forkSubagent.ts:50`). This means permission dialogs **bubble up to the parent Agent's terminal**, rather than being silently denied in the sub-Agent. The Bash classifier continues running during this process — displaying the permission dialog while judging in the background whether auto-approval is possible.
-
-### The Teaching Version's Simplification Is Intentional
-
-- Multi-stage pipeline → 3 gates: dramatically lower barrier to understanding
-- 8 rule sources → 1 local DENY_LIST: manageable concept count
-- isDestructive → omitted (teaching version has no UI layer, and it doesn't participate in permission decisions in CC either)
-- YoloClassifier → omitted (depends on additional LLM calls and telemetry)
-- Permission bubbling → omitted (s15 covers multi-Agent)
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

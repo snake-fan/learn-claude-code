@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s20 → s21 → s22
+s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s20 → s21
 > *"圧縮は詳細を失う、失わない層が必要"* — ファイルストア + インデックス + オンデマンド読み込み。圧縮を越え、セッションを越えて。
 >
 > **Harness レイヤー**: 記憶 — 圧縮とセッションを越える知識の蓄積。
@@ -146,8 +146,6 @@ def consolidate_memories():
     # Replace all files with consolidated results
 ```
 
-CC はこのプロセスを **Dream** と呼び、実際には 4 層のゲートがある：時間間隔、スキャンスロットル、セッション数、ファイルロック。教学版はファイル数閾値に簡略化。
-
 ### Memory に保存するもの
 
 Memory はセッションを越えて有用な情報を保存する：ユーザーの好み、繰り返し出るフィードバック、プロジェクト背景、よく使う入口、調査の手がかりなど。「あとでまた使うもの」を対象にし、インデックス + オンデマンド読み込みで現在の会話に戻す。
@@ -192,90 +190,5 @@ python s09_memory/code.py
 
 s10 System Prompt → セグメント + 実行時組み立て。異なるプロジェクト、異なるツール、異なるプロンプト。
 
-<details>
-<summary>CC ソースコードの詳細</summary>
-
-> 以下は CC ソースコード `src/` 下の `memdir/`、`services/`、`utils/`、`query/` の分析に基づく。行番号はソースコードと照合済み。
-
-### ソースコードパス
-
-| ファイル | 行数 | 職責 |
-|------|------|------|
-| `memdir/memdir.ts` | 507 | 核心：MEMORY.md 定義（`34-38`）、記憶動作指示で memory/plan/tasks を区別（`199-266`）、`loadMemoryPrompt()` 3 パス（`419-490`） |
-| `memdir/findRelevantMemories.ts` | 141 | Sonnet side-query で記憶選択（`18-24` システムプロンプト、`97-122` 呼び出しロジック） |
-| `memdir/memoryTypes.ts` | 271 | 型定義、frontmatter フィールド |
-| `memdir/memoryScan.ts` | — | .md ファイルをスキャン、MEMORY.md を除外、frontmatter を読み取り、最大 200 ファイル、mtime 降順（`35-94`） |
-| `services/extractMemories/extractMemories.ts` | 615 | forked agent で記憶を抽出、制限付き権限、`skipTranscript: true`、`maxTurns: 5`（`371-427`） |
-| `services/autoDream/autoDream.ts` | 324 | Dream 整理、4 層ゲート（`63-66` デフォルト値、`130-190` ゲート、`224-233` forked agent） |
-| `services/SessionMemory/sessionMemory.ts` | 495 | セッションレベルの記憶管理 |
-| `services/compact/sessionMemoryCompact.ts` | — | session memory 軽量サマリ、閾値 10K/5/40K（`56-61`） |
-| `utils/attachments.ts` | — | 注入予算：200 行 / 4096 バイト/ファイル、60KB/セッション（`269-288`）；query で関連記憶を検索（`2196-2241`） |
-| `query.ts` | — | memory prefetch を毎ターン開始時に起動（`301-304`）、非ブロッキング収集（`1592-1614`） |
-| `query/stopHooks.ts` | — | stop hook fire-and-forget で抽出と Dream をトリガー（`141-155`） |
-
-### 記憶選択：embedding ではなく LLM
-
-CC は **Sonnet 自身で選択**（`findRelevantMemories.ts`）、embedding ベクトル類似度ではない：
-
-1. `memoryScan.ts` が `.memory/` 下のすべての `.md` ファイルをスキャン（MEMORY.md を除外）、最大 200 ファイル、mtime 降順
-2. `name` + `description` をカタログとしてリスト化
-3. Sonnet side-query に送信：「名前と説明から本当に有用な記憶を選択（最大 5 件）。不明ならスキップ。」
-4. Sonnet が `{ selected_memories: ["file1.md", ...] }` を返却
-5. 選択されたファイルの完全な内容を読み込み（≤ 200 行 / 4096 バイト/ファイル）、注入。セッション総予算：60KB
-
-毎ターンのユーザー turn 開始時、`query.ts:301-304` が memory prefetch を起動（非同期）；ツール実行後、`1592-1614` が非ブロッキングで結果を収集。
-
-### 抽出タイミング：stop hook、autoCompact 後ではない
-
-トリガー位置（`stopHooks.ts:141-155`）：`handleStopHooks()` 内で、fire-and-forget で抽出と Dream をトリガー。教学版は `stop_reason != "tool_use"` 分岐に抽出を配置、方向は一致。
-
-CC の抽出は forked agent で実行（`extractMemories.ts:371-427`）：制限付き権限、`skipTranscript: true`、`maxTurns: 5`。重複保護もある：メイン Agent が既に記憶ファイルを書き込んだ場合、抽出をスキップ。
-
-### 記憶ファイル形式
-
-CC は Markdown + YAML frontmatter を使用、教学版と一致。4 種類：`user`、`feedback`、`project`、`reference`。
-
-`memdir.ts:34-38` がインデックス制約を定義：`MEMORY.md` 最大 200 行 / 25KB。`memdir.ts:199-266` が記憶動作指示を構築、memory と plan と tasks を明確に区別。保存場所：`~/.claude/projects/<sanitized-git-root>/memory/`。
-
-### Dream：4 層ゲート
-
-「アイドル時にトリガー」や「数が足りたら統合」ではなく、4 層のゲート（`autoDream.ts`、デフォルト値 `63-66`、ゲートロジック `130-190`）：
-
-1. **時間ゲート**：前回の統合から ≥ 24 時間
-2. **スキャンスロットル**：頻繁なファイルシステムスキャンを回避
-3. **セッションゲート**：前回の統合以降 ≥ 5 セッションの transcript が変更された
-4. **ロックゲート**：他のプロセスが統合中でない（`.consolidate-lock` ファイル）
-
-統合自体は forked agent で実行（`224-233`）：定位 → 直近のシグナル収集 → 統合してファイル書き込み → 剪定してインデックス更新。ロックファイルの mtime が lastConsolidatedAt。クラッシュリカバリ：1 時間後にロックが自動期限切れ。
-
-### User Memory vs Session Memory
-
-| | User Memory | Session Memory |
-|---|---|---|
-| 永続性 | セッション間 | 単一セッション |
-| ストレージ | `memory/` 下の複数 .md ファイル | `session-memory/<id>/memory.md` |
-| 注入先 | system prompt | compact サマリ |
-| 目的 | セッション間の知識蓄積 | compact を越えたコンテキストの連続性 |
-
-sessionMemoryCompact（s08 で触れた仕組み）は Session Memory を活用：autoCompact の前に session memory ファイルを読み込み、内容が十分であれば（≥ 10K token、≥ 5 テキストメッセージ、≤ 40K token、`sessionMemoryCompact.ts:56-61`）、LLM を呼び出さずにサマリとして使用。
-
-### 実際の実装が教学版より複雑な点
-
-- **Feature flags**：記憶関連機能には複数の feature gate 層がある
-- **Team memory**：チーム共有記憶、`loadMemoryPrompt()` に専用パスあり（教学版では未カバー）
-- **KAIROS**：タイミング認識型の記憶抽出戦略、`loadMemoryPrompt()` の daily-log モード
-- **Prompt cache**：記憶注入は prompt cache の TTL を考慮する必要があり、毎ターン system prompt の大部分を書き直すことを避ける
-- **ファイルロック**：マルチプロセス時の並行制御
-- **Memory prefetch**：非同期プレフェッチ、メインフローをブロックしない
-
-### 教学版の簡略化は意図的
-
-- LLM side-query → LLM side-query + キーワードフォールバック：教学版は LLM 選択を維持し、フォールバックパスを追加
-- 記憶 JSON → Markdown + frontmatter：教学版は CC と一致
-- stop hook トリガー → `stop_reason != "tool_use"` 分岐：方向は一致
-- 4 層ゲート → ファイル数閾値：教学版には transcript システムやマルチセッションの概念がない
-- forked agent + 制限付き権限 → 直接呼び出し：教学版にはサブプロセス分離がない
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

@@ -167,16 +167,16 @@ The loop is constant. Tools, knowledge, and permissions change. Agent = Model (L
 
 This repository currently contains two tutorial tracks:
 
-- **Current track: root-level `s01-s22`**
-  The root-level `s01_*` ... `s22_*` folders are the canonical version. Each chapter contains an English default README, Chinese/Japanese translations, runnable `code.py`, and diagrams where needed.
+- **Current track: root-level `s01-s21`**
+  The root-level `s01_*` ... `s21_*` folders are the canonical version. Each chapter contains an English default README, Chinese/Japanese translations, runnable `code.py`, and diagrams where needed.
 - **Legacy transition track: `docs/` and `agents/`**
   These preserve the older 12-lesson version for existing readers and old links during migration.
 
-If you are starting now, read the root-level `s01_agent_loop/` through `s22_goal_loop/` chapters. The legacy and current chapter numbers do not always match, so avoid mixing chapter numbers across tracks.
+If you are starting now, read the root-level `s01_agent_loop/` through `s21_goal_loop/` chapters. The legacy and current chapter numbers do not always match, so avoid mixing chapter numbers across tracks.
 
 ### Legacy-to-Current Mapping
 
-| Legacy 12-lesson track | Current 22-lesson track | Topic |
+| Legacy 12-lesson track | Current 21-lesson track | Topic |
 |---|---|---|
 | old s01 | new s01 | Agent Loop |
 | old s02 | new s02 | Tool Use |
@@ -187,28 +187,20 @@ If you are starting now, read the root-level `s01_agent_loop/` through `s22_goal
 | old s07 | new s12 | Task System |
 | old s08 | new s13 | Background Tasks |
 | old s09 | new s15 | Agent Teams |
-| old s10 | new s16 | Team Protocols |
-| old s11 | new s17 | Autonomous Agents |
-| old s12 | new s18 | Worktree Isolation |
-| new only | s03, s04, s09, s10, s11, s14, s19, s20, s21, s22 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Comprehensive Agent, Workflow Runtime, Goal Loop |
+| old s10 | new s15 | Team Protocols |
+| old s11 | new s16 | Autonomous Agents |
+| old s12 | new s17 | Worktree Isolation |
+| new only | s03, s04, s09, s10, s11, s14, s18, s19, s20, s21 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Comprehensive Agent, Workflow Runtime, Goal Loop |
 
 ---
 
-## Scope
+## Course Boundary
 
-This repository is a 0-to-1 harness engineering learning project: it teaches how to build the working environment around an agent model. To keep the learning path clear, some production mechanisms are intentionally simplified or omitted:
-
-- Full event / hook bus behavior, such as `PreToolUse`, `SessionStart/End`, and `ConfigChange`.
-  The teaching code uses minimal lifecycle events where needed.
-- Rule-based permission governance and full trust workflows.
-- Session lifecycle controls such as resume/fork, plus more complete worktree lifecycle handling.
-- Full MCP runtime details such as transport, OAuth, resource subscription, and polling.
-
-The JSONL mailbox protocol in this repository is a teaching implementation, not a claim about any specific production internal implementation.
+This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s19 reconnects them in a complete agent loop. The team runtime uses a JSONL mailbox, and later chapters add workflow orchestration and a goal-controlled continuation loop.
 
 ---
 
-## 22 Progressive Lessons
+## 21 Progressive Lessons
 
 **Each lesson adds one harness mechanism. Each mechanism has a motto.**
 
@@ -240,21 +232,19 @@ The JSONL mailbox protocol in this repository is a teaching implementation, not 
 >
 > **s14** &nbsp; *"Fire on schedule, no human kick needed"* &mdash; trigger tasks automatically by time
 >
-> **s15** &nbsp; *"Too big for one agent -- delegate to teammates"* &mdash; Agent Teams runtime lab: persistent teammates + async mailboxes
+> **s15** &nbsp; *"Too big for one agent -- let teammates divide the work"* &mdash; persistent teammates, automatic message delivery, and typed coordination protocols
 >
-> **s16** &nbsp; *"Teammates need shared communication rules"* &mdash; Agent Teams protocol lab: typed request-reply coordination
+> **s16** &nbsp; *"Idle teammates check the board and claim ready work"* &mdash; task discovery and atomic claiming without one-by-one dispatch
 >
-> **s17** &nbsp; *"Teammates check the board, claim work themselves"* &mdash; no leader assigning one by one; self-organizing
+> **s17** &nbsp; *"Each works in its own directory, no interference"* &mdash; tasks own goals, worktrees own directories, bound by ID
 >
-> **s18** &nbsp; *"Each works in its own directory, no interference"* &mdash; tasks own goals, worktrees own directories, bound by ID
+> **s18** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
 >
-> **s19** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
+> **s19** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one complete harness
 >
-> **s20** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one complete harness
+> **s20** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
 >
-> **s21** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
->
-> **s22** &nbsp; *"A goal decides when the loop may stop"* &mdash; continue until trusted evidence satisfies the goal
+> **s21** &nbsp; *"A goal decides when the loop may stop"* &mdash; continue until trusted evidence satisfies the goal
 
 ---
 
@@ -292,9 +282,9 @@ flowchart TD
         direction LR
         S4["<b>4. Run long tasks</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ persist tasks and deps<br/><br/><b>s13 Background Tasks</b><br/>└─ send slow work background<br/><br/><b>s14 Cron Scheduler</b><br/>└─ trigger by time"]:::stage4
 
-        S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>Agent Teams module</b><br/>├─ s15 Runtime Lab: teammates + mailboxes<br/>└─ s16 Protocol Lab: typed request-reply<br/><br/><b>s17 Autonomous Agents</b><br/>└─ claim work from the board<br/><br/><b>s18 Worktree Isolation</b><br/>└─ separate directories"]:::stage5
+        S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ teammates + delivery + protocols<br/><br/><b>s16 Autonomous Agents</b><br/>└─ claim ready work from the board<br/><br/><b>s17 Worktree Isolation</b><br/>└─ separate directories"]:::stage5
 
-        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s19 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s20 Comprehensive Agent</b><br/>└─ all mechanisms, one loop"]:::stage6
+        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s18 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s19 Comprehensive Agent</b><br/>└─ all mechanisms, one loop"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -302,7 +292,7 @@ flowchart TD
     %% Layer 3: orchestration and goal closure
     subgraph Phase3 ["🎯 Stage 7: Orchestration and goal closure"]
         direction LR
-        S7["<b>7. Orchestrate and finish</b><br/>━━━━━━━━━━━━━<br/><b>s21 Workflow Runtime</b><br/>└─ scripts own fixed orchestration<br/><br/><b>s22 Goal Loop</b><br/>└─ trusted evidence decides when to stop"]:::stage1
+        S7["<b>7. Orchestrate and finish</b><br/>━━━━━━━━━━━━━<br/><b>s20 Workflow Runtime</b><br/>└─ scripts own fixed orchestration<br/><br/><b>s21 Goal Loop</b><br/>└─ trusted evidence decides when to stop"]:::stage1
         S6 ==> S7
     end
 
@@ -332,14 +322,13 @@ flowchart TD
 | [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / disk persistence |
 | [s13](./s13_background_tasks/) | Background Tasks | threaded execution / notification queue |
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | durable scheduling / session-scoped triggers |
-| [s15](./s15_agent_teams/) | Agent Teams: Runtime Lab | `MessageBus` / inbox / permission bubbling |
-| [s16](./s16_team_protocols/) | Agent Teams: Protocol Lab | typed messages / shutdown handshake / plan approval |
-| [s17](./s17_autonomous_agents/) | Autonomous Agents | idle cycle / auto-claim / self-organization |
-| [s18](./s18_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / task-directory binding |
-| [s19](./s19_mcp_plugin/) | MCP Plugin | multi-transport / channel routing / tool pool assembly |
-| [s20](./s20_comprehensive/) | Comprehensive Agent | all mechanisms around one loop |
-| [s21](./s21_workflow_runtime/) | Workflow Runtime | script orchestration / background execution / journal resume |
-| [s22](./s22_goal_loop/) | Goal Loop | goal gate / trusted evidence / automatic continuation |
+| [s15](./s15_agent_teams/) | Agent Teams | persistent teammates / automatic delivery / typed protocols / plan gate |
+| [s16](./s16_autonomous_agents/) | Autonomous Agents | task-board scan / atomic claim / self-organization |
+| [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / task-directory binding |
+| [s18](./s18_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
+| [s19](./s19_comprehensive/) | Comprehensive Agent | all mechanisms around one loop |
+| [s20](./s20_workflow_runtime/) | Workflow Runtime | script orchestration / background execution / journal resume |
+| [s21](./s21_goal_loop/) | Goal Loop | goal gate / trusted evidence / automatic continuation |
 
 ---
 
@@ -358,13 +347,13 @@ s08_context_compact/
 
 Read the `README.md` for the core idea and work through the code. Complex chapters have `<details>` folds for deep dives -- open them when you want to go deeper. Simple chapters have 0-1 diagrams, complex chapters have more.
 
-Read from s01 through s22 in order. Each chapter assumes you've read the previous ones and ends with a hook into the next.
+Read from s01 through s21 in order. Each chapter assumes you've read the previous ones and ends with a hook into the next.
 
 ---
 
 ## Quick Start
 
-### Current 22-Lesson Track
+### Current 21-Lesson Track
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -374,7 +363,7 @@ cp .env.example .env   # configure ANTHROPIC_API_KEY
 
 python s01_agent_loop/code.py        # Start here -- one loop + bash
 python s08_context_compact/code.py   # Context compaction (complex)
-python s22_goal_loop/code.py         # Endpoint: close the loop with a durable goal
+python s21_goal_loop/code.py         # Endpoint: close the loop with a durable goal
 ```
 
 ### Legacy 12-Lesson Track
@@ -387,7 +376,7 @@ python agents/s_full.py
 
 ### Web Platform
 
-The web app extracts the root-level course. Lessons s21 and s22 include reading, source, simulator, and architecture views; only their dedicated hero visualizations remain intentionally minimal.
+The web app extracts the root-level course. Lessons s20 and s21 include reading, source, simulator, and architecture views; only their dedicated hero visualizations remain intentionally minimal.
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -407,10 +396,10 @@ learn-claude-code/
     images/                #   SVG diagrams
   s02_tool_use/
   ...
-  s19_mcp_plugin/
-  s20_comprehensive/
-  s21_workflow_runtime/
-  s22_goal_loop/           # endpoint chapter
+  s18_mcp_plugin/
+  s19_comprehensive/
+  s20_workflow_runtime/
+  s21_goal_loop/           # endpoint chapter
   agents/                  # legacy 12 runnable copies + s_full.py
   skills/                  # skill files used by s07
   docs/                    # legacy 12-lesson docs, kept during transition
@@ -422,7 +411,7 @@ learn-claude-code/
 
 ## What's Next
 
-After 22 lessons, you understand harness engineering from the inside out. Two paths to turn that knowledge into product:
+After 21 lessons, you understand harness engineering from the inside out. Two paths to turn that knowledge into product:
 
 ### Kode Agent CLI -- Open-Source Coding Agent CLI
 

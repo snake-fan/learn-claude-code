@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21 → s22
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21
 > *"模型输入是组装出来的，不是写死的"* — 稳定分段 + 运行时状态 + 缓存。
 >
 > **Harness 层**: 上下文组装 — 把稳定指令和动态状态组成模型输入。
@@ -119,8 +119,6 @@ def get_system_prompt(context: dict) -> str:
 
 用 `json.dumps` 而不是 `hash()`：Python 内置 `hash()` 有进程随机化，不适合做稳定 cache key，而且遇到 list/dict 会报 `unhashable type`。
 
-注意：这里的缓存只是"避免重复拼接字符串"，和 CC 的 API prompt cache 不是一回事。CC 的 prompt cache 通过 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 分隔静态和动态部分，静态部分命中 global cache，不因动态内容变化而失效。
-
 ### context: 真实状态，不是关键词猜测
 
 context 反映当前运行态的真实状态：
@@ -178,7 +176,7 @@ cd learn-claude-code
 python s10_system_prompt/code.py
 ```
 
-安全说明：这份聚焦教学脚本仍用 `shell=True` 执行模型给出的 `bash` 字符串，并省略了 s03 的权限闸门。只在可丢弃工作区运行；生产 harness 必须恢复权限与沙箱边界。
+**安全说明**：脚本使用 `shell=True` 执行模型生成的 `bash` 字符串，并未接入 s03 的权限闸门。请只在可丢弃的工作区中运行。
 
 观察重点：
 

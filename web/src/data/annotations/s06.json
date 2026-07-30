@@ -33,7 +33,7 @@
       "id": "no-recursive-task-tool",
       "title": "Subagents Cannot Spawn Subagents",
       "description": "The child tool set omits task, preventing recursive delegation from exploding. The lesson keeps isolation visible before adding richer team behavior later.",
-      "alternatives": "Allowing recursion is powerful, but much harder to bound and explain in a teaching runtime.",
+      "alternatives": "Allowing recursion is powerful, but much harder to bound and explain.",
       "zh": {
         "title": "子代理不能再创建子代理",
         "description": "子代理工具集中不包含 task，避免递归委派失控。课程先把隔离讲清楚，再在后续章节加入更复杂团队行为。"

@@ -1,45 +1,46 @@
 {
   "version": "s18",
-  "title": "Worktree Isolation",
-  "description": "A task can be bound to an isolated git worktree so concurrent agents avoid stepping on each other.",
+  "title": "MCP Tools",
+  "description": "The agent discovers external MCP tools and exposes them through a normalized tool namespace.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Let one teammate fix the docs while another changes the parser.",
-      "annotation": "Concurrent edits need isolated working directories."
+      "content": "Search the documentation for deployment guidance.",
+      "annotation": "The user asks for a tool source outside the built-in set."
     },
     {
       "type": "tool_call",
-      "toolName": "create_worktree",
-      "content": "{\"task_id\":\"task_docs\",\"name\":\"docs-fix\"}",
-      "annotation": "The tool validates a safe worktree name before touching git."
+      "toolName": "connect_mcp",
+      "content": "{\"server\":\"docs\",\"command\":\"mock-docs-server\"}",
+      "annotation": "The runtime creates an MCP client for the named server."
     },
     {
       "type": "system_event",
-      "content": "git worktree add .worktrees/docs-fix -b agent/docs-fix",
-      "annotation": "A separate branch and checkout are created for that task."
+      "content": "normalize_mcp_name(\"docs\", \"search\") -> mcp__docs__search",
+      "annotation": "External tools are namespaced to avoid collisions."
     },
     {
       "type": "tool_result",
-      "toolName": "create_worktree",
-      "content": "task_docs bound to .worktrees/docs-fix",
-      "annotation": "The task record stores the assigned worktree path."
-    },
-    {
-      "type": "system_event",
-      "content": ".worktrees/events.jsonl <- {event:\"created\", task:\"task_docs\", worktree:\"docs-fix\"}",
-      "annotation": "Lifecycle events are emitted as a side channel."
+      "toolName": "connect_mcp",
+      "content": "Connected docs with tools: mcp__docs__search, mcp__docs__read",
+      "annotation": "Tool discovery expands the active tool pool."
     },
     {
       "type": "tool_call",
-      "toolName": "keep_worktree",
-      "content": "{\"task_id\":\"task_docs\",\"reason\":\"needs human review\"}",
-      "annotation": "Closeout can preserve a worktree instead of deleting it immediately."
+      "toolName": "mcp__docs__search",
+      "content": "{\"query\":\"deployment\"}",
+      "annotation": "The LLM can now call the discovered tool by its normalized name."
+    },
+    {
+      "type": "tool_result",
+      "toolName": "mcp__docs__search",
+      "content": "[\"Deploy with npm run build\", \"Use environment variables for tokens\"]",
+      "annotation": "The external result is appended like any other tool result."
     },
     {
       "type": "assistant_text",
-      "content": "The docs task now has an isolated worktree and can be reviewed independently from parser changes.",
-      "annotation": "The user sees the isolation boundary, not just a raw git command."
+      "content": "The docs server says to build first and keep tokens in environment variables.",
+      "annotation": "The agent summarizes external tool output for the user."
     }
   ]
 }

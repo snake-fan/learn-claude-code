@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s20 → s21
 > *"Load when needed, don't stuff the prompt"* — tool_result で注入、system prompt には詰め込まない。
 >
 > **Harness レイヤー**: 知識 — 必要に応じて読み込み、コンテキストに詰め込まない。
@@ -139,44 +139,5 @@ python s07_skill_loading/code.py
 
 → s08 Context Compact：4 層圧縮戦略。安価な層を先に実行、高価な層を後に実行。
 
-<details>
-<summary>CC ソースコードを深掘り</summary>
-
-> 以下は CC ソースコード `loadSkillsDir.ts`、`SkillTool.ts`、`bundledSkills.ts`、`commands.ts` の分析に基づく。
-
-### 一、スキルソース：skills/ ディレクトリだけではない
-
-教育版はすべてのスキルが `skills/` ディレクトリにあると想定している。CC は実際に複数のファイルに分散したソースから読み込む：`loadSkillsDir.ts` は user/project/`--add-dir` ディレクトリと legacy commands（`.claude/commands/`）を担当、`bundledSkills.ts` は組み込みスキル、`SkillTool.ts` は MCP リモートスキル、`commands.ts` はコマンド集約を担当。タイプには managed/policy skills、user skills（`~/.claude/skills/`）、project skills（`.claude/skills/`）、`--add-dir` skills、legacy commands、dynamic skills、conditional skills（`paths` frontmatter を持ち、ファイルパスでアクティベート）、bundled skills、plugin skills、MCP skills が含まれる。
-
-### 二、SKILL.md Frontmatter の一般的なフィールド
-
-CC の SKILL.md YAML frontmatter は `parseSkillFrontmatterFields()`（`loadSkillsDir.ts`）で解析される。一般的なフィールド：
-
-| フィールド | 用途 |
-|-----------|------|
-| `name` / `description` | 表示名と説明 |
-| `when_to_use` | モデルにいつ呼び出すかを指導 |
-| `allowed-tools` | スキルが使用可能なツールの自動許可リスト |
-| `context` | `inline`（デフォルト）または `fork`（サブ Agent として実行） |
-| `model` | モデルオーバーライド（haiku/sonnet/opus/inherit） |
-| `hooks` | スキルレベルのフック設定 |
-| `paths` | 条件付きアクティベーションの glob パターン |
-| `user-invocable` | ユーザーが `/name` で呼び出し可能 |
-
-完全なフィールドリストはバージョンによって変動する。上記は教育版に関連するコアフィールドのみ。
-
-### 三、2 層読み込みの正確な実装
-
-1. **カタログ（起動時）**：`getSkillDirCommands()` がディレクトリをスキャン → メタデータのみを含む `Command` オブジェクトとして登録。`getSkillListingAttachments()` がスキルリストを添付ファイルとしてフォーマット、コンテキストウィンドウの ~1% を予算とする（上限 8000 文字）。
-2. **読み込み（呼び出し時）**：モデルが `Skill` ツールを呼び出す（入力フィールドは `skill` + オプションの `args`、教育版は `name` を使用）→ `getPromptForCommand()` が完全な SKILL.md 内容を展開 → `SkillTool` が返す tool_result の表示テキストは `"Launching skill: {name}"` のみ、実際のスキル内容は `newMessages` を通じて注入される。教育版では両者を「tool_result を通じて注入」として簡略化している。読み込まれた SKILL.md は、モデルが後続で既存の file/bash ツールから関連リソースへアクセスする際の手がかりにもなる。
-
-### 教育版の単純化は意図的
-
-- 複数ファイル・複数ソース → 1 つの `skills/` ディレクトリ：2 層読み込みの核心概念を示すのに十分
-- 複数の frontmatter フィールド → name/description のみ解析：解析の複雑さを削減
-- forked skills（`context: 'fork'`）→ 省略：教育版では inline skill loading のみ展開する
-- `Skill` ツールの入力 `skill`+`args` → 教育版は `name` を使用：追加の引数解析の複雑さを回避
-
-</details>
 
 <!-- translation-sync: zh@v2, en@v2, ja@v2 -->

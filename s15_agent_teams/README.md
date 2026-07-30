@@ -1,21 +1,33 @@
-# s15: Agent Teams — Runtime Lab: Persistent Teammates
+# s15: Agent Teams — Runtime and Coordination Protocols
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s13 → s14 → `s15` → [s16](../s16_team_protocols/) → s17 → s18 → s19 → s20 → s21 → s22
-> *"One agent isn't enough, form a team"* — File-based inboxes + teammate threads.
->
-> **Harness Layer**: Teams — Multi-agent collaboration, message bus.
+s01 → ... → s13 → s14 → `s15` → [s16](../s16_autonomous_agents/) → s17 → s18 → s19 → s20 → s21
 
-> **Module 1 of 2:** s15 and s16 are two focused labs in one Agent Teams module. This lab builds the runtime; s16 adds typed coordination protocols without repeating the runtime.
+> *"When one agent cannot hold the whole job, let teammates divide the work."* — Persistent teammates, message delivery, and coordination protocols.
+>
+> **Harness layer**: Team — how multiple agents work in parallel without losing control.
 
 ---
 
 ## The Problem
 
-"Refactor the entire backend" touches auth, database layer, API routes, and tests. One agent working on API routes no longer has auth module details in context. The context window is limited, a single agent can't cover every module.
+Suppose we ask an agent to refactor an entire backend. The work may cover configuration loading, authentication, and tests. One agent can process those areas sequentially, but it takes longer and earlier details gradually leave its context.
 
-s06's sub-agents are temps, called in for one job, then gone. Some tasks need teammates that can communicate and collaborate.
+This is a good candidate for parallel work, yet users normally describe the goal rather than design the team:
+
+```text
+Refactor this sample backend. Clean up configuration loading,
+authentication, and tests, preserve the existing interfaces,
+and make sure the tests pass.
+```
+
+The harness therefore has to solve four connected problems:
+
+1. Who decides that parallel work is useful, and who confirms the extra agents?
+2. How does each teammate keep its identity and context across assignments?
+3. How do results return to Lead automatically, without asking the model to poll an inbox?
+4. How do shutdown and plan approval become traceable, enforceable protocols?
 
 ---
 
@@ -23,133 +35,217 @@ s06's sub-agents are temps, called in for one job, then gone. Some tasks need te
 
 ![Agent Teams Overview](images/agent-teams-overview.en.svg)
 
-Teaching code carries forward S14's capabilities (prompt assembly, task system, background execution, cron scheduling). To stay focused on the team mechanism, it omits full error recovery, memory, and skill systems. Added: **MessageBus** (file-based inboxes), **spawn_teammate_thread** (launch teammate threads), **inbox injection** (Lead receives teammate messages and injects into history).
+s15 adds a Lead-managed team runtime around the single-agent harness:
 
-Sub-agent vs Teammate:
+- **Lead** owns the user conversation, proposes a division of work, and waits for confirmation.
+- **Teammates** run independent agent loops in background threads and become idle after an assignment.
+- **MessageBus** carries ordinary messages, results, and control events through file-backed mailboxes.
+- **Runtime delivery** consumes Lead's mailbox and injects team events into the next turn.
+- **Coordination protocols** use `type`, `request_id`, and state transitions for shutdown and plan approval.
+- **A plan gate** blocks teammate `bash` and `write_file` calls until a required plan is approved.
 
-| | s06 Sub-agent | s15 Teammate |
-|---|---|---|
-| Lifetime | One-shot, destroyed after use | Multi-turn (teaching: 10 rounds; real CC: idle loop) |
-| Communication | Only returns conclusion | Async inbox, communicate anytime |
-| Context | Fully isolated | Shared via messages |
-| Count | One lead + occasional sub-agent | One Lead + multiple teammates |
+The model understands tasks and chooses a useful division of work. Code owns delivery, lifecycle, and protocol constraints.
 
 ---
 
 ## How It Works
 
-![Team Topology](images/team-topology.en.svg)
+### 1. Lead proposes a team and waits for confirmation
 
-### MessageBus: File-Based Inboxes
+Starting teammates changes cost, concurrency, and the set of actors that may edit the workspace. That boundary should not be hidden inside an ordinary tool call. Lead's system prompt says:
 
-Each agent (including Lead and teammates) has a `.jsonl` inbox. Send = append a JSON line to the target's file. Read = read file + delete (consumption):
+```python
+"When parallel work would help, first propose a small team with clear "
+"responsibilities and wait for the user's confirmation. Do not call "
+"spawn_teammate before the user confirms."
+```
+
+For the first request, Lead only proposes a split:
+
+```text
+I suggest three parallel areas:
+- config: clean up configuration loading
+- auth: refactor authentication
+- tests: add regression coverage
+
+I will start the teammates after you confirm.
+```
+
+After the user says "Go ahead," Lead can call `spawn_teammate`. The user states the goal, Lead designs the team, and the user confirms the execution boundary.
+
+### 2. Every teammate owns an independent loop
+
+An s06 subagent is a one-shot call. A teammate is a persistent execution unit:
+
+| | s06 Subagent | s15 Teammate |
+|---|---|---|
+| Lifecycle | Ends after one call | `WORK → IDLE → WORK` until shutdown |
+| Context | Exists for one task | Persists across assignments |
+| Communication | Returns one result | Receives messages and emits events |
+| Coordination | One-way delegation | Two-way collaboration with Lead |
+
+`spawn_teammate_thread()` gives each teammate its own system prompt, messages, and tools, then runs its loop in a daemon thread. Lead can keep coordinating while teammates work.
+
+### 3. MessageBus keeps communication outside model context
+
+Lead and teammates cannot share one messages array. Otherwise one teammate's tool results would leak into another teammate's reasoning. `MessageBus` gives each agent a `.mailboxes/<name>.jsonl` inbox:
 
 ```python
 class MessageBus:
-    def send(self, from_agent: str, to_agent: str,
-             content: str, msg_type: str = "message"):
-        msg = {"from": from_agent, "to": to_agent,
-               "content": content, "type": msg_type,
-               "ts": time.time()}
-        inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
-        with open(inbox, "a") as f:
-            f.write(json.dumps(msg) + "\n")
+    def send(self, from_agent, to_agent, content,
+             msg_type="message", metadata=None):
+        msg = {
+            "from": from_agent,
+            "to": to_agent,
+            "content": content,
+            "type": msg_type,
+            "metadata": metadata or {},
+        }
+        with self._changed:
+            append_jsonl(self._path(to_agent), msg)
+            self._changed.notify_all()
 
-    def read_inbox(self, agent: str) -> list[dict]:
-        inbox = MAILBOX_DIR / f"{agent}.jsonl"
-        if not inbox.exists():
-            return []
-        msgs = [json.loads(line) for line in inbox.read_text().splitlines()]
-        inbox.unlink()  # consume: read + delete
-        return msgs
+    def wait_for_messages(self, agent):
+        with self._changed:
+            while not self.peek(agent):
+                self._changed.wait()
+            return self._read_unlocked(agent)
 ```
 
-Why files instead of in-memory queues? Teaching code uses files because they're intuitive and observable across threads. Real CC also uses file inboxes (`~/.claude/teams/{team}/inboxes/`) but adds `proper-lockfile` for concurrent write safety. The teaching version's `read_inbox` has a read + unlink race, concurrent reads could lose messages, acceptable for teaching purposes.
+A lock protects mailbox files from concurrent teammate access. A `Condition` lets idle teammates sleep until an event arrives instead of polling continuously.
 
-### spawn_teammate_thread: Launching a Teammate
+### 4. The runtime delivers inbox events automatically
 
-Lead calls the `spawn_teammate` tool to start a teammate. The teammate runs in its own daemon thread with its own system prompt, messages, and simplified tool set:
+`read_inbox()` consumes messages by reading and deleting the mailbox file, so Lead keeps a single consumer, `consume_lead_inbox()`:
 
 ```python
-def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
-    system = f"You are '{name}', a {role}. Use tools to complete tasks."
-
-    def run():
-        messages = [{"role": "user", "content": prompt}]
-        sub_tools = [bash, read_file, write_file, send_message]
-        for _ in range(10):           # max 10 rounds
-            inbox = BUS.read_inbox(name)
-            if inbox:
-                messages.append({"role": "user",
-                    "content": f"<inbox>{json.dumps(inbox)}</inbox>"})
-            response = client.messages.create(
-                model=MODEL, system=system, messages=messages[-20:],
-                tools=sub_tools, max_tokens=8000)
-            # ... execute tools, process results
-        # Send final summary to Lead
-        BUS.send(name, "lead", summary, "result")
-
-    threading.Thread(target=run, daemon=True).start()
+def consume_lead_inbox():
+    messages = BUS.read_inbox("lead")
+    for message in messages:
+        if message["type"].endswith("_response"):
+            match_response(...)
+    return messages
 ```
 
-Key design:
-- **Simplified tool set**: bash, read, write, send_message. Teaching code omits tasks and cron to focus on communication. Real CC teammates also have TaskCreate, TaskUpdate, etc., the task system is shared across the team
-- **Teaching: 10 rounds max**: prevents infinite loops. Real CC uses idle loop: after each round, send `idle_notification`, wait for inbox messages, resume on arrival, exit only on `shutdown_request`
-- **Auto-report on completion**: `BUS.send(name, "lead", summary)` sends the final result to Lead's inbox
+An event thread beside the main loop wakes Lead when a new message arrives:
 
-### Lead's Inbox Injection
+```text
+MessageBus → consume_lead_inbox
+           → update protocol state
+           → inject [Team events] into history
+           → start another Lead turn
+```
 
-Lead checks inbox after each main loop iteration. Teammate messages are injected into history so the LLM can see and react to them:
+`check_inbox` is not a model tool. Message arrival belongs to the runtime; the model only handles events that have already been delivered into its context.
+
+### 5. Result and idle are separate events
+
+When a teammate finishes one assignment, the runtime sends two events in order:
+
+```text
+result:            "Authentication refactored; related tests pass."
+idle_notification: "Waiting for more work."
+```
+
+`result` answers "What did this assignment produce?" `idle_notification` answers "Can this teammate accept more work?" A single vague "done" cannot represent both facts.
+
+An idle teammate does not exit. An ordinary message returns it to WORK; a `shutdown_request` starts a graceful shutdown handshake.
+
+### 6. Control messages use types and request IDs
+
+Free-form text is fine for ordinary collaboration, but shutdown and approval should not depend on guessing intent. They use structured messages:
+
+![Team Protocols](images/team-protocols-overview.en.svg)
 
 ```python
-# After main loop iteration
-inbox = BUS.read_inbox("lead")
-if inbox:
-    inbox_text = "\n".join(
-        f"From {m['from']}: {m['content'][:200]}" for m in inbox)
-    history.append({"role": "user",
-                    "content": f"[Inbox]\n{inbox_text}"})
+@dataclass
+class ProtocolState:
+    request_id: str
+    type: str
+    sender: str
+    target: str
+    status: str
+    payload: str
+
+
+pending_requests: dict[str, ProtocolState] = {}
 ```
 
-Teaching code injects in the user input loop. Real CC is more refined, Lead's `useInboxPoller` checks every 1 second, submitting messages as new turns without waiting for user input.
+The shutdown path is:
 
-### Permission Bubbling
-
-Teaching code omits permission bubbling. Real CC's flow (`permissionSync.ts`, `useSwarmPermissionPoller.ts`):
-
-1. Teammate encounters an operation needing approval → sends `permission_request` to Lead's inbox
-2. Lead's `useInboxPoller` detects the request → routes to approval queue
-3. User approves → Lead sends `permission_response` back to teammate
-4. Teammate's `useSwarmPermissionPoller` (polls every 500ms) receives reply → continue or reject
-
-### Putting It Together
-
-```
-1. Lead: "Build the backend: one agent isn't enough, form a team"
-2. Lead → spawn_teammate("alice", "backend dev", "Create database schema")
-3. Lead → spawn_teammate("bob", "frontend dev", "Write API client")
-4. Alice thread starts → her own LLM call → bash "python manage.py migrate"
-5. Bob thread starts → his own LLM call → write_file("client.ts", ...)
-6. Alice done → BUS.send("alice", "lead", "Schema done: users, orders tables")
-7. Bob done → BUS.send("bob", "lead", "Client written with types")
-8. Lead next iteration → inbox injected into history → LLM sees both results
+```text
+Lead creates a pending shutdown request
+  → shutdown_request(request_id) enters the teammate inbox
+  → the teammate finishes its current step
+  → shutdown_response(request_id) returns to Lead
+  → request_id locates the original request
+  → pending becomes approved and the teammate loop exits
 ```
 
-Two teammates work in parallel.
+The ID correlates one reply with one request, the type prevents a mismatched reply from changing state, and the status prevents duplicate responses from being applied twice.
+
+### 7. Plan approval constrains execution
+
+The plan protocol runs in the opposite direction:
+
+```text
+Lead → plan_request
+teammate → plan_approval_request(request_id, plan)
+Lead → plan_approval_response(request_id, approve, feedback)
+```
+
+Merely telling a teammate to wait is not a reliable gate, so tool dispatch checks the plan state:
+
+```python
+def _run_teammate_tool(name, block, handlers):
+    gate = plan_gates.get(name, "not_required")
+    if block.name in {"bash", "write_file"} and gate not in {
+        "not_required", "approved"
+    }:
+        return f"Blocked: plan status is {gate}."
+    return handlers[block.name](**block.input)
+```
+
+While the state is `required`, `pending`, or `rejected`, the teammate can read files and submit or revise a plan, but it cannot run Shell commands or write files. The tools are released only after an approval response changes the state to `approved`.
 
 ---
 
-## Changes from s14
+## One Complete Run
 
-| Component | Before (s14) | After (s15) |
-|-----------|-------------|-------------|
-| Agent count | 1 | 1 Lead + N teammate threads |
-| Communication | None | MessageBus + .mailboxes/*.jsonl |
-| New classes | — | MessageBus, active_teammates dict |
-| New functions | — | spawn_teammate_thread, run_send_message, run_check_inbox |
-| Lead tools | 11 (s14) | + spawn_teammate, send_message, check_inbox (14) |
-| Teammate tools | — | bash, read_file, write_file, send_message (4) |
-| Permissions | Local decisions | Teaching code omits (real CC has bubbling) |
+```text
+s15 >> Refactor this sample backend. Clean up configuration loading,
+       authentication, and tests, preserve existing interfaces,
+       and make sure the tests pass.
+
+Lead: I suggest config, auth, and tests as three parallel areas.
+      Shall I start the team?
+
+s15 >> Go ahead.
+
+[teammate] config spawned
+[teammate] auth spawned
+[teammate] tests spawned
+[bus] auth → lead (result) ...
+[bus] auth → lead (idle_notification) ...
+[wake: 2 team events → new turn]
+Lead: I received the authentication result and will coordinate the rest.
+```
+
+The terminal exposes the user request, Lead's split, teammate startup, messages, results, idle transitions, and shutdown events. The user does not have to name a Lead or ask it to check an inbox.
+
+---
+
+## What Changed from s14
+
+| Component | s14 | s15 |
+|---|---|---|
+| Agents | One agent | One Lead plus persistent teammates |
+| User flow | Execute the request | Propose a team, then confirm startup |
+| Communication | None | File mailboxes plus automatic delivery |
+| Lifecycle | One loop | Teammate `WORK / IDLE / shutdown` |
+| Reporting | Current agent output | Separate `result` and `idle_notification` |
+| Control | None | Shutdown and plan approval protocols |
+| Enforcement | No team constraint | Required plans gate mutating tools |
 
 ---
 
@@ -160,97 +256,28 @@ cd learn-claude-code
 python s15_agent_teams/code.py
 ```
 
-Try these prompts:
+Start with an ordinary request:
 
-1. `Spawn alice as a backend developer. Ask her to create a file called schema.sql with a users table.`
-2. `Check your inbox for alice's result.`
-3. `Spawn bob as a tester. Ask him to check if schema.sql exists and list its contents.`
+```text
+Refactor this sample backend. Clean up configuration loading,
+authentication, and tests, preserve the existing interfaces,
+and make sure the tests pass.
+```
 
-What to observe: How does Lead spawn teammates? What do the `.mailboxes/` JSONL files look like? After teammates finish, is Lead's inbox injected into history?
+After Lead proposes the team, reply:
+
+```text
+Go ahead.
+```
+
+Watch for `spawned`, `result`, `idle_notification`, `plan_approval_*`, and `shutdown_*` events, along with mailbox files appearing and being consumed under `.mailboxes/`.
 
 ---
 
-## What's Next
+## Next
 
-Teammates can work and communicate. But if Lead wants Alice to shut down, killing the thread outright could leave half-written files. A graceful shutdown protocol is needed: Lead sends shutdown_request, teammate wraps up and exits.
+In s15, Lead still assigns each teammate explicitly. The next lesson gives idle teammates access to the shared task board so they can discover and claim ready work themselves.
 
-s16 Agent Teams Protocol Lab → keep this runtime and add shutdown handshakes, plan approval, and typed request-reply messages.
+Next: [s16 Autonomous Agents](../s16_autonomous_agents/).
 
-<details>
-<summary>Deep Dive into CC Source</summary>
-
-> The following is a complete analysis based on CC source code `spawnMultiAgent.ts`, `useInboxPoller.ts` (969 lines), `useSwarmPermissionPoller.ts` (330 lines), `teammateMailbox.ts`, `teamHelpers.ts`.
-
-### 1. No Central Message Bus, It's the Filesystem
-
-Teaching code uses a `MessageBus` class to send and receive messages. Real CC is more direct, each agent writes directly to other agents' inbox files.
-
-Inbox path: `~/.claude/teams/{teamName}/inboxes/{agentName}.json`
-
-Writes use `proper-lockfile` for concurrent write safety (up to 10 retries). Each file is a JSON array; appending reads → appends → writes back.
-
-### 2. 15 Message Types
-
-CC team communication has 15 structured message types (`teammateMailbox.ts`):
-
-| Type | Direction | Purpose |
-|------|-----------|---------|
-| `plain text` | Both ways | Normal inter-teammate communication |
-| `idle_notification` | Teammate→Lead | Teammate finished a turn, now idle |
-| `permission_request` | Teammate→Lead | Teammate needs operation approval |
-| `permission_response` | Lead→Teammate | Lead's approval result |
-| `plan_approval_request` | Teammate→Lead | Teammate submits plan for review |
-| `plan_approval_response` | Lead→Teammate | Lead's plan review |
-| `shutdown_request` | Lead→Teammate | Request graceful shutdown |
-| `shutdown_approved` | Teammate→Lead | Confirm shutdown |
-| `shutdown_rejected` | Teammate→Lead | Reject shutdown (with reason) |
-| `task_assignment` | Lead→Teammate | Assign a task |
-| `team_permission_update` | Lead→Teammate | Broadcast permission changes |
-| `mode_set_request` | Lead→Teammate | Change teammate's permission mode |
-| `sandbox_permission_*` | Both ways | Network permission request/reply |
-| `teammate_terminated` | System | Teammate removed notification |
-
-Text messages are wrapped in `<teammate-message>` XML tags for delivery to the model.
-
-### 3. Permission Bubbling: Bidirectional Polling
-
-Teaching code omits permission bubbling. Real CC's flow (`permissionSync.ts`):
-
-1. **Teammate** encounters operation needing approval → sends `permission_request` to Lead's inbox
-2. **Lead's** `useInboxPoller` (polls every 1s) detects request → routes to `ToolUseConfirmQueue`
-3. Lead's UI shows approval dialog with teammate name and color
-4. User approves → Lead sends `permission_response` back to teammate's inbox
-5. **Teammate's** `useSwarmPermissionPoller` (polls every 500ms) receives reply → continue or reject
-
-### 4. Teammate Lifecycle
-
-CC teammates are created by `spawnTeammate()` (`spawnMultiAgent.ts`):
-
-1. **Spawn**: Create tmux pane (or in-process), assign color, write team config
-2. **Work**: `useInboxPoller` checks inbox every 1s → submit as new turn when messages arrive
-3. **Idle**: Stop hook fires → send `idle_notification` to Lead
-4. **Shutdown**: Lead sends `shutdown_request` → teammate replies `shutdown_approved` → Lead cleans up
-
-### 5. Team Config
-
-Team registry at `~/.claude/teams/{teamName}/config.json` (`teamHelpers.ts`):
-
-```json
-{
-  "name": "my-team",
-  "leadAgentId": "lead@my-team",
-  "members": [{
-    "agentId": "researcher@my-team",
-    "name": "researcher",
-    "agentType": "general-purpose",
-    "color": "blue",
-    "isActive": true
-  }]
-}
-```
-
-Teammates cannot be nested (`AgentTool.tsx:273` explicitly forbids "teammates spawning other teammates").
-
-</details>
-
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v2, en@v2, ja@v2 -->

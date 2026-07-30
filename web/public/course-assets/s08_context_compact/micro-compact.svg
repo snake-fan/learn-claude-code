@@ -49,9 +49,9 @@
 
   <!-- 原理 -->
   <rect x="20" y="228" width="680" height="62" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
-  <text x="35" y="248" fill="#1e3a5f" font-size="11" font-weight="600">怎么做（教学版）</text>
-  <text x="115" y="248" fill="#475569" font-size="10">遍历 tool_result，只保留最近 3 条完整，更旧的替换为占位符。</text>
-  <text x="35" y="264" fill="#1e3a5f" font-size="11" font-weight="600">真实 CC</text>
-  <text x="95" y="264" fill="#475569" font-size="10">通过 API cache_edits 清除旧结果（不破坏 prompt cache 前缀），仅对 COMPACTABLE_TOOLS 生效：</text>
-  <text x="95" y="280" fill="#94a3b8" font-size="9">Read, Bash, Grep, Glob, WebSearch, WebFetch, Edit, Write。教学版用文本占位模拟同样效果。</text>
+  <text x="35" y="248" fill="#1e3a5f" font-size="11" font-weight="600">处理规则</text>
+  <text x="95" y="248" fill="#475569" font-size="10">遍历 tool_result，只保留最近 3 条完整，更旧的替换为占位符。</text>
+  <text x="35" y="264" fill="#1e3a5f" font-size="11" font-weight="600">占位内容</text>
+  <text x="95" y="264" fill="#475569" font-size="10">说明原结果已压缩，并提示需要时重新运行对应工具。</text>
+  <text x="95" y="280" fill="#94a3b8" font-size="9">消息结构保持不变，后续循环仍可继续处理。</text>
 </svg>

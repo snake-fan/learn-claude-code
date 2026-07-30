@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → `s05` → [s06](../s06_subagent/) → s07 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → `s05` → [s06](../s06_subagent/) → s07 → ... → s20 → s21
 
 > *"没有计划的 agent 走哪算哪"* — 先列步骤再动手，长任务更不容易漏项。
 >
@@ -81,7 +81,7 @@ TOOLS = [
 TOOL_HANDLERS["todo_write"] = run_todo_write
 ```
 
-**Nag reminder**，模型连续 3 轮没调 `todo_write` 时，自动注入一条提醒（教学版机制，CC 源码中没有这个固定轮数逻辑）：
+**Nag reminder**：模型连续 3 轮未调用 `todo_write` 时，自动注入提醒：
 
 ```python
 if rounds_since_todo >= 3 and messages:
@@ -132,27 +132,5 @@ Agent 能计划了。但如果一个任务太大，比如"重构整个认证模�
 
 s06 Subagent → 把大任务拆成子任务，每个子任务派一个独立的 Agent。它们有自己的干净上下文，不会互相污染。
 
-<details>
-<summary>深入 CC 源码</summary>
-
-Claude Code 有两种目标相近、但存储与工具契约相互独立的规划机制：
-
-- **TodoWrite**：当前会话的轻量清单。每次调用替换整个列表；教学版同样保存在进程内存，退出后清空
-- **Task 工具（s12）**：带稳定 ID 的独立任务记录，支持依赖、ownership 与持久化
-
-当前交互式会话默认使用结构化 Task 工具；TodoWrite 仍保留在非交互式、Agent SDK 等兼容表面。具体暴露方式会随版本与配置变化。不要把它理解成同一个 schema 原地升级：两者是独立机制，s05 只教授较轻的清单契约。
-
-教学版省略了真实源码中的 `activeForm` 字段（`utils/todo/types.ts:8-15`）。CC 用它给 UI spinner 展示"正在做什么"，教学版只有终端输出，不需要这个字段。
-
-教学版的 nag reminder（3 轮未更新就注入提醒）是教学机制。CC 源码中没有固定的"3 轮"逻辑，更接近的是 `TodoWriteTool.ts:72-107` 中当 3 个以上 todo 全部完成但没有 verification 项时，追加 verification nudge。
-
-Task System 相比 TodoWrite 的核心增量：
-- 文件持久化（Claude 配置目录下 `tasks/{taskListId}/{taskId}.json`）而非内存列表
-- `blockedBy` 依赖图而非平铺列表
-- `proper-lockfile` 并发安全而非无锁
-- 四个独立工具（Create/Get/Update/List）而非一个
-- TaskCreated / TaskCompleted hooks（`TaskCreateTool.ts:80-129`、`TaskUpdateTool.ts:231-260`）供外部系统集成
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → s07 → `s08` → [s09](../s09_memory/) → s10 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → s05 → s06 → s07 → `s08` → [s09](../s09_memory/) → s10 → ... → s20 → s21
 > *"Context will fill up — have a way to make room"* — Four-layer compression pipeline: cheap first, expensive last.
 >
 > **Harness Layer**: Compression — clean memory, unlimited sessions.
@@ -120,9 +120,9 @@ All three previous layers have run, but after 30 minutes of continuous work on a
 
 Three-step process:
 
-1. **Save transcript**: Write the full conversation to `.transcripts/` in JSONL format. The transcript preserves a recoverable record, but the model's active context only contains the summary. For the model's current reasoning, the details are no longer in context. The teaching code does not provide a transcript retrieval tool.
+1. **Save transcript**: Write the full conversation to `.transcripts/` in JSONL format. The transcript keeps a complete record; the message list keeps only the summary, so the original details no longer enter later model calls.
 2. **LLM generates summary**: Send conversation history to the LLM, asking it to preserve key information: current goals, important findings, modified files, remaining work, user constraints, etc.
-3. **Replace message list**: All old messages are replaced with a single summary. The teaching version only keeps the summary; the real Claude Code re-attaches some recent files, plans, agent/skill/tool context after compaction.
+3. **Replace message list**: All old messages are replaced with a single summary.
 
 ```python
 def compact_history(messages):
@@ -189,7 +189,7 @@ def agent_loop(messages):
             break  # end current turn, start fresh with compacted context
 ```
 
-**The order must not be swapped.** L3 (budget) runs before L2 (micro) because micro replaces old large tool_results with one-line placeholders — budget must persist the full content before that happens. This is why CC source puts `applyToolResultBudget` first.
+**The order must not be swapped.** L3 (budget) runs before L2 (micro) because micro replaces old large tool_results with one-line placeholders, so budget must persist the full content first.
 
 ---
 
@@ -228,85 +228,5 @@ Context compression lets an agent run for a long time without crashing. But afte
 
 s09 Memory → three subsystems: choosing what to remember, extracting key information, consolidating and organizing. Across compressions, across sessions.
 
-<details>
-<summary>Deep Dive Into CC Source Code</summary>
-
-> The following is based on analysis of CC source code `compact.ts`, `autoCompact.ts`, `microCompact.ts`, and `query.ts`.
-
-### Execution Order Comparison
-
-The teaching version labels layers L1/L2/L3/L4 for pedagogical clarity, but actual execution order does not match the numbering:
-
-| Dimension | Teaching Version | Claude Code |
-|-----------|-----------------|-------------|
-| Execution order | budget → snip → micro → auto | budget → snip → micro → collapse → auto (`query.ts:379-468`) |
-| snip_compact | Keep head 3 + tail 47 | CC only enables on main thread; implementation not in open-source repo (`HISTORY_SNIP` feature gate), but interface is visible: `snipCompactIfNeeded(messages)` → `{ messages, tokensFreed, boundaryMessage? }`, also exposes `SnipTool` for model-initiated snipping. Teaching version's 3/47 are simplified parameters |
-| micro_compact | Text placeholder replacement | Two paths: time-based clears content directly, cached uses API `cache_edits` (legacy path removed) |
-| micro_compact whitelist | By position (most recent 3) | time-based triggers by time threshold; cached triggers by count (`microCompact.ts`) |
-| tool_result_budget | 200KB characters | 200,000 characters (`toolLimits.ts:49`) |
-| compact_history threshold | Character count estimate | Precise tokens: `contextWindow - maxOutputTokens - 13_000` |
-| Summary requirements | 5 categories of info | 9 sections + `<analysis>`/`<summary>` dual tags |
-| Compression prompt | Simple prompt | Double-ended hard guardrails forbidding tool calls |
-| PTL retry | Yes (simplified) | `truncateHeadForPTLRetry()` retreats by message groups (`compact.ts:243-290`) |
-| Post-compaction recovery | None (teaching version only keeps summary) | Auto re-read recent files, plans, agent/skill/tool context |
-| Circuit breaker | 3 times | 3 times (`autoCompact.ts:70`) |
-| Reactive retry | 1 time | CC has more granular tiered retries |
-
-### Execution Order Details
-
-The real order in CC source `query.ts`:
-
-1. `applyToolResultBudget` (L379): persist large results first, ensuring full content is saved
-2. `snipCompact` (L403): trim middle messages
-3. `microcompact` (L414): old result placeholders
-4. `contextCollapse` (L441): independent context management system (not in teaching version)
-5. `autoCompact` (L454): LLM full summary
-
-The teaching version's budget → snip → micro order matches this. The teaching version does not have the contextCollapse mechanism.
-
-### read_file Trade-off
-
-The teaching version's `micro_compact` replaces old `tool_result` blocks with placeholders uniformly, including `read_file`. This usually does not affect functional correctness: if the model needs the file contents later, it can read the file again. The cost is an extra tool call and potentially lower prompt cache hit rates.
-
-Claude Code does not solve this with the teaching version's simple rule. It also puts `Read` in the microcompactable tool set, but maintains a separate `readFileState`: repeated reads of unchanged files return `FILE_UNCHANGED_STUB`, and after compaction it restores recently read file contents within a budget (for example, up to 5 files, 5K tokens per file, 50K tokens total). That is a production-level cache and recovery mechanism. The teaching version does not expand into that machinery; it keeps the simpler trade-off of compacting old results and re-reading when needed.
-
-### Full Constant Reference
-
-| Constant | Value | Source File |
-|----------|-------|-------------|
-| `AUTOCOMPACT_BUFFER_TOKENS` | 13,000 | `autoCompact.ts:62` |
-| `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES` | 3 | `autoCompact.ts:70` |
-| `MAX_OUTPUT_TOKENS_FOR_SUMMARY` | 20,000 | `autoCompact.ts:30` |
-| `POST_COMPACT_TOKEN_BUDGET` | 50,000 | `compact.ts:123` |
-| `POST_COMPACT_MAX_FILES_TO_RESTORE` | 5 | `compact.ts:122` |
-| `POST_COMPACT_MAX_TOKENS_PER_FILE` | 5,000 | `compact.ts:124` |
-| Time micro_compact interval | 60 minutes | `timeBasedMCConfig.ts` |
-| `MAX_COMPACT_STREAMING_RETRIES` | 2 | `compact.ts:131` |
-
-### contextCollapse and sessionMemoryCompact
-
-CC source code has two additional mechanisms not covered in this teaching version:
-
-- **contextCollapse**: An independent context management system that, when enabled, suppresses proactive autocompact (`autoCompact.ts:215-222`), with collapse's commit/blocking flow taking over context management. Manual `/compact` and reactive fallback remain independent paths, unaffected by contextCollapse.
-- **sessionMemoryCompact**: Before compact_history, CC first attempts a lightweight summary using existing session memory (covered in s09) without calling the LLM. This mechanism becomes clearer after learning s09.
-
-### What Does the Compression Prompt Look Like?
-
-CC's compression prompt has two hard requirements:
-
-1. **Absolutely no tool calls**: It begins with `CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.`, and appends another REMINDER at the end
-2. **Analyze first, then summarize**: The model must first reason in an `<analysis>` tag, then output the formal summary in a `<summary>` tag. The analysis is stripped during formatting
-
-### Teaching Version Simplifications Are Intentional
-
-- micro_compact uses text placeholders → we don't have API-level `cache_edits` access
-- read_file is not special-cased → the teaching version accepts re-reading when needed instead of introducing readFileState and post-compaction recovery
-- Tokens estimated via character count → precise tokenizers are out of scope
-- Post-compaction recovery omitted → teaching version only keeps summary, does not auto re-attach files
-- Two auxiliary mechanisms not covered → they fall in the 10% detail category
-
-The core design principle, cheap first, expensive last, is fully preserved.
-
-</details>
 
 <!-- translation-sync: zh@v2, en@v2, ja@v2 -->

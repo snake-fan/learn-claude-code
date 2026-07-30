@@ -368,74 +368,45 @@ export const EXECUTION_FLOWS: Record<string, FlowDefinition> = {
   },
   s15: {
     nodes: [
-      { id: "start", label: "User Input", type: "start", x: COL_CENTER, y: 30 },
-      { id: "lead", label: "Lead LLM", type: "process", x: COL_CENTER, y: 110 },
-      { id: "team_tool", label: "team tool?", type: "decision", x: COL_CENTER, y: 200 },
-      { id: "spawn", label: "Spawn Teammate", type: "subprocess", x: COL_LEFT, y: 300 },
-      { id: "send", label: "Send Message", type: "subprocess", x: COL_CENTER, y: 300 },
-      { id: "bus", label: "MessageBus\n.mailboxes", type: "process", x: COL_CENTER, y: 400 },
-      { id: "teammate", label: "Teammate Loop", type: "process", x: COL_RIGHT, y: 500 },
-      { id: "tools", label: "Scoped Tools", type: "subprocess", x: COL_RIGHT, y: 590 },
-      { id: "inbox", label: "Lead Inbox", type: "process", x: COL_CENTER, y: 700 },
-      { id: "append", label: "Append Result", type: "process", x: COL_LEFT, y: 700 },
-      { id: "end", label: "Output", type: "end", x: COL_RIGHT, y: 300 },
+      { id: "start", label: "User Requirement", type: "start", x: COL_CENTER, y: 30 },
+      { id: "lead", label: "Lead Proposes\nSmall Team", type: "process", x: COL_CENTER, y: 110 },
+      { id: "team_tool", label: "User Confirms?", type: "decision", x: COL_CENTER, y: 200 },
+      { id: "spawn", label: "Spawn Persistent\nTeammates", type: "subprocess", x: COL_LEFT, y: 300 },
+      { id: "send", label: "Assignment /\nTyped Request", type: "subprocess", x: COL_LEFT, y: 400 },
+      { id: "bus", label: "MessageBus\nJSONL Mailboxes", type: "process", x: COL_CENTER, y: 500 },
+      { id: "teammate", label: "Teammate\nWORK / IDLE", type: "process", x: COL_RIGHT, y: 400 },
+      { id: "tools", label: "Scoped Tools /\nPlan Gate", type: "subprocess", x: COL_RIGHT, y: 500 },
+      { id: "inbox", label: "Runtime Delivery", type: "process", x: COL_CENTER, y: 600 },
+      { id: "append", label: "Append Team Events", type: "process", x: COL_LEFT, y: 690 },
+      { id: "end", label: "Continue Alone", type: "end", x: COL_RIGHT, y: 300 },
     ],
     edges: [
       { from: "start", to: "lead" },
       { from: "lead", to: "team_tool" },
-      { from: "team_tool", to: "spawn", label: "spawn" },
-      { from: "team_tool", to: "send", label: "send" },
+      { from: "team_tool", to: "spawn", label: "yes" },
       { from: "team_tool", to: "end", label: "no" },
-      { from: "spawn", to: "bus", label: "register" },
+      { from: "spawn", to: "send" },
       { from: "send", to: "bus" },
       { from: "bus", to: "teammate" },
       { from: "teammate", to: "tools" },
-      { from: "tools", to: "bus", label: "reply" },
-      { from: "bus", to: "inbox" },
+      { from: "tools", to: "bus", label: "result / protocol reply" },
+      { from: "bus", to: "inbox", label: "wake Lead" },
       { from: "inbox", to: "append" },
       { from: "append", to: "lead" },
     ],
   },
   s16: {
     nodes: [
-      { id: "start", label: "User Input", type: "start", x: COL_CENTER, y: 30 },
-      { id: "lead", label: "Lead LLM", type: "process", x: COL_CENTER, y: 110 },
-      { id: "protocol", label: "protocol?", type: "decision", x: COL_CENTER, y: 200 },
-      { id: "request", label: "request_plan /\nrequest_shutdown", type: "subprocess", x: COL_LEFT, y: 300 },
-      { id: "pending", label: "Pending Requests\nrequest_id", type: "process", x: COL_LEFT, y: 390 },
-      { id: "dispatch", label: "Dispatch Message", type: "process", x: COL_CENTER, y: 470 },
-      { id: "teammate", label: "Teammate Handler", type: "process", x: COL_RIGHT, y: 470 },
-      { id: "response", label: "submit_plan /\nack shutdown", type: "subprocess", x: COL_RIGHT, y: 560 },
-      { id: "match", label: "match_response?", type: "decision", x: COL_CENTER, y: 640 },
-      { id: "append", label: "Append Protocol\nResult", type: "process", x: COL_CENTER, y: 730 },
-      { id: "end", label: "Output", type: "end", x: COL_RIGHT, y: 300 },
-    ],
-    edges: [
-      { from: "start", to: "lead" },
-      { from: "lead", to: "protocol" },
-      { from: "protocol", to: "request", label: "yes" },
-      { from: "protocol", to: "end", label: "no" },
-      { from: "request", to: "pending" },
-      { from: "pending", to: "dispatch" },
-      { from: "dispatch", to: "teammate" },
-      { from: "teammate", to: "response" },
-      { from: "response", to: "match" },
-      { from: "match", to: "append", label: "matched" },
-      { from: "append", to: "lead" },
-    ],
-  },
-  s17: {
-    nodes: [
-      { id: "start", label: "System Tick", type: "start", x: COL_CENTER, y: 30 },
-      { id: "idle", label: "Idle Poll", type: "process", x: COL_CENTER, y: 110 },
-      { id: "scan", label: "Scan Tasks", type: "subprocess", x: COL_CENTER, y: 190 },
-      { id: "claimable", label: "claimable?", type: "decision", x: COL_CENTER, y: 280 },
-      { id: "claim", label: "claim_task\n(owner check)", type: "subprocess", x: COL_LEFT, y: 380 },
+      { id: "start", label: "Teammate IDLE", type: "start", x: COL_CENTER, y: 30 },
+      { id: "idle", label: "Wait for Messages", type: "process", x: COL_CENTER, y: 110 },
+      { id: "scan", label: "Scan Ready Tasks", type: "subprocess", x: COL_CENTER, y: 190 },
+      { id: "claimable", label: "Ready Task?", type: "decision", x: COL_CENTER, y: 280 },
+      { id: "claim", label: "Atomic Claim\ntask_lock", type: "subprocess", x: COL_LEFT, y: 380 },
       { id: "work", label: "WORK State", type: "process", x: COL_LEFT, y: 470 },
       { id: "complete", label: "complete_task", type: "subprocess", x: COL_LEFT, y: 560 },
-      { id: "inbox", label: "Check Inbox", type: "process", x: COL_RIGHT, y: 380 },
-      { id: "shutdown", label: "Shutdown?", type: "decision", x: COL_RIGHT, y: 470 },
-      { id: "done", label: "IDLE / SHUTDOWN", type: "end", x: COL_RIGHT, y: 560 },
+      { id: "inbox", label: "No Ready Task", type: "process", x: COL_RIGHT, y: 380 },
+      { id: "shutdown", label: "Remain IDLE", type: "process", x: COL_RIGHT, y: 470 },
+      { id: "done", label: "Result + IDLE Event", type: "process", x: COL_CENTER, y: 650 },
     ],
     edges: [
       { from: "start", to: "idle" },
@@ -445,13 +416,13 @@ export const EXECUTION_FLOWS: Record<string, FlowDefinition> = {
       { from: "claimable", to: "inbox", label: "no" },
       { from: "claim", to: "work" },
       { from: "work", to: "complete" },
-      { from: "complete", to: "idle" },
+      { from: "complete", to: "done" },
+      { from: "done", to: "idle" },
       { from: "inbox", to: "shutdown" },
-      { from: "shutdown", to: "done", label: "yes" },
-      { from: "shutdown", to: "idle", label: "no" },
+      { from: "shutdown", to: "idle" },
     ],
   },
-  s18: {
+  s17: {
     nodes: [
       { id: "start", label: "Task Selected", type: "start", x: COL_CENTER, y: 30 },
       { id: "create", label: "create_worktree", type: "subprocess", x: COL_CENTER, y: 110 },
@@ -480,7 +451,7 @@ export const EXECUTION_FLOWS: Record<string, FlowDefinition> = {
       { from: "keep", to: "end" },
     ],
   },
-  s19: {
+  s18: {
     nodes: [
       { id: "start", label: "User Input", type: "start", x: COL_CENTER, y: 30 },
       { id: "llm", label: "LLM Call", type: "process", x: COL_CENTER, y: 110 },
@@ -507,7 +478,7 @@ export const EXECUTION_FLOWS: Record<string, FlowDefinition> = {
       { from: "append", to: "llm" },
     ],
   },
-  s20: {
+  s19: {
     nodes: [
       { id: "start", label: "User Input", type: "start", x: COL_CENTER, y: 30 },
       { id: "context", label: "Assemble Context\nmemory + tasks", type: "process", x: COL_CENTER, y: 115 },
@@ -541,7 +512,7 @@ export const EXECUTION_FLOWS: Record<string, FlowDefinition> = {
       { from: "recover", to: "context" },
     ],
   },
-  s21: {
+  s20: {
     nodes: [
       { id: "start", label: "Workflow Tool Call", type: "start", x: COL_CENTER, y: 30 },
       { id: "validate", label: "Validate Meta +\nPermission", type: "process", x: COL_CENTER, y: 120 },
@@ -565,7 +536,7 @@ export const EXECUTION_FLOWS: Record<string, FlowDefinition> = {
       { from: "output", to: "notify" },
     ],
   },
-  s22: {
+  s21: {
     nodes: [
       { id: "start", label: "Model Wants to Stop", type: "start", x: COL_CENTER, y: 30 },
       { id: "active", label: "Active Goal?", type: "decision", x: COL_CENTER, y: 120 },

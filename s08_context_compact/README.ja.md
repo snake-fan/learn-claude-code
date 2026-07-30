@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → s07 → `s08` → [s09](../s09_memory/) → s10 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → s05 → s06 → s07 → `s08` → [s09](../s09_memory/) → s10 → ... → s20 → s21
 > *"Context will fill up — have a way to make room"* — 4層圧縮戦略、安価なものを先に、高価なものを後に実行。
 >
 > **Harness レイヤー**: 圧縮 — クリーンな記憶、無限のセッション。
@@ -120,9 +120,9 @@ def tool_result_budget(messages, max_bytes=200_000):
 
 3 ステップのフロー：
 
-1. **transcript を保存**：完全な会話を `.transcripts/` に JSONL 形式で書き出す。transcript は回復可能な記録として保存されるが、モデルのアクティブなコンテキストには要約しか残らない。モデルの現在の推論にとって、詳細はすでにコンテキストにない。教学コードは transcript 検索ツールを提供しない。
+1. **transcript を保存**：完全な会話を `.transcripts/` に JSONL 形式で書き出す。transcript は完全な記録を保持する。メッセージリストには要約だけが残り、元の詳細は以降のモデル呼び出しに入らない。
 2. **LLM で要約を生成**：会話履歴を LLM に送り、現在の目標、重要な発見、変更済みファイル、残りの作業、ユーザーの制約などの重要な情報を保持するよう指示。
-3. **メッセージリストを置換**：すべての古いメッセージが 1 件の要約に置き換えられる。教学版は要約のみを保持する。実際の Claude Code は compact 後に直近のファイル、計画、agent/skill/tool などのコンテキストを再付加する。
+3. **メッセージリストを置換**：すべての古いメッセージを 1 件の要約に置き換える。
 
 ```python
 def compact_history(messages):
@@ -189,7 +189,7 @@ def agent_loop(messages):
             break  # 現在のターンを終了し、圧縮後のコンテキストで新しく開始
 ```
 
-**順序は変えられない。** L3（budget）が L2（micro）の前に実行される理由：micro は古い大きな tool_result を 1 行のプレースホルダに置換するため、budget はその前に完全な内容を退避させる必要がある。CC ソースが `applyToolResultBudget` を最初に配置する理由も同じ。
+**順序は変えられない。** L3（budget）は L2（micro）より先に実行する。micro が古い大きな `tool_result` を 1 行のプレースホルダに置き換える前に、budget が完全な内容を保存する必要があるためだ。
 
 ---
 
@@ -228,85 +228,5 @@ python s08_context_compact/code.py
 
 s09 Memory → 3 つのサブシステム：何を記憶するかの選択、重要情報の抽出、整理と統合。圧縮を越え、セッションを越えて。
 
-<details>
-<summary>CC ソースコードの詳細</summary>
-
-> 以下は CC ソースコード `compact.ts`、`autoCompact.ts`、`microCompact.ts`、`query.ts` の分析に基づく。
-
-### 実行順序の対応
-
-教学版は説明の便宜上 L1/L2/L3/L4 と番号を振っているが、実際の実行順序は番号と完全には一致しない：
-
-| 項目 | 教学版 | Claude Code |
-|------|--------|-------------|
-| 実行順序 | budget → snip → micro → auto | budget → snip → micro → collapse → auto（`query.ts:379-468`） |
-| snip_compact | 先頭 3 + 末尾 47 を保持 | CC はメインスレッドのみ有効；実装はオープンソースリポジトリにない（`HISTORY_SNIP` feature gate）、インターフェースは確認可能：`snipCompactIfNeeded(messages)` → `{ messages, tokensFreed, boundaryMessage? }`、`SnipTool` もモデルが能動的に呼び出し可能。教学版の 3/47 は簡略パラメータ |
-| micro_compact | テキストプレースホルダで置換 | 2 つのパス：time-based は直接内容をクリア、cached は API の `cache_edits` を使用（legacy パスは削除済み） |
-| micro_compact ホワイトリスト | 位置による（直近 3 件） | time-based は時間閾値でトリガー、cached はカウントでトリガー（`microCompact.ts`） |
-| tool_result_budget | 200KB 文字 | 200,000 文字（`toolLimits.ts:49`） |
-| compact_history 閾値 | 文字数で推定 | 精密な token 数：`contextWindow - maxOutputTokens - 13_000` |
-| 要約の要求 | 5 種類の情報 | 9 つのセクション + `<analysis>`/`<summary>` デュアルタグ |
-| 圧縮プロンプト | シンプルなプロンプト | 先頭と末尾に二重の安全ガードでツール呼び出しを禁止 |
-| PTL retry | あり（簡略版） | `truncateHeadForPTLRetry()` がメッセージグループ単位でロールバック（`compact.ts:243-290`） |
-| 圧縮後のリカバリ | なし（教学版は要約のみ保持） | 直近のファイル、計画、agent/skill/tool などの自動再付加 |
-| サーキットブレーカー | 3 回 | 3 回（`autoCompact.ts:70`） |
-| reactive リトライ | 1 回 | CC にはより精緻な段階別リトライがある |
-
-### 実行順序の詳細
-
-CC ソース `query.ts` での実際の順序：
-
-1. `applyToolResultBudget`（L379）：まず大きな結果を処理し、完全な内容を退避
-2. `snipCompact`（L403）：中間メッセージを切り捨て
-3. `microcompact`（L414）：古い結果のプレースホルダ化
-4. `contextCollapse`（L441）：独立したコンテキスト管理システム（教学版にはなし）
-5. `autoCompact`（L454）：LLM 全量要約
-
-教学版の budget → snip → micro の順序はこれと一致する。教学版には contextCollapse メカニズムがない。
-
-### read_file のトレードオフ
-
-教学版の `micro_compact` は、古い `tool_result` を一律にプレースホルダへ置き換える。`read_file` も例外ではない。これは通常、機能的な正しさには影響しない。後でファイル内容が必要になれば、モデルはもう一度そのファイルを読めばよい。代償は、追加のツール呼び出しが発生し得ることと、prompt cache のヒット率が下がり得ること。
-
-Claude Code は、この問題を教学版のような単純なルールでは処理していない。`Read` も microcompact 可能なツール集合に入れる一方で、別途 `readFileState` を維持している。変更されていないファイルの再読込では `FILE_UNCHANGED_STUB` を返し、compact 後には予算内で直近に読んだファイル内容を復元する（例：最大 5 ファイル、1 ファイル 5K token、合計 50K token）。これは本番実装向けのキャッシュと復元メカニズムである。教学版ではそこまで展開せず、「古い結果を圧縮し、必要なら再読込する」という単純な trade-off を残している。
-
-### 完全な定数リファレンス
-
-| 定数 | 値 | ソースファイル |
-|------|-----|--------|
-| `AUTOCOMPACT_BUFFER_TOKENS` | 13,000 | `autoCompact.ts:62` |
-| `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES` | 3 | `autoCompact.ts:70` |
-| `MAX_OUTPUT_TOKENS_FOR_SUMMARY` | 20,000 | `autoCompact.ts:30` |
-| `POST_COMPACT_TOKEN_BUDGET` | 50,000 | `compact.ts:123` |
-| `POST_COMPACT_MAX_FILES_TO_RESTORE` | 5 | `compact.ts:122` |
-| `POST_COMPACT_MAX_TOKENS_PER_FILE` | 5,000 | `compact.ts:124` |
-| 時間ベース micro_compact 間隔 | 60 分 | `timeBasedMCConfig.ts` |
-| `MAX_COMPACT_STREAMING_RETRIES` | 2 | `compact.ts:131` |
-
-### contextCollapse と sessionMemoryCompact
-
-CC ソースコードには、この教学版では展開していない 2 つのメカニズムが存在する：
-
-- **contextCollapse**：独立したコンテキスト管理システム。有効時には proactive autocompact を抑制し（`autoCompact.ts:215-222`）、collapse の commit/blocking フローがコンテキスト管理を引き継ぐ。ただし manual `/compact` と reactive fallback は独立パスのままで、contextCollapse の影響を受けない。
-- **sessionMemoryCompact**：compact_history の前に、CC は既存の session memory（s09 で解説）を使った軽量要約を先に試みる。LLM を呼び出さない。このメカニズムは s09 を学んだ後に振り返るとより理解しやすい。
-
-### 圧縮プロンプトの中身
-
-CC の圧縮プロンプトには 2 つの厳格な要件がある：
-
-1. **ツール呼び出しの絶対禁止**：冒頭が `CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.` で、末尾にも再度 REMINDER がある
-2. **先に分析してから要約**：モデルはまず `<analysis>` タグで思考を整理し、その後 `<summary>` タグで正式な要約を出力する。analysis はフォーマット時に除去される
-
-### 教学版の簡略化は意図的
-
-- micro_compact でテキストプレースホルダを使用 → API 層の `cache_edits` 権限がないため
-- read_file は特別扱いしない → 教学版では必要時の再読込を受け入れ、readFileState と圧縮後復元の仕組みを導入しない
-- token を文字数で推定 → 精密な tokenizer は教学の対象外
-- 圧縮後のリカバリを省略 → 教学版は要約のみを保持し、ファイルの自動再付加を行わない
-- 2 つの補助メカニズムを展開しない → 10% の細部に属する
-
-コア設計思想、安価なものを先に高価なものを後に、は完全に保持されている。
-
-</details>
 
 <!-- translation-sync: zh@v2, en@v2, ja@v2 -->

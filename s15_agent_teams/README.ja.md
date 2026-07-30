@@ -1,155 +1,251 @@
-# s15: Agent Teams — ランタイム実験：永続チームメイト
+# s15: Agent Teams — チームランタイムと協調プロトコル
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s13 → s14 → `s15` → [s16](../s16_team_protocols/) → s17 → s18 → s19 → s20 → s21 → s22
-> *"一人では無理、チームを組もう"* — ファイル受信箱 + チームメイトスレッド。
+s01 → ... → s13 → s14 → `s15` → [s16](../s16_autonomous_agents/) → s17 → s18 → s19 → s20 → s21
+
+> *「1 つの Agent だけでは扱いきれないなら、チームメイトで分担する。」* — 永続チームメイト、メッセージ配信、協調プロトコル。
 >
-> **Harness 層**: チーム — マルチ Agent 協調、メッセージバス。
-
-> **モジュール 1/2：** s15 と s16 は一つの Agent Teams モジュールに含まれる二つの集中実験。この章でランタイムを構築し、s16 はランタイムを繰り返さず型付き協調プロトコルを追加する。
+> **Harness レイヤー**：チーム — 複数 Agent を並行動作させながら制御を保つ。
 
 ---
 
-## 課題
+## 問題
 
-「バックエンド全体をリファクタリング」は認証モジュール、データベース層、API ルート、テストに及ぶ。一つの Agent が API ルートを修正中、認証モジュールの詳細はコンテキストから外れている。コンテキストウィンドウには限界があり、単一 Agent の注意は全モジュールをカバーできない。
+Agent にバックエンド全体のリファクタリングを頼む場合、設定読み込み、認証、テストを同時に扱うことになる。1 つの Agent が順番に処理することもできるが、時間がかかり、初期の詳細は徐々にコンテキストから抜けていく。
 
-s06 のサブ Agent は臨時スタッフ、一つの仕事を終えたら去る。だが、通信でき、協力できるチームメイトが必要なタスクもある。
+このような仕事は並列化に向いている。しかし、通常のユーザーはチーム構成ではなく目的だけを伝える：
+
+```text
+このサンプルバックエンドをリファクタリングしてください。
+設定読み込み、認証ロジック、テストを整理し、
+既存インターフェースを保ったままテストを通してください。
+```
+
+そのため Harness は、単に Agent を増やすだけでなく、次の 4 点を解決する必要がある：
+
+1. 並列化が有効かを誰が判断し、追加 Agent の起動を誰が確認するか。
+2. チームメイトが複数の依頼にまたがって、どう身元とコンテキストを保つか。
+3. モデルに受信箱を繰り返し確認させず、結果をどう Lead へ戻すか。
+4. 終了と計画承認を、どう追跡可能で強制可能なプロトコルにするか。
 
 ---
 
-## ソリューション
+## 解決策
 
 ![Agent Teams Overview](images/agent-teams-overview.ja.svg)
 
-教学版は S14 の能力（プロンプト組み立て、タスクシステム、バックグラウンド実行、cron スケジューリング）を踏襲。チーム機構に集中するため、完全なエラーリカバリ、メモリ、スキルシステムは省略。追加：**MessageBus**（ファイル受信箱）、**spawn_teammate_thread**（チームメイトスレッド起動）、**inbox 注入**（Lead がチームメイトメッセージを受信し history に注入）。
+s15 は単一 Agent の Harness の外側に、Lead が管理するチームランタイムを追加する：
 
-サブ Agent vs チームメイト：
+- **Lead** はユーザーとの会話を維持し、分担案を提示して確認を待つ。
+- **チームメイト** は独立した Agent Loop をバックグラウンドスレッドで実行し、作業後は IDLE になる。
+- **MessageBus** はファイル受信箱を通して、通常メッセージ、結果、制御イベントを運ぶ。
+- **ランタイム配信** は Lead の受信箱を消費し、チームイベントを次のターンへ注入する。
+- **協調プロトコル** は `type`、`request_id`、状態遷移で終了と計画承認を扱う。
+- **計画ゲート** は、必要な計画が承認されるまで `bash` と `write_file` を遮断する。
 
-| | s06 サブ Agent | s15 チームメイト |
-|---|---|---|
-| ライフサイクル | 一回きり、終了後に破棄 | マルチターン（教学版は 10 ラウンド制限、真实 CC は idle loop） |
-| 通信 | 結果のみ返却 | 非同期受信箱、いつでも通信可能 |
-| コンテキスト | 完全に隔離 | メッセージで情報共有 |
-| 数 | メイン Agent + たまにサブ Agent | 1 Lead + 複数チームメイト |
+モデルはタスクを理解して分担を決める。コードは配信、ライフサイクル、プロトコル制約を担う。
 
 ---
 
 ## 仕組み
 
-![Team Topology](images/team-topology.ja.svg)
+### 1. Lead はチーム案を示し、確認を待つ
 
-### MessageBus: ファイル受信箱
+チームメイトの起動は、コスト、並行度、ワークスペースを書き換える主体を変える。この境界を通常のツール呼び出しの中に隠してはいけない。Lead の system prompt は次のように定める：
 
-各 Agent（Lead とチームメイトを含む）には `.jsonl` 受信箱がある。メッセージ送信 = 相手のファイルに 1 行 JSON を append。メッセージ読み取り = ファイル読み込み + 削除（消費式）：
+```python
+"When parallel work would help, first propose a small team with clear "
+"responsibilities and wait for the user's confirmation. Do not call "
+"spawn_teammate before the user confirms."
+```
+
+最初の依頼に対して、Lead はまず分担案だけを返す：
+
+```text
+次の 3 方向で並行処理することを提案します。
+- config：設定読み込みの整理
+- auth：認証ロジックのリファクタリング
+- tests：回帰テストの追加
+
+確認後にチームメイトを起動します。
+```
+
+ユーザーが「始めてください」と返した後で、Lead は `spawn_teammate` を呼ぶ。ユーザーが目的を示し、Lead がチームを設計し、ユーザーが実行境界を確認する。
+
+### 2. 各チームメイトは独立したループを持つ
+
+s06 の Subagent は 1 回限りの呼び出しだが、チームメイトは永続する実行単位である：
+
+| | s06 Subagent | s15 チームメイト |
+|---|---|---|
+| ライフサイクル | 1 回の呼び出し後に終了 | 終了要求まで `WORK → IDLE → WORK` |
+| コンテキスト | 1 つのタスクだけ | 複数の依頼をまたいで保持 |
+| 通信 | 1 回だけ結果を返す | メッセージを受け取り、イベントを送る |
+| 協調 | 一方向の委任 | Lead との双方向協調 |
+
+`spawn_teammate_thread()` はチームメイトごとに system prompt、messages、ツールを作り、daemon thread でループを実行する。Lead はチームメイトの終了を待たずに、別の依頼や結果を調整できる。
+
+### 3. MessageBus は通信をモデルのコンテキスト外に置く
+
+Lead とチームメイトが同じ messages 配列を共有すると、あるチームメイトのツール結果が別のチームメイトの推論へ混ざる。`MessageBus` は各 Agent に `.mailboxes/<name>.jsonl` 受信箱を与える：
 
 ```python
 class MessageBus:
-    def send(self, from_agent: str, to_agent: str,
-             content: str, msg_type: str = "message"):
-        msg = {"from": from_agent, "to": to_agent,
-               "content": content, "type": msg_type,
-               "ts": time.time()}
-        inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
-        with open(inbox, "a") as f:
-            f.write(json.dumps(msg) + "\n")
+    def send(self, from_agent, to_agent, content,
+             msg_type="message", metadata=None):
+        msg = {
+            "from": from_agent,
+            "to": to_agent,
+            "content": content,
+            "type": msg_type,
+            "metadata": metadata or {},
+        }
+        with self._changed:
+            append_jsonl(self._path(to_agent), msg)
+            self._changed.notify_all()
 
-    def read_inbox(self, agent: str) -> list[dict]:
-        inbox = MAILBOX_DIR / f"{agent}.jsonl"
-        if not inbox.exists():
-            return []
-        msgs = [json.loads(line) for line in inbox.read_text().splitlines()]
-        inbox.unlink()  # 消費式：読んだら削除
-        return msgs
+    def wait_for_messages(self, agent):
+        with self._changed:
+            while not self.peek(agent):
+                self._changed.wait()
+            return self._read_unlocked(agent)
 ```
 
-なぜファイルか、メモリキューではなく？教学版がファイルを選ぶ理由は、直感的でスレッドをまたいで観察可能だから。真实 CC もファイル受信箱（`~/.claude/teams/{team}/inboxes/`）を使うが、`proper-lockfile` で並行書き込みの安全性を確保。教学版の `read_inbox` には read + unlink の競合状態があり、マルチスレッド同時読みでメッセージを損失する可能性があるが、教学目的には許容範囲。
+ロックは複数スレッドによる受信箱ファイルの破損を防ぐ。`Condition` により、IDLE のチームメイトはポーリングせずイベント到着まで待機できる。
 
-### spawn_teammate_thread: チームメイト起動
+### 4. 受信イベントはランタイムが自動配信する
 
-Lead が `spawn_teammate` ツールを呼び出してチームメイトを起動。チームメイトは独自の daemon スレッドで動作、独自の system prompt、messages、簡易ツールセットを持つ：
+`read_inbox()` はメッセージを読み、受信箱ファイルを削除する。そのため Lead の消費入口は `consume_lead_inbox()` だけにする：
 
 ```python
-def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
-    system = f"You are '{name}', a {role}. Use tools to complete tasks."
-
-    def run():
-        messages = [{"role": "user", "content": prompt}]
-        sub_tools = [bash, read_file, write_file, send_message]
-        for _ in range(10):           # 最大 10 ラウンド
-            inbox = BUS.read_inbox(name)
-            if inbox:
-                messages.append({"role": "user",
-                    "content": f"<inbox>{json.dumps(inbox)}</inbox>"})
-            response = client.messages.create(
-                model=MODEL, system=system, messages=messages[-20:],
-                tools=sub_tools, max_tokens=8000)
-            # ... ツール実行、結果処理
-        # 完了後 summary を Lead に送信
-        BUS.send(name, "lead", summary, "result")
-
-    threading.Thread(target=run, daemon=True).start()
+def consume_lead_inbox():
+    messages = BUS.read_inbox("lead")
+    for message in messages:
+        if message["type"].endswith("_response"):
+            match_response(...)
+    return messages
 ```
 
-重要な設計：
-- **チームメイトの簡易ツールセット**：bash、read、write、send_message。教学版は通信機構に集中するためタスクと cron を省略。真实 CC のチームメイトには TaskCreate、TaskUpdate 等のツールもあり、タスクシステムはチーム全体で共有
-- **教学版は 10 ラウンド制限**：無限ループを防止。真实 CC は idle loop：1 ラウンド終了後に `idle_notification` を送信、inbox メッセージを待機、到着後に再開、`shutdown_request` でのみ終了
-- **完了時自動報告**：`BUS.send(name, "lead", summary)` で最終結果を Lead の受信箱に送信
+メインループのイベントスレッドは、新しいメッセージが届くと Lead を起こす：
 
-### Lead の inbox 注入
+```text
+MessageBus → consume_lead_inbox
+           → プロトコル状態を更新
+           → [Team events] を history へ注入
+           → Lead の次ターンを開始
+```
 
-Lead はメインループの各反復後に受信箱を確認。チームメイトからのメッセージを history に注入し、LLM が確認して反応できるようにする：
+`check_inbox` はモデルのツールではない。メッセージの到着はランタイムの責務であり、モデルはコンテキストへ配信済みのイベントだけを処理する。
+
+### 5. 結果と IDLE は別のイベント
+
+チームメイトが 1 件の作業を終えると、ランタイムは次の順序で 2 つのイベントを送る：
+
+```text
+result:            "認証をリファクタリングし、関連テストが通りました。"
+idle_notification: "Waiting for more work."
+```
+
+`result` は「今回の作業で何が得られたか」、`idle_notification` は「新しい仕事を受けられるか」を表す。1 つの曖昧な「done」では両者を区別できない。
+
+IDLE になったチームメイトは終了しない。通常メッセージで WORK に戻り、`shutdown_request` で終了ハンドシェイクを始める。
+
+### 6. 制御メッセージには型と request_id を使う
+
+通常の協調は自由文でよいが、終了と承認を意図の推測に任せてはいけない。制御イベントは構造化する：
+
+![Team Protocols](images/team-protocols-overview.ja.svg)
 
 ```python
-# メインループ反復後
-inbox = BUS.read_inbox("lead")
-if inbox:
-    inbox_text = "\n".join(
-        f"From {m['from']}: {m['content'][:200]}" for m in inbox)
-    history.append({"role": "user",
-                    "content": f"[Inbox]\n{inbox_text}"})
+@dataclass
+class ProtocolState:
+    request_id: str
+    type: str
+    sender: str
+    target: str
+    status: str
+    payload: str
+
+
+pending_requests: dict[str, ProtocolState] = {}
 ```
 
-教学版はユーザー入力ループ内で注入。真实 CC はより精密、Lead の `useInboxPoller` が毎秒チェックし、ユーザー入力を待たずにメッセージを新しい turn として送信。
+終了プロトコルは次の経路を通る：
 
-### 権限バブリング
-
-教学版は権限バブリングを省略。真实 CC のフロー（`permissionSync.ts`、`useSwarmPermissionPoller.ts`）：
-
-1. チームメイトが承認が必要な操作に遭遇 → `permission_request` を Lead の受信箱に送信
-2. Lead の `useInboxPoller` がリクエストを検出 → 承認キューにルーティング
-3. ユーザーが承認 → Lead が `permission_response` をチームメイトに返信
-4. チームメイトの `useSwarmPermissionPoller`（500ms ごとにポーリング）が返信を受信 → 続行または拒否
-
-### 組み合わせて実行
-
-```
-1. Lead: "バックエンド構築：一人では無理、チームを組もう"
-2. Lead → spawn_teammate("alice", "backend dev", "データベーススキーマを作成")
-3. Lead → spawn_teammate("bob", "frontend dev", "API クライアントを作成")
-4. alice スレッド起動 → 独自の LLM 呼び出し → bash "python manage.py migrate"
-5. bob スレッド起動 → 独自の LLM 呼び出し → write_file("client.ts", ...)
-6. alice 完了 → BUS.send("alice", "lead", "Schema done: users, orders tables")
-7. bob 完了 → BUS.send("bob", "lead", "Client written with types")
-8. Lead 次回反復 → inbox を history に注入 → LLM が alice と bob の結果を確認
+```text
+Lead が pending の shutdown request を作る
+  → shutdown_request(request_id) をチームメイトへ送る
+  → チームメイトが現在の手順を終える
+  → shutdown_response(request_id) を Lead へ返す
+  → request_id で元の要求を特定する
+  → pending が approved になり、チームメイトループが終了する
 ```
 
-2 人のチームメイトが並行作業。
+ID は要求と応答を対応付け、型は誤った応答による状態変更を防ぎ、状態は重複応答の再適用を防ぐ。
+
+### 7. 計画承認は実行も制約する
+
+計画プロトコルは逆方向に流れる：
+
+```text
+Lead → plan_request
+チームメイト → plan_approval_request(request_id, plan)
+Lead → plan_approval_response(request_id, approve, feedback)
+```
+
+「承認まで待つ」と伝えるだけでは確実なゲートにならない。そこでツール dispatch が計画状態を検査する：
+
+```python
+def _run_teammate_tool(name, block, handlers):
+    gate = plan_gates.get(name, "not_required")
+    if block.name in {"bash", "write_file"} and gate not in {
+        "not_required", "approved"
+    }:
+        return f"Blocked: plan status is {gate}."
+    return handlers[block.name](**block.input)
+```
+
+状態が `required`、`pending`、`rejected` の間、チームメイトはファイルを読み、計画を提出または修正できるが、Shell 実行やファイル書き込みはできない。承認応答で `approved` になった後にだけツールが解放される。
+
+---
+
+## 一連の実行例
+
+```text
+s15 >> このサンプルバックエンドをリファクタリングしてください。
+       設定読み込み、認証、テストを整理し、
+       既存インターフェースを保ってテストを通してください。
+
+Lead: config、auth、tests の 3 方向で並行処理することを提案します。
+      チームを開始しますか？
+
+s15 >> 始めてください
+
+[teammate] config spawned
+[teammate] auth spawned
+[teammate] tests spawned
+[bus] auth → lead (result) ...
+[bus] auth → lead (idle_notification) ...
+[wake: 2 team events → new turn]
+Lead: 認証の結果を受け取りました。残りの作業も調整します。
+```
+
+端末には、ユーザー要求、Lead の分担、起動、メッセージ、結果、IDLE、終了イベントが表示される。ユーザーが Lead を指名したり、受信箱の確認を頼んだりする必要はない。
 
 ---
 
 ## s14 からの変更
 
-| コンポーネント | 変更前 (s14) | 変更後 (s15) |
-|--------------|------------|------------|
-| Agent 数 | 1 | 1 Lead + N チームメイトスレッド |
-| 通信 | なし | MessageBus + .mailboxes/*.jsonl |
-| 新規クラス | — | MessageBus, active_teammates dict |
-| 新規関数 | — | spawn_teammate_thread, run_send_message, run_check_inbox |
-| Lead ツール | 11 (s14) | + spawn_teammate, send_message, check_inbox (14) |
-| チームメイトツール | — | bash, read_file, write_file, send_message (4) |
-| 権限 | ローカル判断 | 教学版は省略（真实 CC はバブリング機構あり） |
+| コンポーネント | s14 | s15 |
+|---|---|---|
+| Agent | 1 つ | 1 つの Lead + 永続チームメイト |
+| ユーザーフロー | 依頼を直接実行 | チーム案を提示してから起動を確認 |
+| 通信 | なし | ファイル受信箱 + 自動イベント配信 |
+| ライフサイクル | 1 つのループ | チームメイトの `WORK / IDLE / shutdown` |
+| 結果通知 | 現在の Agent の出力 | `result` と `idle_notification` を分離 |
+| 制御 | なし | 終了と計画承認プロトコル |
+| 強制 | チーム制約なし | 必須計画が変更系ツールをゲート |
 
 ---
 
@@ -160,97 +256,28 @@ cd learn-claude-code
 python s15_agent_teams/code.py
 ```
 
-以下のプロンプトを試してください：
+まず通常の依頼を入力する：
 
-1. `Spawn alice as a backend developer. Ask her to create a file called schema.sql with a users table.`
-2. `Check your inbox for alice's result.`
-3. `Spawn bob as a tester. Ask him to check if schema.sql exists and list its contents.`
+```text
+このサンプルバックエンドをリファクタリングしてください。
+設定読み込み、認証ロジック、テストを整理し、
+既存インターフェースを保ったままテストを通してください。
+```
 
-観察ポイント：Lead はチームメイトをどう起動するか？`.mailboxes/` ディレクトリの JSONL ファイルの中身は？チームメイト完了後、Lead の inbox は history に注入されているか？
+Lead がチーム案を示したら、次のように返す：
+
+```text
+始めてください
+```
+
+`spawned`、`result`、`idle_notification`、`plan_approval_*`、`shutdown_*` の各イベントと、`.mailboxes/` のファイルが生成・消費される流れを確認する。
 
 ---
 
-## 次の章
+## 次へ
 
-チームメイトは仕事をし、通信できる。しかし、Lead が Alice にシャットダウンを頼む場合、スレッドを強制終了すると書きかけのファイルが残る。丁寧なシャットダウンプロトコルが必要：Lead が shutdown_request を送信、チームメイトは收尾後に終了。
+s15 では、Lead が各チームメイトへ明示的に仕事を割り当てる。次のセッションでは共有タスクボードを IDLE のチームメイトに公開し、実行可能な仕事を自ら見つけて claim できるようにする。
 
-s16 Agent Teams プロトコル実験 → このランタイムにシャットダウンハンドシェイク、計画承認、型付きリクエスト-返信を追加する。
+次へ：[s16 Autonomous Agents](../s16_autonomous_agents/)。
 
-<details>
-<summary>CC ソースコード深掘り</summary>
-
-> 以下は CC ソースコード `spawnMultiAgent.ts`、`useInboxPoller.ts`（969 行）、`useSwarmPermissionPoller.ts`（330 行）、`teammateMailbox.ts`、`teamHelpers.ts` の完全分析に基づく。
-
-### 一、中央メッセージバスはない、ファイルシステム
-
-教学版は `MessageBus` クラスでメッセージを送受信。真实 CC はもっと直接的、各 Agent が他の Agent の受信箱ファイルに直接書き込む。
-
-受信箱パス：`~/.claude/teams/{teamName}/inboxes/{agentName}.json`
-
-書き込み時は `proper-lockfile` で並行安全性を確保（最大 10 回リトライ）。各ファイルは JSON 配列、append 時に読み取り→追加→書き戻し。
-
-### 二、15 種のメッセージ型
-
-CC のチーム通信には 15 種の構造化メッセージ（`teammateMailbox.ts`）がある：
-
-| 型 | 方向 | 用途 |
-|------|------|------|
-| `plain text` | 双方向 | 通常のチームメイト間通信 |
-| `idle_notification` | チームメイト→Lead | チームメイトが 1 ターン完了、アイドル状態に |
-| `permission_request` | チームメイト→Lead | 操作承認が必要 |
-| `permission_response` | Lead→チームメイト | Lead の承認結果 |
-| `plan_approval_request` | チームメイト→Lead | 計画提出、審査待ち |
-| `plan_approval_response` | Lead→チームメイト | Lead の計画審査 |
-| `shutdown_request` | Lead→チームメイト | 丁寧なシャットダウン要求 |
-| `shutdown_approved` | チームメイト→Lead | シャットダウン確認 |
-| `shutdown_rejected` | チームメイト→Lead | シャットダウン拒否（理由付き） |
-| `task_assignment` | Lead→チームメイト | タスク割り当て |
-| `team_permission_update` | Lead→チームメイト | 権限変更のブロードキャスト |
-| `mode_set_request` | Lead→チームメイト | チームメイトの権限モード変更 |
-| `sandbox_permission_*` | 双方向 | ネットワーク権限リクエスト/返信 |
-| `teammate_terminated` | システム | チームメイト削除通知 |
-
-テキストメッセージは `<teammate-message>` XML タグでラップされモデルに配信。
-
-### 三、権限バブリング：双方向ポーリング
-
-教学版は権限バブリングを省略。真实 CC のフロー（`permissionSync.ts`）：
-
-1. **チームメイト**が承認が必要な操作に遭遇 → `permission_request` を Lead の受信箱に送信
-2. **Lead** の `useInboxPoller`（1 秒ごとにポーリング）がリクエストを検出 → `ToolUseConfirmQueue` にルーティング
-3. Lead の UI にチームメイト名と色付きの承認ダイアログを表示
-4. ユーザー承認後 → Lead が `permission_response` をチームメイトの受信箱に返信
-5. **チームメイト**の `useSwarmPermissionPoller`（500ms ごとにポーリング）が返信を受信 → 続行または拒否
-
-### 四、チームメイトライフサイクル
-
-CC のチームメイトは `spawnTeammate()`（`spawnMultiAgent.ts`）で作成：
-
-1. **Spawn**：tmux ペイン（またはプロセス内）を作成、色を割り当て、team config に書き込み
-2. **Work**：`useInboxPoller` が毎秒受信箱をチェック → メッセージ到着時に新しい turn として送信
-3. **Idle**：Stop hook 発火 → `idle_notification` を Lead に送信
-4. **Shutdown**：Lead が `shutdown_request` を送信 → チームメイトが `shutdown_approved` で返信 → Lead がクリーンアップ
-
-### 五、Team Config
-
-チーム登録は `~/.claude/teams/{teamName}/config.json`（`teamHelpers.ts`）：
-
-```json
-{
-  "name": "my-team",
-  "leadAgentId": "lead@my-team",
-  "members": [{
-    "agentId": "researcher@my-team",
-    "name": "researcher",
-    "agentType": "general-purpose",
-    "color": "blue",
-    "isActive": true
-  }]
-}
-```
-
-チームメイトのネストは禁止（`AgentTool.tsx:273` で "teammates spawning other teammates" を明示的に禁止）。
-
-</details>
-
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v2, en@v2, ja@v2 -->

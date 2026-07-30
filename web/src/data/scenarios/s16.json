@@ -1,45 +1,50 @@
 {
   "version": "s16",
-  "title": "Agent Teams: Protocol Lab",
-  "description": "The second Agent Teams lab adds typed requests, request ids, and response matching to the s15 runtime.",
+  "title": "Autonomous Agents",
+  "description": "Idle teammates discover ready tasks on a shared board and use an atomic claim before starting work.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Ask the reviewer agent for a plan before it edits anything.",
-      "annotation": "The lead needs a structured plan request, not free-form chat."
+      "content": "Update the API examples, then add tests that use the final examples.",
+      "annotation": "The request contains two tasks with a clear dependency."
     },
     {
       "type": "tool_call",
-      "toolName": "request_plan",
-      "content": "{\"to\":\"reviewer\",\"task\":\"Review the parser change before editing.\"}",
-      "annotation": "The protocol records a pending request with a request_id."
-    },
-    {
-      "type": "system_event",
-      "content": "pending_requests[req_18] = {kind:\"plan\", to:\"reviewer\", status:\"pending\"}",
-      "annotation": "ProtocolState keeps the request open until a matching response arrives."
-    },
-    {
-      "type": "system_event",
-      "content": "dispatch_message -> reviewer inbox: {type:\"plan_request\", request_id:\"req_18\"}",
-      "annotation": "The message is typed so the teammate knows how to handle it."
+      "toolName": "create_task",
+      "content": "{\"subject\":\"Update API examples\"}",
+      "annotation": "The Lead creates the first task in the shared graph."
     },
     {
       "type": "tool_call",
-      "toolName": "submit_plan",
-      "content": "{\"request_id\":\"req_18\",\"plan\":[\"inspect parser\",\"run fixtures\",\"report risks\"]}",
-      "annotation": "The teammate responds with the same request_id."
+      "toolName": "create_task",
+      "content": "{\"subject\":\"Add example tests\",\"blockedBy\":[\"task_examples\"]}",
+      "annotation": "The second task cannot start until the examples are complete."
     },
     {
       "type": "system_event",
-      "content": "match_response(req_18) -> status: ready_for_review",
-      "annotation": "The lead can correlate the reply with the exact request."
+      "content": "alice, bob: state=IDLE -> scan_unclaimed_tasks()",
+      "annotation": "Existing IDLE teammates scan the board after waiting for messages."
+    },
+    {
+      "type": "system_event",
+      "content": "claim_next_task(alice) -> task_examples; task_lock commits owner=alice",
+      "annotation": "The ownership check and pending-to-in_progress update are atomic."
+    },
+    {
+      "type": "system_event",
+      "content": "claim_next_task(bob) -> no ready task; remain IDLE",
+      "annotation": "The test task is still blocked, so Bob does not start it early."
     },
     {
       "type": "tool_call",
-      "toolName": "review_plan",
-      "content": "{\"request_id\":\"req_18\",\"approved\":true}",
-      "annotation": "The lead explicitly approves the plan before work proceeds."
+      "toolName": "complete_task",
+      "content": "{\"task_id\":\"task_examples\"}",
+      "annotation": "Completing the examples unblocks the dependent test task."
+    },
+    {
+      "type": "system_event",
+      "content": "claim_next_task(bob) -> task_tests; task_lock commits owner=bob",
+      "annotation": "Bob claims the newly ready work without another direct assignment."
     }
   ]
 }

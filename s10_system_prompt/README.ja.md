@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21 → s22
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21
 > *"モデル入力は組み立てるもの、固定するものではない"* — 安定セクション + 実行時状態 + キャッシュ。
 >
 > **Harness レイヤー**: コンテキスト組み立て — 安定した指示と動的状態をモデル入力にまとめる。
@@ -119,8 +119,6 @@ def get_system_prompt(context: dict) -> str:
 
 `hash()` ではなく `json.dumps` を使用：Python 組み込みの `hash()` にはプロセスランダム化があり（安定したキャッシュキーに不適切）、list/dict で `unhashable type` エラーになる。
 
-注意：このキャッシュは「プロセス内での文字列再組み立ての回避」のみ。CC の API prompt cache とは別物。CC の prompt cache は `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` で静的/動的部分を分離し、静的部分が global cache に命中する。動的内容が変化しても静的部分は無効化されない。
-
 ### context: 実際の状態、キーワード推測ではない
 
 context は現在の実行時状態の実際の状態を反映：
@@ -178,7 +176,7 @@ cd learn-claude-code
 python s10_system_prompt/code.py
 ```
 
-安全上の注意：この集中教材はモデルが渡す `bash` 文字列を `shell=True` で実行し、s03 の permission gate を省略している。破棄可能な workspace だけで実行し、本番 harness では permission と sandbox の境界を戻すこと。
+**安全上の注意**：このスクリプトはモデルが生成した `bash` 文字列を `shell=True` で実行し、s03 の permission gate を含まない。破棄可能な workspace でのみ実行すること。
 
 観察のポイント：
 

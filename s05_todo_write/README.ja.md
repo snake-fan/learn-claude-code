@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → `s05` → [s06](../s06_subagent/) → s07 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → `s05` → [s06](../s06_subagent/) → s07 → ... → s20 → s21
 
 > *"計画なき agent は風の向くままに"* — まず手順を列挙してから実行。長いタスクで見落としが減る。
 >
@@ -81,7 +81,7 @@ TOOLS = [
 TOOL_HANDLERS["todo_write"] = run_todo_write
 ```
 
-**Nag リマインダー**、モデルが連続 3 ラウンド `todo_write` を呼び出さないとき、リマインダーが自動的に注入される（教育用機構、CC ソースコードに固定ラウンド数のロジックはない）：
+**Nag リマインダー**：モデルが 3 ラウンド連続で `todo_write` を呼び出さなかった場合、リマインダーが自動的に注入される：
 
 ```python
 if rounds_since_todo >= 3 and messages:
@@ -132,27 +132,5 @@ Agent は計画できるようになった。しかしタスクが大きすぎ�
 
 → s06 Subagent：大きなタスクをサブタスクに分割し、それぞれを独立した Agent に任せる。それぞれが独自のクリーンなコンテキストを持ち、相互汚染がない。
 
-<details>
-<summary>CC ソースコードを深掘り</summary>
-
-Claude Code には、目的は近いがストレージとツール契約が独立した二つの計画機構がある：
-
-- **TodoWrite**：現在のセッション向けの軽量チェックリスト。呼び出しごとにリスト全体を置き換え、教育版もプロセスメモリに保持して終了時に消える
-- **Task ツール（s12）**：安定 ID を持つ個別タスクレコードで、依存関係、ownership、永続化を扱う
-
-現在の対話型セッションは構造化 Task ツールを既定で使い、TodoWrite は非対話型や Agent SDK などの互換サーフェスに残る。公開範囲はリリースや設定で変わり得る。同じ schema のインプレース更新ではなく独立した機構であり、s05 は軽量なチェックリスト契約だけを扱う。
-
-教育版は実際のソースコードにある `activeForm` フィールドを省略している（`utils/todo/types.ts:8-15`）。CC は UI スピナーに「何をしているか」を表示するために使用するが、教育版は端末出力のみでこのフィールドは不要。
-
-教育版の Nag リマインダー（3 ラウンド未更新で注入）は教育用機構。CC ソースコードに固定「3 ラウンド」のロジックはなく、最も近いのは `TodoWriteTool.ts:72-107` で 3 つ以上の todo が全て完了しているのに verification 項目がない場合に verification nudge を追加する処理。
-
-Task System の TodoWrite に対する核心的な増分：
-- メモリリストではなくファイル永続化（Claude 設定ディレクトリ下 `tasks/{taskListId}/{taskId}.json`）
-- 平坦なリストではなく `blockedBy` 依存グラフ
-- ロックなしではなく `proper-lockfile` による並行安全性
-- 一つのツールではなく四つの独立ツール（Create/Get/Update/List）
-- TaskCreated / TaskCompleted フック（`TaskCreateTool.ts:80-129`、`TaskUpdateTool.ts:231-260`）による外部システム統合
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

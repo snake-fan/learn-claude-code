@@ -69,7 +69,7 @@
   <text x="135" y="320" fill="#1e40af" font-size="13" font-weight="700">microCompact</text>
   <text x="260" y="320" fill="#1e40af" font-size="11">古い tool_result → プレースホルダー（最新 3 件保持）</text>
   <text x="650" y="320" fill="#1e40af" font-size="10" text-anchor="end">旧結果を圧縮</text>
-  <text x="135" y="338" fill="#2563eb" font-size="9">トリガー：毎ターン自動実行、チュートリアル版はテキストプレースホルダーで模擬</text>
+  <text x="135" y="338" fill="#2563eb" font-size="9">トリガー：毎ターン、古い結果をテキストプレースホルダーに置換</text>
 
   <!-- ===== 自動圧縮タイトル ===== -->
   <rect x="20" y="358" width="720" height="24" rx="4" fill="#f1f5f9"/>

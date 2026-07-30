@@ -2,45 +2,45 @@
   "version": "s16",
   "decisions": [
     {
-      "id": "typed-protocol-messages",
-      "title": "Typed Messages Replace Informal Chat",
-      "description": "Plan requests and shutdown requests are encoded as protocol messages with explicit kinds. The teammate can branch on message type instead of guessing intent from free-form text.",
-      "alternatives": "Plain natural-language messages are easier to write, but brittle once the team has multiple request types.",
+      "id": "idle-state-discovers-work",
+      "title": "Idle Teammates Look for Ready Work",
+      "description": "s15 already keeps teammates alive in IDLE. s16 gives that state one more input: after waiting for messages, a teammate scans the shared task board for pending, unowned, unblocked work.",
+      "alternatives": "The Lead could dispatch every assignment, but then an idle teammate cannot help with work that becomes ready later.",
       "zh": {
-        "title": "用类型化协议消息替代随意聊天",
-        "description": "计划请求和关闭请求会编码成带有明确 kind 的协议消息。队友可以根据消息类型分支处理，而不是从自由文本中猜意图。"
+        "title": "空闲队友主动寻找就绪任务",
+        "description": "s15 已经让队友在 IDLE 中保持存活。s16 为这个状态增加任务板入口：等待消息后，队友会扫描 pending、未分配且依赖已完成的任务。"
       },
       "ja": {
-        "title": "非公式チャットを型付きプロトコルメッセージに置き換える",
-        "description": "計画要求とシャットダウン要求は明示的な kind を持つプロトコルメッセージとして表現されます。チームメイトは自由文から意図を推測せず、型で分岐できます。"
+        "title": "待機中のチームメイトが実行可能な仕事を探す",
+        "description": "s15 ですでにチームメイトは IDLE のまま残る。s16 はその状態にタスクボード入口を追加し、メッセージ待機後に pending、未所有、依存解決済みのタスクを探す。"
       }
     },
     {
-      "id": "request-id-correlation",
-      "title": "Request IDs Close the Loop",
-      "description": "Each protocol request creates a pending record with a request_id. Responses must carry the same id, which lets the lead match replies even when multiple teammates are active.",
-      "alternatives": "Matching by latest message works in demos, but fails as soon as two requests overlap.",
+      "id": "atomic-claim",
+      "title": "Claiming Is Atomic",
+      "description": "The ownership check and task update run under one lock. When two teammates see the same ready task, only one can move it from pending to in_progress.",
+      "alternatives": "Scanning and writing without a shared lock can assign the same task twice.",
       "zh": {
-        "title": "Request ID 闭合协议循环",
-        "description": "每个协议请求都会创建带 request_id 的 pending 记录。响应必须携带同一个 id，因此即使多个队友同时工作，lead 也能匹配对应回复。"
+        "title": "任务认领必须原子化",
+        "description": "所有权检查与任务更新在同一把锁内完成。两个队友同时看到一个就绪任务时，只有一个能把它从 pending 推进到 in_progress。"
       },
       "ja": {
-        "title": "request_id がループを閉じる",
-        "description": "各プロトコル要求は request_id 付きの pending レコードを作ります。応答も同じ id を持つため、複数のチームメイトが動いていてもリードは対応する返信を照合できます。"
+        "title": "タスク認領を原子的に行う",
+        "description": "所有権確認とタスク更新を同じ lock の中で行う。二つのチームメイトが同じ実行可能タスクを見ても、pending から in_progress へ進められるのは一方だけである。"
       }
     },
     {
-      "id": "idle-protocol-handling",
-      "title": "Protocol Handling Runs During Idle Time",
-      "description": "Teammates can consume protocol messages while idle, so the lead can request plans or shutdowns without waiting for a separate user turn. This makes team control part of the runtime lifecycle.",
-      "alternatives": "Only checking protocols during active work would delay control messages and make shutdown unreliable.",
+      "id": "dependencies-filter-readiness",
+      "title": "Dependencies Define Readiness",
+      "description": "The scan returns a task only when every blockedBy dependency is completed. A teammate with nothing ready remains idle instead of starting work out of order.",
+      "alternatives": "Ignoring dependencies increases utilization, but produces work against unfinished inputs.",
       "zh": {
-        "title": "空闲期也处理协议",
-        "description": "队友在空闲状态也会消费协议消息，因此 lead 可以请求计划或关闭，而不必等待另一个用户回合。这让团队控制成为运行时生命周期的一部分。"
+        "title": "依赖关系决定任务是否就绪",
+        "description": "只有 blockedBy 中的依赖全部完成，扫描才会返回该任务。没有就绪任务的队友继续保持 IDLE，不会越过依赖提前开工。"
       },
       "ja": {
-        "title": "アイドル中にもプロトコルを処理する",
-        "description": "チームメイトはアイドル時にもプロトコルメッセージを消費します。リードは別のユーザーターンを待たずに計画や終了を要求でき、チーム制御がランタイムのライフサイクルに組み込まれます。"
+        "title": "依存関係が実行可能性を決める",
+        "description": "blockedBy の依存がすべて完了したタスクだけを走査結果に含める。実行可能な仕事がなければ IDLE を維持し、順序を飛ばして開始しない。"
       }
     }
   ]

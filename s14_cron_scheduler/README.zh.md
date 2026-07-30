@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21 → s22
+s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21
 > *"按时间表生产工作, 调度与执行解耦"* — cron 调度, 持久化或会话级。
 >
 > **Harness 层**: 调度 — 独立线程判断时间, 队列传递触发。
@@ -21,7 +21,7 @@ s13 让 Agent 能后台执行慢操作，但所有操作仍然是你手动触发
 
 ![Cron Scheduler Overview](images/cron-scheduler-overview.svg)
 
-教学代码沿用 S13 的简化任务系统、后台执行和 prompt 组装；为了聚焦调度器，省略完整错误恢复、记忆和技能系统。新增：独立的 cron 调度线程，每秒检查一次，时间到了把任务塞进 `cron_queue`；再由 queue processor 在 Agent 空闲时自动交付。
+本章新增独立的 cron 调度线程：每秒检查一次，把到期任务写入 `cron_queue`，再由 queue processor 在 Agent 空闲时自动交付。
 
 手动 vs 定时：
 
@@ -44,8 +44,6 @@ Cron 调度分四层：
 2. **Queue**：`cron_queue`，调度线程写入已触发任务
 3. **Queue Processor**：发现队列非空且 Agent 空闲，启动一轮 agent_loop
 4. **Consumer**：agent_loop 从队列消费，注入到 messages
-
-教学版实现的是最小 queue processor：用 `agent_lock` 判断 Agent 是否空闲，空闲时自动交付定时任务。真实 CC 的 `useQueueProcessor.ts` 还会处理 UI 阻塞、队列优先级和不同消息模式。
 
 ### CronJob: 数据结构
 
@@ -253,53 +251,5 @@ python s14_cron_scheduler/code.py
 
 s15 Agent Teams → 一个 Agent 不够，组队吧。持久队友 + 异步收件箱。
 
-<details>
-<summary>深入 CC 源码</summary>
-
-> 以下基于 CC 源码 `CronCreateTool.ts`、`cronScheduler.ts`、`cron.ts`、`cronTasks.ts`、`cronTasksLock.ts`、`useScheduledTasks.ts`（139 行）的完整分析。
-
-### 一、三个 Cron 工具
-
-CC 暴露了三个 cron 工具给模型：`CronCreate`、`CronDelete`、`CronList`。全部由编译时门控 `feature('AGENT_TRIGGERS')` 和运行时 GrowthBook 标志 `tengu_kairos_cron` 控制。还有一个 `CLAUDE_CODE_DISABLE_CRON` 环境变量做本地覆盖。
-
-### 二、存储：`.claude/scheduled_tasks.json`
-
-```json
-{ "tasks": [{ "id": "abc12345", "cron": "0 9 * * *", "prompt": "...", "recurring": true, "durable": true, "createdAt": 1714567890000 }] }
-```
-
-Durable 任务写磁盘；session-only 任务存于 `STATE.sessionCronTasks` 内存数组（进程重启丢失）。还有一个 `.scheduled_tasks.lock` 文件防止同项目的多个 session 重复触发。
-
-### 三、调度器：1 秒轮询
-
-`cronScheduler.ts` 每秒检查一次（`CHECK_INTERVAL_MS = 1000`）。谁持有锁谁触发文件任务；所有 session 都触发仅 session 任务。还有一个 `chokidar` 文件观察者监视 `scheduled_tasks.json` 变更。
-
-### 四、Cron 表达式：标准 5 字段
-
-分钟 小时 日 月 星期。支持 `*`、`*/N`、`N`、`N-M`、`N-M/S`、`N,M,...`。不支持 `L`、`W`、`?`。所有时间以本地时区解释。Day-of-month 和 day-of-week 同时约束时用 OR 语义。
-
-### 五、抖动（防惊群效应）
-
-- 重复性任务：触发延迟最多可达期间的 10%（上限 15 分钟），基于任务 ID 的确定性哈希
-- 一次性任务：当触发时间落在 `:00` 或 `:30` 时，最多提前 90 秒触发
-- 抖动配置可通过 GrowthBook 实时调整，60 秒刷新一次
-
-### 六、自动过期
-
-重复性任务 7 天后自动过期（可配置，上限 30 天）。过期前最后一次触发，触发后自动删除。
-
-### 七、作业数上限
-
-`MAX_JOBS = 50`（`CronCreateTool.ts:25`）。超限时返回错误："Too many scheduled jobs (max 50). Cancel one first."
-
-### 八、触发注入
-
-触发后通过 `enqueuePendingNotification()` 以 `priority: 'later'` 入队命令队列。标记 `workload: WORKLOAD_CRON`，API 在容量紧张时以更低的 QoS 为 cron 发起的请求服务。
-
-### 九、Queue Processor：自动交付
-
-真实 CC 通过 `useQueueProcessor.ts:48-60` 在无 query、无阻塞 UI、队列非空时自动触发处理。`queueProcessor.ts:52-87` 按队列优先级把命令交给 `handlePromptSubmit()`。教学版用 `queue_processor_loop` 保留核心行为：队列有任务且 Agent 空闲时，自动启动一轮 agent_loop。
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

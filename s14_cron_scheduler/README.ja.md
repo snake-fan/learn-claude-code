@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21 → s22
+s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21
 > *"スケジュールに従って作業を生産、スケジューリングと実行を分離"* — cron スケジューリング、永続またはセッションレベル。
 >
 > **Harness 層**: スケジューリング — 独立スレッドが時刻を判定、キューがトリガーを配信。
@@ -21,7 +21,7 @@ s13 で Agent は遅い操作をバックグラウンドで実行できるよう
 
 ![Cron Scheduler Overview](images/cron-scheduler-overview.ja.svg)
 
-教学版は S13 の簡易タスクシステム、バックグラウンド実行、プロンプト組み立てを踏襲。スケジューラに集中するため、完全なエラーリカバリ、メモリ、スキルシステムは省略。追加：独立した cron スケジューラスレッド、1 秒ごとにポーリング、時間が来たらタスクを `cron_queue` に投入し、queue processor が Agent のアイドル時に自動配信。
+この章では独立した cron スケジューラスレッドを追加する。1 秒ごとに確認し、期限に達したジョブを `cron_queue` に書き込み、queue processor が Agent のアイドル時に自動配信する。
 
 手動 vs スケジュール：
 
@@ -44,8 +44,6 @@ cron スケジューリングは 4 層に分かれる：
 2. **Queue**：`cron_queue`、スケジューラが発火済みタスクを書き込み
 3. **Queue Processor**：キューが空でなく Agent がアイドルなら、一回の agent_loop を開始
 4. **Consumer**：agent_loop がキューから消費、messages に注入
-
-教学版は最小の queue processor を実装する。`agent_lock` で Agent がアイドルかを判定し、キューに入った cron 作業を自動配信する。実際の CC の `useQueueProcessor.ts` はさらに UI ブロック、キュープライオリティ、メッセージモードを扱う。
 
 ### CronJob: データ構造
 
@@ -253,53 +251,5 @@ python s14_cron_scheduler/code.py
 
 s15 Agent Teams → 一人の Agent では足りない、チームを組もう。永続的なチームメイト + 非同期受信箱。
 
-<details>
-<summary>CC ソースコード深掘り</summary>
-
-> 以下は CC ソースコード `CronCreateTool.ts`、`cronScheduler.ts`、`cron.ts`、`cronTasks.ts`、`cronTasksLock.ts`、`useScheduledTasks.ts`（139 行）の完全分析に基づく。
-
-### 一、3 つの Cron ツール
-
-CC はモデルに 3 つの cron ツールを公開：`CronCreate`、`CronDelete`、`CronList`。すべてコンパイル時ゲート `feature('AGENT_TRIGGERS')` とランタイム GrowthBook フラグ `tengu_kairos_cron` で制御。`CLAUDE_CODE_DISABLE_CRON` 環境変数でローカル上書きも可能。
-
-### 二、ストレージ：`.claude/scheduled_tasks.json`
-
-```json
-{ "tasks": [{ "id": "abc12345", "cron": "0 9 * * *", "prompt": "...", "recurring": true, "durable": true, "createdAt": 1714567890000 }] }
-```
-
-durable タスクはディスクに書き込み。session-only タスクは `STATE.sessionCronTasks` メモリ配列に格納（プロセス再起動で消失）。`.scheduled_tasks.lock` ファイルで同じプロジェクトの複数セッション間の重複発火を防止。
-
-### 三、スケジューラ：1 秒ポーリング
-
-`cronScheduler.ts` は毎秒チェック（`CHECK_INTERVAL_MS = 1000`）。ロックを保持しているセッションがファイルタスクをトリガー。すべてのセッションが session-only タスクをトリガー。`chokidar` ファイルウォッチャーが `scheduled_tasks.json` の変更を監視。
-
-### 四、cron 式：標準 5 フィールド
-
-分 時 日 月 曜日。`*`、`*/N`、`N`、`N-M`、`N-M/S`、`N,M,...` をサポート。`L`、`W`、`?` は非サポート。すべての時間はローカルタイムゾーンで解釈。day-of-month と day-of-week が両方制約されている場合は OR セマンティクス。
-
-### 五、ジッター（サンダリングハード防止）
-
-- 定期タスク：トリガー遅延は期間の最大 10%（上限 15 分）、タスク ID ベースの決定的ハッシュ
-- 一回限りタスク：発火時刻が `:00` または `:30` の場合、最大 90 秒早く発火
-- ジッター設定は GrowthBook でリアルタイム調整可能、60 秒ごとにリフレッシュ
-
-### 六、自動期限切れ
-
-定期タスクは 7 日後に自動期限切れ（設定可能、上限 30 日）。期限切れ前に最後の一回を発火、その後自動削除。
-
-### 七、ジョブ数上限
-
-`MAX_JOBS = 50`（`CronCreateTool.ts:25`）。超過時はエラーを返す："Too many scheduled jobs (max 50). Cancel one first."
-
-### 八、トリガー注入
-
-発火後、`enqueuePendingNotification()` で `priority: 'later'` としてコマンドキューにエンキュー。`workload: WORKLOAD_CRON` タグ付き、API は容量が逼迫している時に cron 発信リクエストを低い QoS で処理。
-
-### 九、Queue Processor：自動配信
-
-実際の CC は `useQueueProcessor.ts:48-60` により、アクティブな query がなく、UI がブロックされておらず、キューが空でない場合に自動的に処理をトリガーする。`queueProcessor.ts:52-87` がキュープライオリティに従ってコマンドを `handlePromptSubmit()` にディスパッチ。教学版は `queue_processor_loop` で核心動作を保つ：キューに作業があり Agent がアイドルなら、自動的に一回の agent_loop を開始する。
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

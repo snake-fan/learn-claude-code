@@ -69,7 +69,7 @@
   <text x="135" y="320" fill="#1e40af" font-size="13" font-weight="700">microCompact</text>
   <text x="260" y="320" fill="#1e40af" font-size="11">旧 tool_result → 占位符（保留最近 3 条）</text>
   <text x="650" y="320" fill="#1e40af" font-size="10" text-anchor="end">压旧结果</text>
-  <text x="135" y="338" fill="#2563eb" font-size="9">触发：每轮自动，教学版用文本占位符模拟</text>
+  <text x="135" y="338" fill="#2563eb" font-size="9">触发：每轮自动，把较旧结果替换为文本占位符</text>
 
   <!-- ===== 自动压缩标题 ===== -->
   <rect x="20" y="358" width="720" height="24" rx="4" fill="#f1f5f9"/>

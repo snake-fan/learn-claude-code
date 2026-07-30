@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s14 → ... → s20 → s21 → s22
+s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s14 → ... → s20 → s21
 
 > *"大目标拆成小任务, 排好序, 持久化"* — 文件持久化的任务图, 多 agent 协作的基础。
 >
@@ -14,7 +14,7 @@ s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s1
 
 Agent 接到一个项目：搭数据库、写 API、加测试。它用 s05 的 TodoWrite 列了一张清单，然后开始写 API，写到一半发现没数据库表，回头补；加测试时发现 API 接口签名又变了...
 
-盖房子不能先盖屋顶再打地基。任务之间有先后。任务依赖应该形成有向无环图（DAG）；教学版只演示 `blockedBy` 检查，没有实现环检测。
+盖房子不能先盖屋顶再打地基。任务之间有先后。任务之间的前置依赖可以表示为有向无环图（DAG），本章用 `blockedBy` 记录这些依赖。
 
 s05 的 TodoWrite 是当前任务的执行清单，保存在会话内存中。这里需要的是**任务系统**：每个任务是一个 JSON 文件，任务之间有 `blockedBy` 依赖，跨会话持久化在磁盘上。
 
@@ -24,7 +24,7 @@ s05 的 TodoWrite 是当前任务的执行清单，保存在会话内存中。�
 
 ![Task System Overview](images/task-system-overview.svg)
 
-教学代码保留基础 agent loop，为聚焦任务系统省略了 S11 的完整错误恢复（RecoveryState、退避、升级、reactive compact、fallback model）。新增 5 个教学工具 + `.tasks/` 目录持久化 + `blockedBy` 依赖检查。任务系统与错误恢复是独立层：CC 源码中的任务模块管理任务状态，query recovery 管理模型调用失败。
+本章新增 5 个任务工具、`.tasks/` 目录持久化和 `blockedBy` 依赖检查。
 
 TodoWrite vs Task System：
 
@@ -38,8 +38,6 @@ TodoWrite vs Task System：
 | 状态 | pending / in_progress / completed | pending / in_progress / completed |
 | 粒度 | Agent 自己的步骤 | 可被认领、追踪、解锁的任务 |
 | 更新契约 | 整表替换 | 对单条记录执行创建、读取、更新、列举 |
-
-教学 API 用 `create_task`、`list_tasks`、`get_task`、`claim_task`、`complete_task` 把生命周期展开。Claude Code 的产品表面把这些操作归入四个工具：`TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`；认领与完成属于更新，不是独立的官方工具。
 
 ---
 
@@ -62,7 +60,7 @@ class Task:
     blockedBy: list[str] # 依赖的任务 ID 列表
 ```
 
-ID 用 `timestamp + random hex` 生成，简单但够用。CC 用顺序 ID + highwatermark 文件防止 ID 重用，是更严谨的设计。
+ID 使用 `timestamp + random hex` 生成。
 
 ### create_task: 创建任务
 
@@ -162,8 +160,6 @@ pending ──claim──→ in_progress ──complete──→ completed
 - **claim_task**: `pending` → `in_progress`。设置 owner，开始工作。
 - **complete_task**: `in_progress` → `completed`。把任务标记为完成，并解锁下游。
 
-CC 没有 `in_progress → pending` 的 release 路径。如果 teammate 终止或 shutdown，CC 会把它未完成的任务 unassign（清除 owner），并将 status 重置为 `pending`，方便其他 agent 重新认领。教学版省略了这一恢复路径。
-
 ### 合起来跑
 
 ```python
@@ -228,58 +224,5 @@ python s12_task_system/code.py
 
 s13 Background Tasks → 慢操作放后台。Agent 继续处理其他任务，后台跑完了通知它。
 
-<details>
-<summary>深入 CC 源码</summary>
-
-> 以下基于 CC 源码 `utils/tasks.ts`（862 行）、`tools/TaskCreateTool/TaskCreateTool.ts`（138 行）、`tools/TaskUpdateTool/TaskUpdateTool.ts`（406 行）、`tools/TaskGetTool/TaskGetTool.ts`（128 行）、`tools/TaskListTool/TaskListTool.ts`（116 行）、`hooks/useTaskListWatcher.ts`（221 行）的分析。
-
-### 一、TaskRecord 的完整字段
-
-教学版只讲了 id、subject、status、owner、blockedBy。CC 实际有 9 个字段（`utils/tasks.ts:76-89`）：
-
-| 字段 | 类型 | 用途 |
-|------|------|------|
-| `id` | string | 递增整数 ID |
-| `subject` | string | 简短标题 |
-| `description` | string | 自由格式描述 |
-| `activeForm` | string? | 进行时态，in_progress 时在 spinner 显示 |
-| `owner` | string? | 分配的 agent ID |
-| `status` | pending/in_progress/completed | 生命周期 |
-| `blocks` | string[] | 此任务阻塞的任务 ID（下游） |
-| `blockedBy` | string[] | 阻塞此任务的任务 ID（上游） |
-| `metadata` | Record? | 任意扩展键值对 |
-
-存储位置：`~/.claude/tasks/{taskListId}/{id}.json`。每个任务一个文件。
-
-### 二、目标相近，机制独立
-
-Task 工具与 TodoWrite 可以同时存在，但不共享一套存储模型。当前交互式会话默认使用结构化 Task 工具；TodoWrite 仍位于非交互式、Agent SDK 等兼容表面，具体暴露方式会随版本和配置变化。Task 记录增加了文件锁并发保护、依赖强制执行、ownership、响应式监听和生命周期 hooks；TodoWrite 仍是整表替换的会话清单。
-
-### 三、并发认领的锁机制
-
-`claimTask()`（`utils/tasks.ts:541-612`）用双重锁防竞争：
-
-**任务文件锁**：`proper-lockfile` 锁住 `{taskId}.json`（最多重试 30 次，指数退避 5-100ms）。锁内：
-1. 重新读取任务（防 TOCTOU）
-2. 检查已被他人认领 → `already_claimed`
-3. 检查已完成 → `already_resolved`
-4. 检查上游未完成 → `blocked`
-5. 设置 owner
-
-**列表级锁**（agent busy 检查时）：`.lock` 文件，原子性扫描所有任务并检查该 agent 是否已有其他 open task。
-
-注意：教学版把 claim 和开始工作合成一步（claim = set owner + in_progress）；真实 CC 的 `claimTask` 主要解决 owner 竞争，只设 owner 不改 status，状态更新由 `TaskUpdate` 完成。
-
-### 四、高水位标防 ID 重用
-
-`.highwatermark` 文件记录曾分配过的最高任务 ID。即使任务被删除，ID 也不会被重用。
-
-### 五、四个 Task 工具
-
-CC 的任务系统有四个工具（不是教学版的一个通用 Task 工具）：`TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`。全部设置 `isConcurrencySafe: true` 和 `shouldDefer: true`（工具 schema 不在初始 prompt 中，需 ToolSearch 后才可见）。
-
-教学版的 `create_task(blockedBy=...)` 在创建时直接声明依赖，是合理简化。真实 CC 的 `TaskCreate` 只接受 subject/description/activeForm/metadata，依赖关系由 `TaskUpdate` 的 `addBlocks/addBlockedBy` 维护。
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

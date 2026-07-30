@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → `s06` → [s07](../s07_skill_loading/) → s08 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → s05 → `s06` → [s07](../s07_skill_loading/) → s08 → ... → s20 → s21
 
 > *"Break large tasks small, each with clean context"* — Subagent uses an independent messages[], no pollution in the main conversation.
 >
@@ -131,59 +131,5 @@ The Agent can now break tasks apart. But different tasks require different knowl
 
 → s07 Skill Loading: Inject skills on demand instead of piling documents into the system prompt. Load only when needed, as natural as reading a file.
 
-<details>
-<summary>Dive into CC Source Code</summary>
-
-> The following is based on a complete analysis of CC source code `AgentTool.tsx`, `runAgent.ts`, `forkSubagent.ts`, and `forkedAgent.ts`.
-
-### 1. Not One Pattern, but Three
-
-The teaching version covers only "fresh messages[]". CC actually has three execution modes:
-
-| Mode | Trigger | Context |
-|------|---------|---------|
-| **Normal Subagent** | `subagent_type` specified (normal path) | Truly fresh messages[], only the prompt |
-| **Fork Subagent** | No `subagent_type`, fork gate enabled | Constructs cache-friendly prefix via `buildForkedMessages()`, shares prompt cache |
-| **General-Purpose** | No `subagent_type`, fork gate disabled | Same as Normal |
-
-### 2. Fork Mode: Sharing Prompt Cache
-
-This is a core concept the teaching version omits. Fork mode (`forkSubagent.ts:60-71`) doesn't create a fresh context. Instead, it constructs a cache-friendly message prefix via `buildForkedMessages()` (`forkSubagent.ts:107-168`), preserving the parent assistant message and generating placeholder tool results. The goal isn't isolation, but making the Anthropic API's prompt cache hit: parent and child Agent's system prompt, tools, and message prefix are byte-identical, so the API doesn't need to recompute.
-
-Five key components for cache hit (`forkedAgent.ts:57-68`): system prompt, tools, model, message prefix, thinking config, must be byte-identical.
-
-### 3. Context Isolation's Precise Granularity
-
-`createSubagentContext()` (`forkedAgent.ts:345-462`) creates the sub-Agent's `ToolUseContext`:
-
-| Field | Behavior |
-|-------|----------|
-| `abortController` | New child controller; parent abort propagates down |
-| `setAppState` | Default no-op; but sync agents share via `shareSetAppState` (`runAgent.ts:697-714`) |
-| `readFileState` | **Cloned from parent** (avoids re-reading same files) |
-| `queryTracking` | New chainId, `depth = parentDepth + 1` |
-
-The sub-Agent isn't fully isolated: file read state is shared. The degree of UI and notification isolation varies by execution path (sync/async/fork/teammate differ).
-
-### 4. Recursive Fork Protection
-
-The teaching version uses "sub-Agent has no task tool" for recursion protection. The real implementation is more nuanced: `isInForkChild()` (`forkSubagent.ts:78-89`) checks for `FORK_BOILERPLATE_TAG` in history. But `constants/tools.ts:36-46` defaults `Agent` to all agents' disabled set (with `USER_TYPE === 'ant'` exception); `forkSubagent.ts:73-89` has fork-child-specific recursion protection; `agentToolUtils.ts:100-110` has special allowances in teammate scenarios. Not simply "no further sub-Agents."
-
-### 5. Permission Bubbling
-
-Fork Agent's `permissionMode: 'bubble'` (`forkSubagent.ts:67`) means the sub-Agent's permission prompts bubble up to the parent terminal: the user approves sub-Agent operations in the main terminal.
-
-### 6. Async vs Sync
-
-The teaching version only shows synchronous sub-Agents (parent waits for child to finish). CC also supports async paths (`AgentTool.tsx:686-764`): when `run_in_background: true`, the sub-Agent launches asynchronously, returning `{ status: 'async_launched' }` immediately to the parent, and notifies the parent when complete. Actual triggers go beyond `run_in_background`, including auto-background, assistant force async, and coordinator/proactive paths.
-
-### Teaching Version Simplifications Are Intentional
-
-- Three modes → one (fresh messages): conceptually clear
-- Prompt cache sharing → omitted: teaching version doesn't involve API-layer optimization
-- Recursive fork protection → simplified to "sub-Agent has no task tool"
-- Async → omitted (left for s13): s06 focuses on the synchronous model first
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

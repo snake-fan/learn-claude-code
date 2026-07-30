@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s14 → ... → s20 → s21 → s22
+s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s14 → ... → s20 → s21
 
 > *"Break big goals into small tasks, order them, persist"* — File-persisted task graph, the foundation for multi-agent collaboration.
 >
@@ -14,7 +14,7 @@ s01 → ... → s10 → s11 → `s12` → [s13](../s13_background_tasks/) → s1
 
 The agent receives a project: set up a database, write APIs, add tests. It uses s05's TodoWrite to create a checklist, then starts writing the API first, gets halfway through and realizes there are no database tables, goes back to fix them; when adding tests, discovers the API interface signatures have changed again...
 
-You can't build the roof before laying the foundation. Tasks have ordering. Task dependencies should form a Directed Acyclic Graph (DAG); the teaching version only demonstrates `blockedBy` checking, without cycle detection.
+You can't build the roof before laying the foundation. Tasks have ordering. Task prerequisites can be represented as a Directed Acyclic Graph (DAG); this chapter records them with `blockedBy`.
 
 s05's TodoWrite is an execution checklist for the current task, kept in session memory. What you need here is a **task system**: each task is a JSON file, tasks have `blockedBy` dependencies, and they persist across sessions on disk.
 
@@ -24,7 +24,7 @@ s05's TodoWrite is an execution checklist for the current task, kept in session 
 
 ![Task System Overview](images/task-system-overview.en.svg)
 
-Teaching code keeps a basic agent loop, omitting S11's full error recovery (RecoveryState, backoff, escalation, reactive compact, fallback model) to stay focused on the task system. Added: 5 teaching tools + `.tasks/` directory for persistence + `blockedBy` dependency checking. The task system and error recovery are independent layers: in CC source, `utils/tasks.ts` handles task state while query recovery handles model-call failures.
+This chapter adds 5 task tools, persistence in the `.tasks/` directory, and `blockedBy` dependency checks.
 
 TodoWrite vs Task System:
 
@@ -38,8 +38,6 @@ TodoWrite vs Task System:
 | Status | pending / in_progress / completed | pending / in_progress / completed |
 | Granularity | The agent's own steps | Tasks that can be claimed, tracked, and unblocked |
 | Update contract | Replace the whole checklist | Create/get/update/list individual records |
-
-The teaching API spells the lifecycle out as `create_task`, `list_tasks`, `get_task`, `claim_task`, and `complete_task`. Claude Code's product surface groups those operations into four tools: `TaskCreate`, `TaskGet`, `TaskUpdate`, and `TaskList`; claiming and completion are updates, not separate official tools.
 
 ---
 
@@ -62,7 +60,7 @@ class Task:
     blockedBy: list[str] # List of dependency task IDs
 ```
 
-IDs are generated with `timestamp + random hex`, simple but sufficient. CC uses sequential IDs + a highwatermark file to prevent ID reuse, which is a more rigorous design.
+IDs are generated with `timestamp + random hex`.
 
 ### create_task: Create Tasks
 
@@ -162,8 +160,6 @@ Here `claim` / `complete` are actions, while `pending` / `in_progress` / `comple
 - **claim_task**: `pending` → `in_progress`. Sets owner, begins work.
 - **complete_task**: `in_progress` → `completed`. Marks the task done and unblocks downstream.
 
-CC has no `in_progress → pending` release path. If a teammate terminates or shuts down, CC unassigns its unfinished tasks (clears owner) and resets status to `pending`, allowing other agents to reclaim them. The teaching version omits this recovery path.
-
 ### Putting It Together
 
 ```python
@@ -228,58 +224,5 @@ The task graph is in place. But some tasks take a long time — like running ful
 
 s13 Background Tasks → Slow operations go to the background. The agent continues processing other tasks, and gets notified when the background work is done.
 
-<details>
-<summary>Deep Dive into CC Source</summary>
-
-> The following is a complete analysis based on CC source code `utils/tasks.ts` (862 lines), `tools/TaskCreateTool/TaskCreateTool.ts` (138 lines), `tools/TaskUpdateTool/TaskUpdateTool.ts` (406 lines), `tools/TaskGetTool/TaskGetTool.ts` (128 lines), `tools/TaskListTool/TaskListTool.ts` (116 lines), `hooks/useTaskListWatcher.ts` (221 lines).
-
-### 1. TaskRecord's Full Fields
-
-The tutorial only covers id, subject, status, owner, blockedBy. CC actually has 9 fields (`utils/tasks.ts:76-89`):
-
-| Field | Type | Purpose |
-|------|------|---------|
-| `id` | string | Incrementing integer ID |
-| `subject` | string | Short title |
-| `description` | string | Free-form description |
-| `activeForm` | string? | Present tense form, shown in spinner when in_progress |
-| `owner` | string? | Assigned agent ID |
-| `status` | pending/in_progress/completed | Lifecycle |
-| `blocks` | string[] | Task IDs blocked by this task (downstream) |
-| `blockedBy` | string[] | Task IDs blocking this task (upstream) |
-| `metadata` | Record? | Arbitrary extension key-value pairs |
-
-Storage location: `~/.claude/tasks/{taskListId}/{id}.json`. One file per task.
-
-### 2. Same Intent, Independent Mechanisms
-
-Task tools and TodoWrite can coexist, but they do not share one storage model. Current interactive sessions default to structured Task tools, while TodoWrite remains on compatibility surfaces such as non-interactive and Agent SDK usage; exact exposure varies by release and configuration. Task records add file-lock concurrency protection, dependency enforcement, ownership, reactive monitoring, and lifecycle hooks. TodoWrite remains a whole-list session checklist.
-
-### 3. Concurrent Claim Locking
-
-`claimTask()` (`utils/tasks.ts:541-612`) uses dual locking to prevent races:
-
-**Task file lock**: `proper-lockfile` locks `{taskId}.json` (up to 30 retries, exponential backoff 5-100ms). Inside the lock:
-1. Re-read task (prevent TOCTOU)
-2. Check already claimed by another → `already_claimed`
-3. Check already completed → `already_resolved`
-4. Check upstream not completed → `blocked`
-5. Set owner
-
-**List-level lock** (agent busy check): `.lock` file, atomic scan of all tasks to check if the agent already has other open tasks.
-
-Note: The teaching version combines claiming and starting work into one step (claim = set owner + in_progress); real CC's `claimTask` primarily resolves owner competition — it only sets owner without changing status. Status updates are handled by `TaskUpdate`.
-
-### 4. High-Water Mark to Prevent ID Reuse
-
-The `.highwatermark` file records the highest task ID ever assigned. Even if a task is deleted, its ID won't be reused.
-
-### 5. Four Task Tools
-
-CC's task system has four tools (not the tutorial's single generic Task tool): `TaskCreate`, `TaskGet`, `TaskUpdate`, `TaskList`. All set `isConcurrencySafe: true` and `shouldDefer: true` (tool schemas aren't in the initial prompt; only visible after ToolSearch).
-
-The teaching version's `create_task(blockedBy=...)` declares dependencies at creation time, which is a reasonable simplification. Real CC's `TaskCreate` only accepts subject/description/activeForm/metadata — dependencies are maintained via `TaskUpdate`'s `addBlocks/addBlockedBy`.
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

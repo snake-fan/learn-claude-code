@@ -74,9 +74,7 @@ def get_system_prompt(context: dict) -> str:
 
     Uses json.dumps for deterministic serialization, not Python's hash()
     which has process randomization and fails on nested dicts/lists.
-    This cache only avoids redundant string assembly within a process.
-    Real Claude Code additionally protects API-level prompt cache via
-    stable section ordering and SYSTEM_PROMPT_DYNAMIC_BOUNDARY.
+    Stable serialization lets identical context reuse the assembled prompt.
     """
     global _last_context_key, _last_prompt
     key = json.dumps(context, sort_keys=True, ensure_ascii=False, default=str)

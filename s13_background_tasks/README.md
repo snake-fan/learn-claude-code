@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s11 → s12 → `s13` → [s14](../s14_cron_scheduler/) → s15 → ... → s20 → s21 → s22
+s01 → ... → s11 → s12 → `s13` → [s14](../s14_cron_scheduler/) → s15 → ... → s20 → s21
 
 > *"Slow operations go to the background, agent continues processing"* — Background threads run commands, inject notifications when done.
 >
@@ -24,7 +24,7 @@ Reading files is milliseconds, no wait. `git status` returns in under a second, 
 
 ![Background Tasks Overview](images/background-tasks-overview.en.svg)
 
-Teaching code carries forward S12's simplified task system and prompt assembly; to stay focused on background tasks, it omits full error recovery, memory, and skill systems. The only change: slow operations go to background threads, the agent continues running the loop, and background results are injected as notifications.
+This chapter sends slow operations to background threads so the agent can keep running the loop. When a task finishes, its result is injected as a notification.
 
 Sync vs Background:
 
@@ -41,7 +41,7 @@ Sync vs Background:
 
 ### should_run_background: Explicit Request First, Heuristic Fallback
 
-The model explicitly requests background execution via the bash tool's `run_in_background` parameter. If the model doesn't specify, the teaching version falls back to keyword heuristics:
+The model explicitly requests background execution via the bash tool's `run_in_background` parameter. If the model does not specify it, keyword heuristics decide:
 
 ```python
 def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
@@ -60,8 +60,6 @@ def should_run_background(tool_name: str, tool_input: dict) -> bool:
         return True
     return is_slow_operation(tool_name, tool_input)
 ```
-
-CC's bash tool schema has a `run_in_background: boolean` parameter (`BashTool.tsx:241`). The model decides which commands go to background, no keyword guessing. The teaching version keeps heuristics as fallback, but the primary path is explicit model request.
 
 ### start_background_task: Background Execution and Lifecycle
 
@@ -96,7 +94,7 @@ def start_background_task(block) -> str:
     return bg_id
 ```
 
-Returns `bg_id` instead of just `[Running in background...]`. `daemon=True` ensures threads exit when the agent process exits. The teaching version uses in-memory dicts for tracking; real CC has `LocalShellTaskState`, output redirected to files, with full lifecycle including stopping tasks and reading subsequent output.
+`start_background_task()` returns `bg_id`. `daemon=True` ensures the thread exits with the agent process.
 
 ### collect_background_results: Notification Collection
 
@@ -157,8 +155,6 @@ messages.append({"role": "user", "content": user_content})
 
 Slow operations get a placeholder tool_result with `bg_id`, so the LLM knows this command is still running and can do other things first. When background completes, the notification is injected as an independent text block alongside the current turn's tool_results in one user message.
 
-The teaching version polls background results while the agent loop continues running. Real CC uses a notification queue (`messageQueueManager.ts`) to deliver background completion events to subsequent turns, without waiting for the tool loop.
-
 ### Putting It Together
 
 ```
@@ -216,46 +212,5 @@ Background tasks solved "slow operations don't block." But what if you want to d
 
 s14 Cron Scheduler → Give the agent an alarm clock.
 
-<details>
-<summary>Deep Dive into CC Source</summary>
-
-> The following is a complete analysis based on CC source code `query.ts` (lines 211, 1054-1060, 1411-1482), `services/toolUseSummary/toolUseSummaryGenerator.ts` (L15 prompt text), `LocalShellTask.tsx` (L24-25 constants, L59-98 watchdog logic), `messageQueueManager.ts` (notification queue), `utils/task/framework.ts` (L267 `enqueueTaskNotification`).
-
-### 1. pendingToolUseSummary: Haiku Background Generation
-
-CC starts a Haiku side-query after each batch of tool executions to generate a tool use summary. Initiated at `query.ts:1411-1482`, prompt text defined at `services/toolUseSummary/toolUseSummaryGenerator.ts:15` (variable `TOOL_USE_SUMMARY_SYSTEM_PROMPT`). The prompt is "Write a short summary label... think git-commit-subject, not sentence", past tense, ~30 characters.
-
-Haiku summary (~1s) completes during the main model's streaming output (5-30s). Before the next turn starts, the summary is yielded. SDK consumers use these summaries for mobile progress display.
-
-### 2. Thread Model: No Real Threads
-
-CC runs on Node.js/Bun's single-threaded event loop. "Background" just means "don't await". `ShellCommand.background(taskId)` redirects stdout/stderr to files, letting the process run independently.
-
-### 3. Seven Background Task Types
-
-CC defines 7 background task types (`Task.ts:7-13`): `local_bash`, `local_agent`, `remote_agent`, `in_process_teammate`, `local_workflow`, `monitor_mcp`, `dream`. Each has its own registration, lifecycle, and notification mechanism.
-
-### 4. Notification Injection: Command Queue
-
-When a background task completes, it's enqueued via `enqueueTaskNotification` (`utils/task/framework.ts:267`) or `enqueuePendingNotification` (`messageQueueManager.ts`) into a shared command queue. The notification format is structured XML:
-
-```xml
-<task_notification>
-  <status>completed</status>
-  <summary>Background command "npm test" completed (exit code 0)</summary>
-</task_notification>
-```
-
-Priority is `next` > `later` (`messageQueueManager.ts`). Background tasks default to `later` (don't block user input). Consumption point at `query.ts:1566-1593`.
-
-### 5. Stall Watchdog
-
-Background bash tasks have a watchdog (`LocalShellTask.tsx` L24-25 constants, L59-98 logic) that periodically checks if output has stalled. After 45 seconds with no growth, it detects interactive prompts (`(y/n)` etc.), preventing background tasks from getting stuck on unanswered interactive dialogs.
-
-### 6. Concurrency Limits
-
-Foreground tool calls: `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (default 10 concurrent safe tools). Background bash tasks: no hard limit, they're independent subprocesses.
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

@@ -2,45 +2,45 @@
   "version": "s18",
   "decisions": [
     {
-      "id": "worktree-name-validation",
-      "title": "Worktree Names Are Validated Before Git Runs",
-      "description": "The tool validates names before creating branches or directories. That keeps a teaching implementation from normalizing unsafe user input into shell or filesystem operations.",
-      "alternatives": "Passing names directly to git is shorter, but it turns a collaboration feature into an injection hazard.",
+      "id": "normalized-mcp-namespace",
+      "title": "MCP Tools Use a Normalized Namespace",
+      "description": "Discovered tools are exposed as mcp__server__tool. The prefix makes the source explicit and avoids collisions with built-in tools or tools from another server.",
+      "alternatives": "Using the raw tool name is shorter, but search from two servers could overwrite each other.",
       "zh": {
-        "title": "运行 Git 前先校验 Worktree 名称",
-        "description": "工具在创建分支或目录前先校验名称。这样教学实现不会把不安全的用户输入直接传入 shell 或文件系统操作。"
+        "title": "MCP 工具使用规范化命名空间",
+        "description": "发现到的工具会暴露为 mcp__server__tool。前缀让工具来源明确，也避免和内置工具或其他服务器工具冲突。"
       },
       "ja": {
-        "title": "git 実行前に worktree 名を検証する",
-        "description": "ブランチやディレクトリ作成前に名前を検証します。学習用実装が危険なユーザー入力を shell やファイルシステム操作へ流し込むことを防ぎます。"
+        "title": "MCP ツールは正規化された名前空間を使う",
+        "description": "発見されたツールは mcp__server__tool として公開されます。接頭辞により出所が明確になり、組み込みツールや別サーバーのツールとの衝突を避けます。"
       }
     },
     {
-      "id": "task-bound-worktree",
-      "title": "The Task Record Owns the Worktree Binding",
-      "description": "A task stores its assigned worktree so future commands know where to run. The binding is explicit data, not a hidden convention based on naming or current working directory.",
-      "alternatives": "Deriving the worktree path from branch names is convenient, but brittle when tasks are renamed or moved.",
+      "id": "dynamic-tool-pool",
+      "title": "Tool Discovery Updates the Active Tool Pool",
+      "description": "After connecting to a server, the runtime assembles a new tool pool for the next LLM call. The model can only use MCP tools after discovery has made them visible.",
+      "alternatives": "Preloading every possible MCP tool would create a huge prompt and expose capabilities the user did not request.",
       "zh": {
-        "title": "任务记录持有 Worktree 绑定关系",
-        "description": "任务会记录自己分配到的 worktree，因此后续命令知道应该在哪里运行。这个绑定是显式数据，而不是依赖命名或当前目录的隐藏约定。"
+        "title": "工具发现会更新活动工具池",
+        "description": "连接服务器后，运行时会为下一次 LLM 调用组装新的工具池。模型只有在发现阶段让 MCP 工具可见之后，才能调用它们。"
       },
       "ja": {
-        "title": "タスクレコードが worktree の紐付けを持つ",
-        "description": "タスクは割り当てられた worktree を保持し、後続コマンドは実行場所を把握できます。この紐付けは命名や現在ディレクトリに依存する暗黙の規約ではなく、明示的なデータです。"
+        "title": "ツール発見がアクティブなツールプールを更新する",
+        "description": "サーバー接続後、ランタイムは次の LLM 呼び出し用に新しいツールプールを組み立てます。MCP ツールは発見で可視化された後にのみモデルが利用できます。"
       }
     },
     {
-      "id": "lifecycle-event-stream",
-      "title": "Lifecycle Events Stay Separate from Tool Results",
-      "description": "Creation, status, keep, and removal events are emitted to a side-channel log. That makes worktree state observable without overloading the conversational transcript.",
-      "alternatives": "Only returning tool results is simpler, but later debugging needs a durable audit trail of worktree lifecycle changes.",
+      "id": "external-results-append-like-tools",
+      "title": "External Results Reuse the Tool Result Path",
+      "description": "MCP responses are appended to the conversation like ordinary tool results. This keeps the agent loop unchanged while still letting external systems participate.",
+      "alternatives": "A separate external-response channel would make MCP feel special and require extra loop logic.",
       "zh": {
-        "title": "生命周期事件与工具结果分离",
-        "description": "创建、状态、保留和移除事件会写入旁路日志。这样 worktree 状态可观察，同时不会把对话 transcript 塞满运行时事件。"
+        "title": "外部结果复用 Tool Result 路径",
+        "description": "MCP 响应会像普通 tool result 一样追加到对话中。这样 agent 循环无需改变，同时外部系统仍然可以参与。"
       },
       "ja": {
-        "title": "ライフサイクルイベントをツール結果から分離する",
-        "description": "作成、状態、保持、削除のイベントはサイドチャネルログへ出力します。会話 transcript をランタイムイベントで埋めずに worktree 状態を観測できます。"
+        "title": "外部結果は tool result 経路を再利用する",
+        "description": "MCP の応答は通常の tool result と同じように会話へ追加されます。エージェントループを変えずに外部システムを参加させられます。"
       }
     }
   ]

@@ -19,8 +19,8 @@ The entire secret of an AI coding agent in one pattern:
                           (loop continues)
 
 This is the core loop: feed tool results back to the model
-until the model decides to stop. Production agents layer
-policy, hooks, and lifecycle controls on top.
+until the model decides to stop. Later chapters add policy,
+hooks, and lifecycle controls around it.
 
 Usage:
     pip install anthropic python-dotenv

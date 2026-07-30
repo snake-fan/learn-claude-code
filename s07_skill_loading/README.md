@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s20 → s21 → s22
+s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s20 → s21
 > *"Load when needed, don't stuff the prompt"* — Inject via tool_result, not system prompt.
 >
 > **Harness Layer**: Knowledge — load on demand, don't fill the context.
@@ -139,44 +139,5 @@ On-demand loading solved "don't carry what you shouldn't." But another problem l
 
 → s08 Context Compact: A four-layer compaction strategy. Cheap layers run first, expensive layers run last.
 
-<details>
-<summary>Dive into CC Source Code</summary>
-
-> The following is based on analysis of CC source code `loadSkillsDir.ts`, `SkillTool.ts`, `bundledSkills.ts`, `commands.ts`.
-
-### 1. Skill Sources: Not Just One skills/ Directory
-
-The teaching version assumes all skills live in a `skills/` directory. CC loads from multiple sources spread across multiple files: `loadSkillsDir.ts` handles user/project/`--add-dir` directories and legacy commands (`.claude/commands/`); `bundledSkills.ts` handles built-in skills; `SkillTool.ts` handles MCP remote skills; `commands.ts` handles command aggregation. Types include managed/policy skills, user skills (`~/.claude/skills/`), project skills (`.claude/skills/`), `--add-dir` skills, legacy commands, dynamic skills, conditional skills (with `paths` frontmatter, activated by file path), bundled skills, plugin skills, MCP skills.
-
-### 2. SKILL.md Frontmatter — Common Fields
-
-CC's SKILL.md YAML frontmatter is parsed by `parseSkillFrontmatterFields()` in `loadSkillsDir.ts`. Common fields include:
-
-| Field | Purpose |
-|-------|---------|
-| `name` / `description` | Display name and description |
-| `when_to_use` | Guides the model on when to invoke |
-| `allowed-tools` | Auto-allow list of tools available to the skill |
-| `context` | `inline` (default) or `fork` (run as sub-Agent) |
-| `model` | Model override (haiku/sonnet/opus/inherit) |
-| `hooks` | Skill-level hook configuration |
-| `paths` | Glob patterns for conditional activation |
-| `user-invocable` | Users can invoke via `/name` |
-
-The complete field list changes across versions; above are the core fields relevant to the teaching version.
-
-### 3. Precise Implementation of Two-Level Loading
-
-1. **Catalog (at startup)**: `getSkillDirCommands()` scans directory → registers as `Command` objects containing only metadata. `getSkillListingAttachments()` formats the skill list as attachments, budgeted at ~1% of the context window (cap 8000 characters).
-2. **Load (on invocation)**: Model calls `Skill` tool (input fields are `skill` + optional `args`; teaching version uses `name`) → `getPromptForCommand()` expands full SKILL.md content → `SkillTool` returns a tool_result with display text `"Launching skill: {name}"`, while the actual skill content is injected via `newMessages`. The teaching version merges both into "injected via tool_result" as a simplification; the loaded SKILL.md can still guide later access to referenced resources through existing file/bash tools.
-
-### The Teaching Version's Simplification Is Intentional
-
-- Multiple files and sources → 1 `skills/` directory: sufficient to demonstrate the core concept of two-level loading
-- Multiple frontmatter fields → only parse name/description: reduces parsing complexity
-- Forked skills (`context: 'fork'`) → omitted: the teaching version only expands inline skill loading
-- `Skill` tool input `skill`+`args` → teaching version uses `name`: avoids extra argument parsing complexity
-
-</details>
 
 <!-- translation-sync: zh@v2, en@v2, ja@v2 -->

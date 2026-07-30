@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s20 → s21 → s22
+s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s20 → s21
 > *"Add a tool, add just one handler"* — The loop stays the same. Register the new tool in the dispatch map and you're done.
 >
 > **Harness Layer**: Tool Dispatch — Expanding the model's reach.
@@ -106,7 +106,7 @@ Adding a tool = one entry in `TOOLS` array + one line in `TOOL_HANDLERS` dict. T
 
 The model often returns multiple tool_use calls at once — "read a.py and b.py, then list all .py files".
 
-The teaching version executes them one by one in the original `response.content` order. CC's approach is more complex: it slices the original order into consecutive batches, where concurrency-safe tools within a batch run in parallel, and batches are strictly sequential (see appendix).
+Calls are executed one by one in their original `response.content` order.
 
 ---
 
@@ -116,7 +116,7 @@ The teaching version executes them one by one in the original `response.content`
 |---------|-----------|
 | TOOL_HANDLERS | Tool name → handler function dict. Add a tool = add one mapping line |
 | Tool Definition | JSON schema telling the model "what I can do" |
-| Multiple tool calls | Model may return multiple tool_use at once; teaching version executes them in original order |
+| Multiple tool calls | Model may return multiple tool_use at once; calls execute in their original order |
 | Loop Unchanged | s01's `while True` loop — not a single line changed |
 
 ---
@@ -156,67 +156,5 @@ The Agent now has 5 specialized tools. File tools are protected by `safe_path`, 
 
 → s03 Permission: Add a gate before tool execution — is this operation safe? Does it need user approval?
 
-<details>
-<summary>Dive into CC Source Code</summary>
-
-> The following is based on a review of CC source code `Tool.ts`, `tools.ts`, `toolOrchestration.ts`, `toolExecution.ts`, and `StreamingToolExecutor.ts`.
-
-### 1. Tool Definition Approach
-
-**Teaching version**: `TOOLS` array + `TOOL_HANDLERS` dict. Definition and implementation are separate.
-**CC**: Each tool is an independent object created by `buildTool()`, containing schema, validation, permissions, and execution. `getAllBaseTools()` aggregates all tools.
-
-The teaching version's separation is clearer for teaching — readers immediately see "add a tool = two definitions".
-
-### 2. Concurrency Safety: isConcurrencySafe()
-
-![Tool Concurrency](images/concurrency-comparison.en.svg)
-
-The teaching version executes tools one by one in original order, without concurrency. CC uses `isConcurrencySafe(input)` to determine concurrency — note this isn't simply "read-only vs write", but judges by specific input:
-
-| | isReadOnly | isConcurrencySafe |
-|---|---|---|
-| FileRead | true | true |
-| Glob | true | true |
-| Bash `ls` | true | **true** ← key difference |
-| Bash `rm` | false | false |
-| TaskCreate | false | **true** ← modifies state but can be concurrent (introduced in s12) |
-
-CC's Bash tool's `isConcurrencySafe` equals `isReadOnly` — read-only commands can be concurrent, write commands cannot. TaskCreate modifies task files, but each writes a different file, so it can be concurrent.
-
-### 3. Partition Algorithm
-
-CC's `partitionToolCalls()` (`toolOrchestration.ts:91-115`) doesn't split into two groups — it batches tool calls **by consecutive blocks**:
-
-```
-[read A, read B, glob *.py, bash "rm x", read C]
-  → batch1(concurrent): [read A, read B, glob *.py]
-  → batch2(serial): [bash "rm x"]
-  → batch3(concurrent): [read C]
-```
-
-Consecutive concurrency-safe calls are grouped into the same batch for truly concurrent execution (`toolOrchestration.ts:152-176`, with a concurrency limit). When a non-concurrency-safe call is encountered, a new batch starts for serial execution. Batches are strictly sequential.
-
-### 4. Validation Pipeline
-
-Each tool call in CC goes through a strict 5-step validation (`toolExecution.ts`):
-
-1. **Zod schema validation** (`614-680`, teaching version uses JSON Schema): parameter type/structure check
-2. **Tool-level validateInput()** (`682-733`): parameter value validation (e.g., is the path within the working directory)
-3. **PreToolUse hooks** (`800-862`, covered in s04): hooks can return messages, modify input, or block execution
-4. **Permission check** (`921-931`, core topic of s03): canUseTool + checkPermissions → allow/deny/ask
-5. **Execute tool.call()** (`1207-1222`)
-
-The teaching version omits Zod (uses JSON Schema), omits validateInput (uses safety functions), but preserves the permission check and hook concepts.
-
-### 5. Streaming Tool Execution
-
-CC's `StreamingToolExecutor` (`StreamingToolExecutor.ts`) starts tools while the model is still generating — no waiting for the model to finish. `read_file` might complete while the model is still outputting "Let me analyze". The teaching version doesn't implement this, consistent with s01's goal — conceptual clarity, not peak performance.
-
-### 6. Tool Result Persistence
-
-Each tool has a `maxResultSizeChars` field. Results exceeding this threshold are persisted to disk, and the model sees a preview + file path. FileRead is special — set to `Infinity`, preventing file read output from being persisted again. Specifically, if FileRead's result exceeds the threshold and gets persisted, the model's next read of that persisted file would trigger another persistence → infinite loop (read file → persist → re-read → re-persist → ...).
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

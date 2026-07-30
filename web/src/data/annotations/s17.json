@@ -2,45 +2,45 @@
   "version": "s17",
   "decisions": [
     {
-      "id": "idle-poll-loop",
-      "title": "Autonomy Starts from Idle Polling",
-      "description": "The agent becomes autonomous by doing useful checks while idle: scanning tasks, reading inbox messages, and deciding whether to claim work. No new magic planner is introduced.",
-      "alternatives": "A central scheduler could assign every task, but this lesson focuses on local autonomy inside each teammate loop.",
+      "id": "worktree-name-validation",
+      "title": "Worktree Names Are Validated Before Git Runs",
+      "description": "The tool validates names before creating branches or directories, so unsafe user input never reaches git or filesystem operations.",
+      "alternatives": "Passing names directly to git is shorter, but it turns a collaboration feature into an injection hazard.",
       "zh": {
-        "title": "自治从空闲轮询开始",
-        "description": "Agent 通过在空闲时做有用检查获得自治能力：扫描任务、读取 inbox、判断是否 claim 工作。这里没有引入新的神秘规划器。"
+        "title": "运行 Git 前先校验 Worktree 名称",
+        "description": "工具在创建分支或目录前先校验名称，不让不安全的用户输入进入 git 或文件系统操作。"
       },
       "ja": {
-        "title": "自律性はアイドルポーリングから始まる",
-        "description": "エージェントはアイドル時にタスク走査、受信箱確認、作業の claim 判断を行うことで自律的になります。新しい魔法のプランナーは導入しません。"
+        "title": "git 実行前に worktree 名を検証する",
+        "description": "ブランチやディレクトリ作成前に名前を検証し、危険なユーザー入力が git やファイルシステム操作へ流れないようにします。"
       }
     },
     {
-      "id": "claim-before-work",
-      "title": "Claim Before Work Prevents Collisions",
-      "description": "A teammate must claim a task before entering WORK state. Ownership checks make autonomous pickup safe when multiple agents poll the same task board.",
-      "alternatives": "Agents could simply pick any open task, but two agents might duplicate work or overwrite each other's result.",
+      "id": "task-bound-worktree",
+      "title": "The Task Record Owns the Worktree Binding",
+      "description": "A task stores its assigned worktree so future commands know where to run. The binding is explicit data, not a hidden convention based on naming or current working directory.",
+      "alternatives": "Deriving the worktree path from branch names is convenient, but brittle when tasks are renamed or moved.",
       "zh": {
-        "title": "先 Claim 再工作，避免冲突",
-        "description": "队友必须先 claim 任务，再进入 WORK 状态。多个 agent 轮询同一个任务板时，所有权检查让自治领取任务更安全。"
+        "title": "任务记录持有 Worktree 绑定关系",
+        "description": "任务会记录自己分配到的 worktree，因此后续命令知道应该在哪里运行。这个绑定是显式数据，而不是依赖命名或当前目录的隐藏约定。"
       },
       "ja": {
-        "title": "作業前に claim して衝突を防ぐ",
-        "description": "チームメイトは WORK 状態へ入る前にタスクを claim します。複数のエージェントが同じタスクボードをポーリングしても、所有権チェックにより安全に取得できます。"
+        "title": "タスクレコードが worktree の紐付けを持つ",
+        "description": "タスクは割り当てられた worktree を保持し、後続コマンドは実行場所を把握できます。この紐付けは命名や現在ディレクトリに依存する暗黙の規約ではなく、明示的なデータです。"
       }
     },
     {
-      "id": "identity-reinjection",
-      "title": "Advanced Teaching Workaround: Identity Re-injection",
-      "description": "The simplified lesson re-injects identity after its compaction heuristic. This is optional teaching scaffolding; production compaction should preserve stable system instructions instead.",
-      "alternatives": "Keep identity in stable system instructions and preserve that boundary through compaction.",
+      "id": "lifecycle-event-stream",
+      "title": "Lifecycle Events Stay Separate from Tool Results",
+      "description": "Creation, status, keep, and removal events are emitted to a side-channel log. That makes worktree state observable without overloading the conversational transcript.",
+      "alternatives": "Only returning tool results is simpler, but later debugging needs a durable audit trail of worktree lifecycle changes.",
       "zh": {
-        "title": "进阶教学补丁：身份重注入",
-        "description": "简化课程在压缩启发式触发后重新注入身份。这是选学脚手架；生产实现应在压缩时保留稳定的 system 指令。"
+        "title": "生命周期事件与工具结果分离",
+        "description": "创建、状态、保留和移除事件会写入旁路日志。这样 worktree 状态可观察，同时不会把对话 transcript 塞满运行时事件。"
       },
       "ja": {
-        "title": "発展用の教育補助：アイデンティティ再注入",
-        "description": "簡略化した教材は圧縮ヒューリスティック後にアイデンティティを再注入します。これは任意の足場であり、本番実装では圧縮を越えて安定した system 指示を保持すべきです。"
+        "title": "ライフサイクルイベントをツール結果から分離する",
+        "description": "作成、状態、保持、削除のイベントはサイドチャネルログへ出力します。会話 transcript をランタイムイベントで埋めずに worktree 状態を観測できます。"
       }
     }
   ]

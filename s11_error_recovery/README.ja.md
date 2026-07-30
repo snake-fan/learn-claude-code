@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20 → s21 → s22
+s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20 → s21
 > *"エラーは終わりではなく、リトライの始まり"* — トークン拡張、コンテキスト圧縮、モデル切り替え。
 >
 > **Harness 層**: 耐障害性 — メインループのエラーを分類し復旧。
@@ -19,7 +19,7 @@ Error: 529 overloaded
 
 Agent がクラッシュした。リトライもしない、モデルも切り替えない、コンテキストも減らさない——そのままクラッシュ。
 
-本番環境では API エラーが日常茶飯事。最も一般的な 3 つの障害パターン：**出力の切り詰め**（モデルが途中まで出力して token が尽きた）、**コンテキスト超過**（圧縮後も長すぎる）、**一時的障害**（429 レート制限 / 529 過負荷）。エラーを処理しない Agent は、一度触れただけで止まる車のようなものだ。
+LLM API の呼び出しは失敗することがある。この章では、出力の切り詰め、コンテキスト超過、一時的障害（429/529）の 3 つを扱う。
 
 ---
 
@@ -29,7 +29,7 @@ Agent がクラッシュした。リトライもしない、モデルも切り�
 
 s10 のループ、prompt 組み立てはすべてそのまま。唯一の変更点：LLM 呼び出しを try/except で包み、エラータイプに応じて異なる復旧パスに振り分ける。復旧後は `continue` でループ先頭に戻り、再度 LLM を呼び出す。
 
-最も一般的な 3 つの復旧パターン（教学版は 429/529 のみ対応；実際のシステムは接続エラー、タイムアウト、クラウドベンダーの認証キャッシュ等もカバー。CC には実際 13 以上の reason code があるが、残りは Deep dive で解説）：
+この章では 3 つの復旧パターンを実装する：
 
 | パターン | トリガー | 復旧アクション |
 |----------|----------|---------------|
@@ -73,7 +73,7 @@ messages.append({"role": "assistant", "content": response.content})
 
 LLM が「コンテキストが長すぎる」と返す（`prompt_too_long`）。s08 の 4 層圧縮をすべて実行したのに、まだ超えている。
 
-reactive compact をトリガー——auto compact よりも積極的。教学版は最後の 5 メッセージだけを残して圧縮をシミュレート；実際の CC は LLM で compact サマリを生成してからリトライする。圧縮後にリトライ。ただし、一度圧縮してもまだ超過している場合は終了するしかない——再度圧縮しても小さくはならない：
+reactive compact を実行し、最後の 5 メッセージを残して 1 回だけ再試行する。それでも上限を超える場合は終了する：
 
 ```python
 except PromptTooLongError:
@@ -196,82 +196,5 @@ Agent に**タスクリスト**を管理させられないだろうか——依�
 
 s12 Task System → タスクとは依存関係があり、状態があり、永続化されたグラフだ。これはマルチ Agent 協調の基盤となる。
 
-<details>
-<summary>CC ソースコード深掘り</summary>
-
-> 以下は CC ソースコード `query.ts`（1729 行）、`services/api/withRetry.ts`（822 行）、`query/tokenBudget.ts`（93 行）、`utils/tokenBudget.ts`（73 行）の分析に基づく。
-
-### 一、十数種の reason/transition（3 つだけではない）
-
-教学版では最も一般的な 3 つの復旧パターンを解説した。CC には実際十数種の reason/transition があり、毎回の LLM 呼び出し後に判定される：
-
-| reason/transition | 教学版の対応 | CC の動作 |
-|---|---|---|
-| `completed` | 正常終了 | 結果を返す |
-| `next_turn` | 通常のツール呼び出し | 次のツール実行ラウンドへ |
-| `max_output_tokens_escalate` | パス 1 | 8K→64K に拡張 |
-| `max_output_tokens_recovery` | パス 1 続き出力 | 続きのプロンプト注入（最大 3 回） |
-| `reactive_compact_retry` | パス 2 | reactive compact → リトライ |
-| `prompt_too_long` | パス 2 | 同上 |
-| `collapse_drain_retry` | 未展開 | context collapse 時にまず保留中の内容をコミット |
-| `model_error` | 未展開 | リトライ |
-| `image_error` | 未展開 | `ImageSizeError` / `ImageResizeError` の専用処理 |
-| `aborted_streaming` | 未展開 | ストリーミング中断の復旧 |
-| `aborted_tools` | 未展開 | ツール中断 |
-| `stop_hook_blocking` | 未展開 | blocking error を注入 → モデルが自己修正 |
-| `stop_hook_prevented` | 未展開 | hooks によるブロック |
-| `hook_stopped` | 未展開 | hook による実行停止 |
-| `token_budget_continuation` | 未展開 | token 使用量 < 90% の時に継続 |
-| `blocking_limit` | 未展開 | ブロック制限 |
-| `max_turns` | 未展開 | 最大ターン数に到達 |
-
-教学版では最初の 5 つ（最も一般的なもの）だけを展開した。残りはそれぞれ専用の処理ロジックを持つ。
-
-### 二、指数バックオフの正確な公式
-
-CC のバックオフ遅延（`withRetry.ts:530-548`）：
-
-```
-delay = min(500 × 2^(attempt-1), 32000) + random(0~25%)
-```
-
-| 試行 | 基本遅延 | + ジッター |
-|------|---------|-----------|
-| 1 | 500ms | 0-125ms |
-| 2 | 1000ms | 0-250ms |
-| 4 | 4000ms | 0-1000ms |
-| 7+ | 32000ms（上限） | 0-8000ms |
-
-サーバーが `Retry-After` ヘッダーを返した場合、その値を優先して使用する。
-
-### 三、CONTINUATION プロンプト原文
-
-CC の続き出力プロンプト（`query.ts:1225-1227`）：
-
-```
-Output token limit hit. Resume directly — no apology, no recap of what
-you were doing. Pick up mid-thought if that is where the cut happened.
-Break remaining work into smaller pieces.
-```
-
-Token budget のナッジプロンプト（`tokenBudget.ts:72`）：
-
-```
-Stopped at {pct}% of token target. Keep working — do not summarize.
-```
-
-### 四、ストリーミングエラー処理
-
-CC のストリーミングパスでは、復旧可能なエラー（413、max_tokens、media error）はストリーミング中**表示を保留される**（`query.ts:788-822`）——SDK コンシューマーには見えず、復旧ロジックだけが認識できる。ストリーミング終了後に復旧が必要かどうかを判断する。
-
-### 五、529 → フォールバックモデル切り替え
-
-3 回連続で 529 過負荷エラーが発生した後（`MAX_529_RETRIES = 3`）、CC は自動的にフォールバックモデルに切り替える（例：Opus → Sonnet）。切り替え時にすべての保留中のメッセージと tool 結果をクリアし、ユーザーに "Switched to {model} due to high demand" と表示する。
-
-### 六、収穫逓減の検出
-
-Token budget の「継続」は無限ではない。連続 3 回の continuation で token 増分が 500 未満の場合、システムは「続けても実質的な出力は得られない」と判断し、continuation を停止する（`tokenBudget.ts:60-62`）。
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

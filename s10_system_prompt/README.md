@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21 → s22
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21
 > *"Model input is assembled, not hardcoded"* — Stable sections + runtime state + caching.
 >
 > **Harness Layer**: Context assembly — turn stable instructions and dynamic state into model input.
@@ -119,8 +119,6 @@ def get_system_prompt(context: dict) -> str:
 
 `json.dumps` instead of `hash()`: Python's built-in `hash()` has process randomization (unsuitable for stable cache keys) and throws `unhashable type` on nested dicts/lists.
 
-Note: this cache only avoids redundant string assembly within a process. It's not the same as CC's API prompt cache, which uses `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` to separate static and dynamic parts — the static parts hit global cache and don't invalidate when dynamic content changes.
-
 ### context: Real State, Not Keyword Guessing
 
 Context reflects the actual runtime state:
@@ -178,7 +176,7 @@ cd learn-claude-code
 python s10_system_prompt/code.py
 ```
 
-Safety note: this focused teaching script still executes the model's `bash` string with `shell=True` and omits s03's permission gate. Run it only in a disposable workspace; production harnesses must restore permission and sandbox boundaries.
+**Safety note**: The script executes model-generated `bash` strings with `shell=True` and does not include the permission gate from s03. Run it only in a disposable workspace.
 
 What to watch for:
 

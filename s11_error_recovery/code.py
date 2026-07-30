@@ -233,10 +233,7 @@ def is_prompt_too_long_error(e: Exception) -> bool:
 
 
 def reactive_compact(messages: list) -> list:
-    """Emergency compact — teaching version keeps last N messages.
-    Real CC generates a compact summary via LLM, then retries with
-    the compacted message list. Teaching version simplifies to tail
-    retention since s08/s09 already cover LLM-based compact."""
+    """Emergency compact: keep the latest messages, then retry."""
     print("  \033[31m[reactive compact] trimming to last 5 messages\033[0m")
     tail = messages[-5:]
     return [{"role": "user",

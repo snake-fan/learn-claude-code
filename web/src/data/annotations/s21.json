@@ -2,45 +2,45 @@
   "version": "s21",
   "decisions": [
     {
-      "id": "script-owns-fixed-orchestration",
-      "title": "Code Owns Fixed Orchestration",
-      "description": "When the stages and aggregation rules are known in advance, a workflow script makes the process parallel, reproducible, and inspectable without changing the main agent loop.",
-      "alternatives": "Letting the model choose every next step is more flexible, but slower and harder to resume for a fixed procedure.",
+      "id": "host-owns-completion-gate",
+      "title": "The Host Owns the Completion Gate",
+      "description": "The working model may request to stop, but the harness evaluates the active goal before returning. Completion is a program decision at the turn boundary.",
+      "alternatives": "Asking the working model whether it is finished is simpler, but lets the same actor make and verify its own claim.",
       "zh": {
-        "title": "固定编排由代码负责",
-        "description": "当阶段与汇总规则事先确定时，workflow 脚本能让流程并行、可复现、可检查，同时不修改主 Agent 循环。"
+        "title": "完成闸门由宿主持有",
+        "description": "工作模型可以请求停止，但 harness 会在 return 前评估 active goal。是否完成是轮次边界上的程序决策。"
       },
       "ja": {
-        "title": "固定された編成はコードが担う",
-        "description": "段階と集約ルールが事前に決まっているなら、workflow script は main Agent loop を変えずに処理を並列化し、再現可能で検査可能にする。"
+        "title": "完了ゲートはホストが所有する",
+        "description": "作業モデルは停止を要求できるが、harness は return 前に active goal を評価する。完了は turn 境界でのプログラム判断である。"
       }
     },
     {
-      "id": "semantic-journal-keys",
-      "title": "Semantic Keys Make Resume Independent of Completion Order",
-      "description": "Journal entries use stable call content rather than a shared completion counter. Concurrent calls can finish in any order and still map to the correct cached result.",
-      "alternatives": "Indexing by completion order is simpler, but replays the wrong result as soon as concurrent timing changes.",
+      "id": "host-assigned-evidence-origins",
+      "title": "Evidence Trust Comes from the Ingress Path",
+      "description": "Ordinary submit calls cannot attach trusted labels. Only an allowlisted host-event channel can deliver task or monitor evidence, so user and model prose cannot certify itself.",
+      "alternatives": "Trusting text content or caller-supplied labels makes the evidence boundary forgeable.",
       "zh": {
-        "title": "语义键让恢复不依赖完成顺序",
-        "description": "Journal 用稳定的调用内容作为 key，而不是共享完成计数器。并发调用无论以什么顺序结束，都能命中正确缓存。"
+        "title": "证据信任来自入口路径",
+        "description": "普通 submit 不能附加可信标签；只有白名单宿主事件通道能送入 task 或 monitor 证据，因此用户与模型文本不能自证完成。"
       },
       "ja": {
-        "title": "意味キーで完了順序に依存せず再開する",
-        "description": "Journal は共有完了カウンタではなく安定した call 内容を key にする。並行 call の終了順が変わっても正しい cache result に対応できる。"
+        "title": "証拠の信頼は入力経路から得る",
+        "description": "通常の submit は trusted label を付けられず、allowlist 済み host event channel だけが task や monitor evidence を届ける。ユーザーやモデルの文章は自己証明できない。"
       }
     },
     {
-      "id": "fail-the-workflow",
-      "title": "Orchestration Failures Propagate",
-      "description": "A failed stage, invalid structured result, corrupt journal, or exceeded run-wide limit fails the workflow instead of silently dropping an item and reporting success.",
-      "alternatives": "Best-effort collection can be useful for optional work, but it must be explicit rather than the default.",
+      "id": "bounded-continuation",
+      "title": "Every Automatic Continuation Needs a Budget",
+      "description": "An unmet goal queues another turn only while budget remains. Exhaustion marks the goal blocked and releases the gate instead of creating an infinite loop.",
+      "alternatives": "An unbounded goal is persistent, but an impossible condition can consume resources forever.",
       "zh": {
-        "title": "编排故障必须向上传播",
-        "description": "阶段失败、结构化结果不合法、journal 损坏或超过全局限制时，workflow 直接失败，而不是静默丢项后仍报告成功。"
+        "title": "每次自动续轮都必须有预算",
+        "description": "目标未满足时只在预算剩余时继续；耗尽后将目标标记为 blocked 并释放闸门，避免无限循环。"
       },
       "ja": {
-        "title": "編成の失敗は上位へ伝播させる",
-        "description": "stage failure、無効な structured result、破損 journal、run-wide limit 超過は workflow を失敗させ、項目を黙って落として成功扱いしない。"
+        "title": "自動継続には必ず予算を置く",
+        "description": "goal 未達時は予算が残る間だけ次の turn を追加する。使い切れば blocked にして gate を解放し、無限 loop を防ぐ。"
       }
     }
   ]

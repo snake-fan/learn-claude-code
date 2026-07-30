@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20 → s21 → s22
+s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20 → s21
 > *"Errors aren't the end, they're the start of a retry"* — escalate tokens, compact context, switch models.
 >
 > **Harness layer**: Resilience — classify and recover when the main loop hits errors.
@@ -19,7 +19,7 @@ Error: 529 overloaded
 
 The Agent crashes. It doesn't retry, doesn't switch models, doesn't reduce context — it just crashes.
 
-In production, API errors are the norm. The three most common failure modes: **truncated output** (the model runs out of tokens mid-sentence), **context overflow** (still too long even after compaction), and **transient failures** (429 rate limiting / 529 overload). An Agent that doesn't handle errors is like a car that stalls at the slightest touch.
+LLM API calls can fail. This chapter handles three cases: truncated output, context overflow, and transient failures (429/529).
 
 ---
 
@@ -29,7 +29,7 @@ In production, API errors are the norm. The three most common failure modes: **t
 
 The loop and prompt assembly from s10 are fully preserved. The only change: the LLM call is wrapped in try/except, with different recovery paths based on error type. After recovery, `continue` loops back to the top to call the LLM again.
 
-The three most common recovery patterns (the teaching version only handles 429/529; real systems also cover connection errors, timeouts, cloud vendor credential caches, etc. CC actually has 13+ reason codes; see the Deep Dive for the rest):
+This chapter implements three recovery patterns:
 
 | Pattern | Trigger | Recovery Action |
 |----------|---------|-----------------|
@@ -73,7 +73,7 @@ Escalation gets one chance; continuation gets up to 3. After that, exit — furt
 
 The LLM says "your context is too long" (`prompt_too_long`). All four compaction layers from s08 have already run, and it's still over the limit.
 
-Trigger reactive compact — more aggressive than auto compact. The teaching version keeps only the last 5 messages to simulate compaction; real CC generates a compact summary via LLM, then retries with the compacted message list. Retry after compacting. But if it's still over the limit after one compaction, the only option is to exit — compacting again won't make it any smaller:
+Trigger reactive compact: keep the last 5 messages and retry once. If the context is still over the limit, exit:
 
 ```python
 except PromptTooLongError:
@@ -196,82 +196,5 @@ What if the Agent could manage a **task list** — with dependencies, persisted 
 
 s12 Task System → Tasks form a dependency graph with state and persistence. This is the foundation for multi-Agent collaboration.
 
-<details>
-<summary>Deep Dive into CC Source</summary>
-
-> The following is based on CC source code: `query.ts` (1729 lines), `services/api/withRetry.ts` (822 lines), `query/tokenBudget.ts` (93 lines), and `utils/tokenBudget.ts` (73 lines).
-
-### 1. A Dozen-Plus Reason/Transition Codes (Not Just 3)
-
-The teaching version covers 3 of the most common recovery patterns. CC actually has a dozen-plus reason/transition codes, evaluated after every LLM call:
-
-| Reason/Transition | Teaching Version | CC Behavior |
-|---|---|---|
-| `completed` | Normal completion | Return result |
-| `next_turn` | Normal tool call | Continue to next tool execution round |
-| `max_output_tokens_escalate` | Path 1 | 8K→64K escalation |
-| `max_output_tokens_recovery` | Path 1 continuation | Continuation prompt (up to 3 times) |
-| `reactive_compact_retry` | Path 2 | Reactive compact → retry |
-| `prompt_too_long` | Path 2 | Same as above |
-| `collapse_drain_retry` | Not covered | Context collapse — commit staged content first |
-| `model_error` | Not covered | Retry |
-| `image_error` | Not covered | `ImageSizeError` / `ImageResizeError` handled specifically |
-| `aborted_streaming` | Not covered | Streaming abort recovery |
-| `aborted_tools` | Not covered | Tool abort |
-| `stop_hook_blocking` | Not covered | Inject blocking error → model self-corrects |
-| `stop_hook_prevented` | Not covered | Hooks prevent execution |
-| `hook_stopped` | Not covered | Hook stopped execution |
-| `token_budget_continuation` | Not covered | Continue when token usage < 90% |
-| `blocking_limit` | Not covered | Blocking limit reached |
-| `max_turns` | Not covered | Maximum turns reached |
-
-The teaching version only expands on the first 5 (most common); each of the rest has its own dedicated handling logic.
-
-### 2. Precise Exponential Backoff Formula
-
-CC's backoff delay (`withRetry.ts:530-548`):
-
-```
-delay = min(500 × 2^(attempt-1), 32000) + random(0~25%)
-```
-
-| Attempt | Base Delay | + Jitter |
-|---------|-----------|----------|
-| 1 | 500ms | 0-125ms |
-| 2 | 1000ms | 0-250ms |
-| 4 | 4000ms | 0-1000ms |
-| 7+ | 32000ms (cap) | 0-8000ms |
-
-If the server returns a `Retry-After` header, that value takes priority.
-
-### 3. Original CONTINUATION Prompt
-
-CC's continuation prompt (`query.ts:1225-1227`):
-
-```
-Output token limit hit. Resume directly — no apology, no recap of what
-you were doing. Pick up mid-thought if that is where the cut happened.
-Break remaining work into smaller pieces.
-```
-
-Token budget nudge prompt (`tokenBudget.ts:72`):
-
-```
-Stopped at {pct}% of token target. Keep working — do not summarize.
-```
-
-### 4. Streaming Error Handling
-
-In CC's streaming path, recoverable errors (413, max_tokens, media errors) are **withheld from display** during streaming (`query.ts:788-822`) — SDK consumers don't see them, only the recovery logic does. After streaming ends, the system determines whether recovery is needed.
-
-### 5. 529 → Fallback Model Switch
-
-After 3 consecutive 529 overload errors (`MAX_529_RETRIES = 3`), CC automatically switches to the fallback model (e.g., Opus → Sonnet). On switch, all pending messages and tool results are cleared, and the user sees "Switched to {model} due to high demand".
-
-### 6. Diminishing Returns Detection
-
-Token budget "continuations" aren't unlimited. When there are 3 consecutive continuations with a token increment < 500, the system determines "continuing won't produce meaningful output" and stops continuation (`tokenBudget.ts:60-62`).
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

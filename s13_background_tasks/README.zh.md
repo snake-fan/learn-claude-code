@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s11 → s12 → `s13` → [s14](../s14_cron_scheduler/) → s15 → ... → s20 → s21 → s22
+s01 → ... → s11 → s12 → `s13` → [s14](../s14_cron_scheduler/) → s15 → ... → s20 → s21
 
 > *"慢操作丢后台, agent 继续处理"* — 后台线程跑命令, 完成后注入通知。
 >
@@ -24,7 +24,7 @@ Agent 的 bash 工具也一样。`pip install torch` 要 10 分钟，`npm run bu
 
 ![Background Tasks Overview](images/background-tasks-overview.svg)
 
-教学代码沿用 S12 的简化任务系统和 prompt 组装；为了聚焦后台任务，省略完整错误恢复、记忆和技能系统。唯一的变动：慢操作扔到后台线程，Agent 继续跑循环，后台完成后把通知注入到对话里。
+本章把慢操作放入后台线程，Agent 继续运行循环；任务完成后，结果以通知形式注入对话。
 
 同步 vs 后台：
 
@@ -41,7 +41,7 @@ Agent 的 bash 工具也一样。`pip install torch` 要 10 分钟，`npm run bu
 
 ### should_run_background: 显式请求优先，启发式兜底
 
-模型通过 bash 工具的 `run_in_background` 参数显式请求后台执行。如果模型没指定，教学版用关键词启发式兜底：
+模型通过 bash 工具的 `run_in_background` 参数显式请求后台执行。如果模型没有指定，则使用关键词启发式判断：
 
 ```python
 def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
@@ -60,8 +60,6 @@ def should_run_background(tool_name: str, tool_input: dict) -> bool:
         return True
     return is_slow_operation(tool_name, tool_input)
 ```
-
-CC 的 bash 工具 schema 里有 `run_in_background: boolean` 参数（`BashTool.tsx:241`）。模型自己决定哪些命令丢后台，不靠关键词猜。教学版保留启发式作为兜底，但主路径是模型显式请求。
 
 ### start_background_task: 后台执行与生命周期
 
@@ -96,7 +94,7 @@ def start_background_task(block) -> str:
     return bg_id
 ```
 
-返回 `bg_id` 而不是只返回 `[Running in background...]`。`daemon=True` 确保 Agent 进程退出时线程跟着退出。教学版用内存字典追踪状态；真实 CC 有 `LocalShellTaskState`，输出重定向到文件，支持停止任务、读取后续输出等完整生命周期。
+`start_background_task()` 返回 `bg_id`。`daemon=True` 确保 Agent 进程退出时线程一起退出。
 
 ### collect_background_results: 通知收集
 
@@ -157,8 +155,6 @@ messages.append({"role": "user", "content": user_content})
 
 慢操作先回一个带 `bg_id` 的占位 tool_result，LLM 知道这个命令还在跑，可以先做别的事。后台完成后，通知作为独立 text block 和当前轮的 tool_result 一起组成 user 消息。
 
-教学版在 agent loop 继续运行时轮询后台结果。真实 CC 通过通知队列（`messageQueueManager.ts`）把后台完成事件送入后续 turn，不需要等工具循环。
-
 ### 合起来跑
 
 ```
@@ -216,46 +212,5 @@ python s13_background_tasks/code.py
 
 s14 Cron Scheduler → 给 Agent 装一个闹钟。
 
-<details>
-<summary>深入 CC 源码</summary>
-
-> 以下基于 CC 源码 `query.ts`（211, 1054-1060, 1411-1482 行）、`services/toolUseSummary/toolUseSummaryGenerator.ts`（L15 prompt 文本）、`LocalShellTask.tsx`（L24-25 常量, L59-98 看门狗逻辑）、`messageQueueManager.ts`（通知队列）、`utils/task/framework.ts`（L267 `enqueueTaskNotification`）的完整分析。
-
-### 一、pendingToolUseSummary：Haiku 后台生成
-
-CC 在每批工具执行完后，启动一个 Haiku side-query 生成工具使用摘要。发起代码在 `query.ts:1411-1482`，prompt 文本定义在 `services/toolUseSummary/toolUseSummaryGenerator.ts:15`（变量名 `TOOL_USE_SUMMARY_SYSTEM_PROMPT`）。提示是 "Write a short summary label... think git-commit-subject, not sentence"，过去时态，约 30 字符。
-
-Haiku 摘要（~1s）在主模型流式生成（5-30s）期间完成。下一轮开始前，把摘要 yield 出去。SDK 消费这些摘要做移动端进度展示。
-
-### 二、线程模型：没有真正的线程
-
-CC 运行在 Node.js/Bun 单线程事件循环中。"后台"只是 "不 await"。`ShellCommand.background(taskId)` 把 stdout/stderr 重定向到文件，让进程独立运行。
-
-### 三、七种后台任务类型
-
-CC 定义了 7 种后台任务（`Task.ts:7-13`）：`local_bash`、`local_agent`、`remote_agent`、`in_process_teammate`、`local_workflow`、`monitor_mcp`、`dream`。每种有自己的注册、生命周期和通知机制。
-
-### 四、通知注入：命令队列
-
-后台任务完成后通过 `enqueueTaskNotification`（`utils/task/framework.ts:267`）或 `enqueuePendingNotification`（`messageQueueManager.ts`）入队到共享命令队列。通知格式是结构化的 XML：
-
-```xml
-<task_notification>
-  <status>completed</status>
-  <summary>Background command "npm test" completed (exit code 0)</summary>
-</task_notification>
-```
-
-优先级分 `next` > `later`（`messageQueueManager.ts`）。后台任务默认 `later`（不阻塞用户输入）。消费点在 `query.ts:1566-1593`。
-
-### 五、停滞看门狗
-
-后台 bash 任务有一个看门狗（`LocalShellTask.tsx` L24-25 常量, L59-98 逻辑），定期检查输出是否停滞，45 秒无增长后检测交互式提示（`(y/n)` 等），防止后台任务卡在无人响应的交互式对话框。
-
-### 六、并发限制
-
-前台工具调用：`CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY`（默认 10 个并发安全工具）。后台 bash 任务：没有硬性限制，它们是独立的子进程。
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->

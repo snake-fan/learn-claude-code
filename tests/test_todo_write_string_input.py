@@ -13,7 +13,7 @@ COURSE_MODULES = [
     ("s06", REPO_ROOT / "s06_subagent" / "code.py"),
     ("s07", REPO_ROOT / "s07_skill_loading" / "code.py"),
     ("s08", REPO_ROOT / "s08_context_compact" / "code.py"),
-    ("s20", REPO_ROOT / "s20_comprehensive" / "code.py"),
+    ("s19", REPO_ROOT / "s19_comprehensive" / "code.py"),
 ]
 
 

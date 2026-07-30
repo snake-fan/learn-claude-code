@@ -32,7 +32,7 @@
   <rect x="270" y="56" width="12" height="10" rx="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>
   <text x="288" y="66" fill="#16a34a" font-size="10" font-weight="600">Teammate</text>
   <rect x="390" y="56" width="12" height="10" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
-  <text x="408" y="66" fill="#d97706" font-size="10" font-weight="600">真实 CC 补充</text>
+  <text x="408" y="66" fill="#d97706" font-size="10" font-weight="600">协议闸门</text>
 
   <!-- ===== Row 1: Lead Agent Loop ===== -->
   <!-- Boxes at y=90..130 (h=40), prompt/LLM at y=86..134 (h=48), TOOLS at y=80..140 (h=60) -->
@@ -60,7 +60,7 @@
   <rect x="398" y="80" width="336" height="60" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
   <text x="566" y="98" fill="#1e3a5f" font-size="10" font-weight="600" text-anchor="middle">TOOL DISPATCH</text>
   <text x="414" y="114" fill="#2563eb" font-size="8">bash · read · write · task(4) · cron(3)</text>
-  <text x="414" y="128" fill="#0891b2" font-size="8" font-weight="700">★ spawn_teammate · send_message · check_inbox</text>
+  <text x="414" y="128" fill="#0891b2" font-size="8" font-weight="700">★ spawn · send · shutdown · plan review</text>
 
   <!-- Loop back -->
   <path d="M 734 110 L 748 110 L 748 150 L 63 150 L 63 130" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="6,3"/>
@@ -99,7 +99,7 @@
   <rect x="60" y="248" width="220" height="66" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
   <text x="170" y="268" fill="#166534" font-size="10" font-weight="700" text-anchor="middle">Teammate: alice (Backend)</text>
   <text x="75" y="284" fill="#16a34a" font-size="8">inbox → LLM → bash/read/write/send</text>
-  <text x="75" y="298" fill="#6b7280" font-size="8">最多 10 轮 → summary → BUS.send</text>
+  <text x="75" y="298" fill="#6b7280" font-size="8">WORK → result → IDLE → next message</text>
 
   <!-- bob: x=270..490, y=248..314 -->
   <rect x="270" y="248" width="220" height="66" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
@@ -111,22 +111,21 @@
   <rect x="480" y="248" width="220" height="66" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
   <text x="590" y="268" fill="#166534" font-size="10" font-weight="700" text-anchor="middle">Teammate: charlie (QA)</text>
   <text x="495" y="284" fill="#16a34a" font-size="8">不能 spawn 其他 teammate</text>
-  <text x="495" y="298" fill="#6b7280" font-size="8">spawn → work → summary</text>
+  <text x="495" y="298" fill="#6b7280" font-size="8">spawn → work → result → idle</text>
 
-  <!-- ===== Row 4: Permission bubbling (real CC detail) ===== -->
-  <!-- Permission request goes through MessageBus, then Lead check_inbox handles it. -->
+  <!-- ===== Row 4: Plan approval gate ===== -->
   <path d="M 60 360 L 10 360 L 10 195 L 60 195" fill="none" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow-amber)" stroke-dasharray="5,3"/>
   <rect x="20" y="318" width="126" height="18" rx="4" fill="#fffbeb" stroke="#f59e0b" stroke-width="1"/>
-  <text x="83" y="331" fill="#d97706" font-size="10" font-weight="700" text-anchor="middle">permission_request</text>
+  <text x="83" y="331" fill="#d97706" font-size="10" font-weight="700" text-anchor="middle">plan_request</text>
 
   <rect x="60" y="340" width="640" height="50" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
-  <text x="380" y="360" fill="#92400e" font-size="11" font-weight="700" text-anchor="middle">权限冒泡（真实 CC，教学版省略）</text>
-  <text x="80" y="378" fill="#78716c" font-size="9">① 队友需审批 → MessageBus 发送 permission_request  ② Lead 收到 → 用户审批 → 回复 approve/deny</text>
+  <text x="380" y="360" fill="#92400e" font-size="11" font-weight="700" text-anchor="middle">计划审批闸门</text>
+  <text x="80" y="378" fill="#78716c" font-size="9">① 队友提交计划  ② Lead 批准或拒绝  ③ approved 前 bash / write_file 被拦截</text>
 
   <!-- ===== Row 5: Bottom notes ===== -->
   <rect x="60" y="410" width="640" height="44" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
   <rect x="80" y="424" width="12" height="10" rx="2" fill="#f0f4ff" stroke="#2563eb" stroke-width="1"/>
   <text x="100" y="434" fill="#475569" font-size="10">s10-s14: prompt 组装、错误恢复、任务图、后台线程、cron 调度</text>
   <rect x="80" y="440" width="12" height="10" rx="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1"/>
-  <text x="100" y="450" fill="#475569" font-size="10">s15: MessageBus + spawn_teammate_thread + send_message + check_inbox（权限冒泡见真实 CC 补充）</text>
+  <text x="100" y="450" fill="#475569" font-size="10">s15: MessageBus + 持久队友 + 自动事件投递 + 类型化协议 + 计划闸门</text>
 </svg>

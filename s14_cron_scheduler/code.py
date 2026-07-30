@@ -678,8 +678,8 @@ def update_context(context: dict, messages: list) -> dict:
     }
 
 
-# ── Agent Loop (simplified, focused on cron scheduler) ──
-# Teaching code keeps a basic agent loop. S11's full error recovery is omitted.
+# ── Agent Loop (focused on cron scheduling) ──
+# Error recovery remains the independent layer introduced in s11.
 # cron_scheduler_loop produces work; queue_processor_loop wakes this loop when
 # queued work exists and no other agent turn is running.
 

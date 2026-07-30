@@ -1,10 +1,10 @@
 {
   "meta": { "title": "Learn Claude Code", "description": "Build a nano Claude Code-like agent from 0 to 1, one mechanism at a time" },
   "nav": { "home": "Home", "timeline": "Timeline", "compare": "Compare", "layers": "Layers", "github": "GitHub" },
-  "home": { "hero_title": "Learn Claude Code", "hero_subtitle": "Build a nano Claude Code-like agent from 0 to 1, one mechanism at a time", "start": "Start Learning", "core_pattern": "The Core Pattern", "core_pattern_desc": "Every AI coding agent shares the same loop: call the model, execute tools, feed results back. Production systems add policy, permissions, and lifecycle layers on top.", "learning_path": "Learning Path", "learning_path_desc": "22 progressive sessions, from a simple loop to deterministic orchestration and goal closure", "layers_title": "Architectural Layers", "layers_desc": "Five orthogonal concerns that compose into a complete agent", "loc": "LOC", "learn_more": "Learn More", "versions_in_layer": "versions", "message_flow": "Message Growth", "message_flow_desc": "Watch the messages array grow as the agent loop executes" },
+  "home": { "hero_title": "Learn Claude Code", "hero_subtitle": "Build a nano Claude Code-like agent from 0 to 1, one mechanism at a time", "start": "Start Learning", "core_pattern": "The Core Pattern", "core_pattern_desc": "Every AI coding agent shares the same loop: call the model, execute tools, feed results back. The harness adds policy, permissions, memory, coordination, and lifecycle control around it.", "learning_path": "Learning Path", "learning_path_desc": "21 progressive sessions, from a simple loop to deterministic orchestration and goal closure", "layers_title": "Architectural Layers", "layers_desc": "Five orthogonal concerns that compose into a complete agent", "loc": "LOC", "learn_more": "Learn More", "versions_in_layer": "versions", "message_flow": "Message Growth", "message_flow_desc": "Watch the messages array grow as the agent loop executes" },
   "version": { "loc": "lines of code", "tools": "tools", "new": "New", "prev": "Previous", "next": "Next", "view_source": "View Source", "view_diff": "View Diff", "design_decisions": "Design Decisions", "whats_new": "What's New", "tutorial": "Tutorial", "simulator": "Agent Loop Simulator", "execution_flow": "Execution Flow", "architecture": "Architecture", "concept_viz": "Concept Visualization", "alternatives": "Alternatives Considered", "tab_learn": "Learn", "tab_simulate": "Simulate", "tab_code": "Code", "tab_deep_dive": "Deep Dive" },
   "sim": { "play": "Play", "pause": "Pause", "step": "Step", "reset": "Reset", "speed": "Speed", "step_of": "of" },
-  "timeline": { "title": "Learning Path", "subtitle": "s01 to s22: Progressive Agent Harness Design", "layer_legend": "Layer Legend", "loc_growth": "LOC Growth", "learn_more": "Learn More" },
+  "timeline": { "title": "Learning Path", "subtitle": "s01 to s21: Progressive Agent Harness Design", "layer_legend": "Layer Legend", "loc_growth": "LOC Growth", "learn_more": "Learn More" },
   "layers": {
     "title": "Architectural Layers",
     "subtitle": "Five orthogonal concerns that compose into a complete agent",
@@ -53,14 +53,13 @@
     "s12": "Task System",
     "s13": "Background Tasks",
     "s14": "Cron Scheduler",
-    "s15": "Agent Teams: Runtime Lab",
-    "s16": "Agent Teams: Protocol Lab",
-    "s17": "Autonomous Agents",
-    "s18": "Worktree Isolation",
-    "s19": "MCP Tools",
-    "s20": "Comprehensive Agent Turn",
-    "s21": "Workflow Runtime",
-    "s22": "Goal Loop"
+    "s15": "Agent Teams",
+    "s16": "Autonomous Agents",
+    "s17": "Worktree Isolation",
+    "s18": "MCP Tools",
+    "s19": "Comprehensive Agent",
+    "s20": "Workflow Runtime",
+    "s21": "Goal Loop"
   },
   "layer_labels": {
     "tools": "Tools & Execution",
@@ -84,13 +83,12 @@
     "s12": "Task Board Dependencies",
     "s13": "Background Task Lanes",
     "s14": "Cron Scheduler",
-    "s15": "Agent Teams Runtime Lab",
-    "s16": "Agent Teams Protocol Lab",
-    "s17": "Autonomous Agent Cycle",
-    "s18": "Worktree Task Isolation",
-    "s19": "MCP Tool Bridge",
-    "s20": "Comprehensive Agent Turn",
-    "s21": "Workflow Runtime",
-    "s22": "Goal Completion Gate"
+    "s15": "Agent Teams and Protocols",
+    "s16": "Autonomous Agent Cycle",
+    "s17": "Worktree Task Isolation",
+    "s18": "MCP Tool Bridge",
+    "s19": "Comprehensive Agent Turn",
+    "s20": "Workflow Runtime",
+    "s21": "Goal Completion Gate"
   }
 }

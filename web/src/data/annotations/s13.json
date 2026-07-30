@@ -33,7 +33,7 @@
       "id": "shared-result-store",
       "title": "A Small Shared Store Keeps Threads Observable",
       "description": "The implementation tracks background task state and results in explicit dictionaries. That keeps the code teachable while still exposing the hard parts of concurrency: ids, lifecycle state, and safe collection.",
-      "alternatives": "A full queue or job database would be more production-ready, but it would obscure the minimal moving parts needed to understand threaded agent work.",
+      "alternatives": "A full queue or job database adds durability, but it would obscure the minimal moving parts needed to understand threaded agent work.",
       "zh": {
         "title": "小型共享存储让线程可观察",
         "description": "实现用显式字典记录后台任务状态和结果。这样代码仍然易学，同时暴露并发中的关键问题：任务 id、生命周期状态和结果收集。"

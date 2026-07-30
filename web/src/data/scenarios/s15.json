@@ -1,51 +1,60 @@
 {
   "version": "s15",
-  "title": "Agent Teams: Runtime Lab",
-  "description": "The first Agent Teams lab builds persistent teammate loops and file-backed mailboxes.",
+  "title": "Agent Teams",
+  "description": "The Lead proposes a team for a normal user request, waits for confirmation, then coordinates persistent teammates through runtime-delivered events.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Split this task: one agent checks tests, another reviews docs.",
-      "annotation": "The request needs parallel work with separate responsibilities."
+      "content": "Refactor the configuration loader and authentication flow, then update the tests.",
+      "annotation": "The user describes the goal without designing a team."
     },
     {
       "type": "assistant_text",
-      "content": "I'll spawn teammates with narrow roles and coordinate their updates through the message bus.",
-      "annotation": "The lead keeps orchestration authority while delegating execution."
+      "content": "These areas can be handled in parallel. I propose one teammate for configuration and authentication, and another for tests. Shall I start that team?",
+      "annotation": "The Lead chooses a small team and makes the extra-agent decision visible."
+    },
+    {
+      "type": "user_message",
+      "content": "Yes, go ahead.",
+      "annotation": "Teammates start only after explicit confirmation."
     },
     {
       "type": "tool_call",
       "toolName": "spawn_teammate",
-      "content": "{\"name\":\"test-runner\",\"role\":\"Run test commands and report failures.\"}",
-      "annotation": "A teammate thread starts with its own simplified loop."
+      "content": "{\"name\":\"backend\",\"role\":\"backend engineer\",\"prompt\":\"Refactor configuration and authentication while preserving interfaces.\"}",
+      "annotation": "The first persistent teammate enters WORK with a focused assignment."
     },
     {
       "type": "tool_call",
-      "toolName": "send_message",
-      "content": "{\"to\":\"test-runner\",\"message\":\"Run the focused test suite and summarize failures.\"}",
-      "annotation": "The lead sends work through the file-backed mailbox."
+      "toolName": "spawn_teammate",
+      "content": "{\"name\":\"tests\",\"role\":\"test engineer\",\"prompt\":\"Update and run tests for the refactor.\"}",
+      "annotation": "The second teammate gets an independent slice."
     },
     {
       "type": "system_event",
-      "content": ".mailboxes/test-runner.jsonl <- {from:\"lead\", message:\"Run the focused test suite\"}",
-      "annotation": "MessageBus persists the handoff as JSONL."
+      "content": "backend -> Lead: result(refactor complete) -> idle_notification",
+      "annotation": "Result and idle state are separate events; the teammate remains available."
     },
     {
       "type": "system_event",
-      "content": ".mailboxes/lead.jsonl <- {from:\"test-runner\", message:\"Tests passed.\"}",
-      "annotation": "The teammate replies without sharing the lead's whole conversation."
+      "content": "tests -> Lead: result(test suite passed) -> idle_notification",
+      "annotation": "The runtime observes mailbox writes and wakes the Lead without a polling tool."
+    },
+    {
+      "type": "assistant_text",
+      "content": "Both parts are complete. The interfaces were preserved and the updated tests pass.",
+      "annotation": "The Lead combines teammate results into one user-facing answer."
     },
     {
       "type": "tool_call",
-      "toolName": "check_inbox",
-      "content": "{\"agent\":\"lead\"}",
-      "annotation": "The lead polls its own inbox for teammate updates."
+      "toolName": "request_shutdown",
+      "content": "{\"teammate\":\"backend\"}",
+      "annotation": "A typed request with a request id closes the persistent teammate cleanly."
     },
     {
-      "type": "tool_result",
-      "toolName": "check_inbox",
-      "content": "test-runner: Tests passed.",
-      "annotation": "Mailbox messages re-enter the lead loop as tool results."
+      "type": "system_event",
+      "content": "shutdown_response(request_id=req_42, approve=true)",
+      "annotation": "The matching response resolves the pending protocol request."
     }
   ]
 }

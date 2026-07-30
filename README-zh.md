@@ -106,7 +106,7 @@ Claude Code = 一个 agent loop
 
 就这些。这就是全部架构。每一个组件都是 harness 机制 -- 为 agent 构建的栖居世界的一部分。Agent 本身呢？是 Claude。一个模型。由 Anthropic 在人类推理和代码的全部广度上训练而成。Harness 没有让 Claude 变聪明。Claude 本来就聪明。Harness 给了 Claude 双手、双眼和一个工作空间。
 
-这就是 Claude Code 作为教学标本的意义：**它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。** 本仓库的课程（s01-s22）逐步拆解并重组 Claude Code 架构中的 harness 机制。学完之后，你理解的不只是 Claude Code 怎么工作，而是适用于任何领域、任何 agent 的 harness 工程通用原则。
+这就是 Claude Code 作为教学标本的意义：**它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。** 本仓库的课程（s01-s21）逐步拆解并重组 harness 机制。学完之后，你理解的不只是一个 coding agent 怎么工作，而是适用于不同领域的 harness 工程原则。
 
 启示不是 "复制 Claude Code"。启示是：**最好的 agent 产品，出自那些明白自己的工作是 harness 而非 intelligence 的工程师之手。**
 
@@ -159,7 +159,7 @@ Claude Code = 一个 agent loop
     让 agent 在特定领域高效工作的 harness。
 ```
 
-**22 个递进式课程, 从简单循环到目标闭环。**
+**21 个递进式课程, 从简单循环到目标闭环。**
 **每个课程添加一个 harness 机制。每个机制有一句格言。**
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 一个工具 + 一个循环 = 一个 Agent
@@ -190,21 +190,19 @@ Claude Code = 一个 agent loop
 >
 > **s14** &nbsp; *"定时触发, 不需要人推"* &mdash; 按时间自动触发任务
 >
-> **s15** &nbsp; *"一个搞不定, 组队来"* &mdash; Agent Teams 运行时实验：持久化队友 + 异步邮箱
+> **s15** &nbsp; *"一个 Agent 顾不过来，就让队友分工协作"* &mdash; 持久队友、自动消息投递与类型化协作协议
 >
-> **s16** &nbsp; *"队友之间要有约定"* &mdash; Agent Teams 协议实验：带类型的请求-回复
+> **s16** &nbsp; *"队友空闲时自己看板，有活就认领"* &mdash; 发现就绪任务并原子认领，不需要逐个派发
 >
-> **s17** &nbsp; *"队友自己看板, 有活就认领"* &mdash; 不需要领导逐个分配, 自组织
+> **s17** &nbsp; *"各干各的目录, 互不干扰"* &mdash; 任务管目标, worktree 管目录, 按 ID 绑定
 >
-> **s18** &nbsp; *"各干各的目录, 互不干扰"* &mdash; 任务管目标, worktree 管目录, 按 ID 绑定
+> **s18** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
 >
-> **s19** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
+> **s19** &nbsp; *"机制很多，循环一个"* &mdash; 前面所有机制回到一个完整 harness
 >
-> **s20** &nbsp; *"机制很多，循环一个"* &mdash; 前面所有机制回到一个完整 harness
+> **s20** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 可恢复 journal 支撑确定性 workflow
 >
-> **s21** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 可恢复 journal 支撑确定性 workflow
->
-> **s22** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 持续工作，直到可信证据满足目标
+> **s21** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 持续工作，直到可信证据满足目标
 
 ---
 
@@ -241,16 +239,16 @@ def agent_loop(messages):
 
 本仓库现在同时保留两条教程线：
 
-- **新版主线：根目录 `s01-s22`**
-  根目录下的 `s01_*` 到 `s22_*` 是新的主版本，也是当前推荐阅读路径。每章包含默认英文 README、中文/日文译本、可运行的 `code.py`，以及必要的图示。
+- **新版主线：根目录 `s01-s21`**
+  根目录下的 `s01_*` 到 `s21_*` 是新的主版本，也是当前推荐阅读路径。每章包含默认英文 README、中文/日文译本、可运行的 `code.py`，以及必要的图示。
 - **旧版过渡：`docs/`、`agents/`**
   这些仍保留旧 12 章体系，暂时用于已有读者和旧链接过渡。
 
-新读者请从根目录 `s01_agent_loop/` 读到 `s22_goal_loop/`。旧版章节号和新版不完全一致，不要混用章节号。
+新读者请从根目录 `s01_agent_loop/` 读到 `s21_goal_loop/`。旧版章节号和新版不完全一致，不要混用章节号。
 
 ### 旧版到新版的对应关系
 
-| 旧 12 章版本 | 新 22 章版本 | 主题 |
+| 旧 12 章版本 | 新 21 章版本 | 主题 |
 |---|---|---|
 | 旧 s01 | 新 s01 | Agent Loop |
 | 旧 s02 | 新 s02 | Tool Use |
@@ -261,27 +259,18 @@ def agent_loop(messages):
 | 旧 s07 | 新 s12 | Task System |
 | 旧 s08 | 新 s13 | Background Tasks |
 | 旧 s09 | 新 s15 | Agent Teams |
-| 旧 s10 | 新 s16 | Team Protocols |
-| 旧 s11 | 新 s17 | Autonomous Agents |
-| 旧 s12 | 新 s18 | Worktree Isolation |
-| 新版新增 | s03、s04、s09、s10、s11、s14、s19、s20、s21、s22 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Comprehensive Agent、Workflow Runtime、Goal Loop |
+| 旧 s10 | 新 s15 | Team Protocols |
+| 旧 s11 | 新 s16 | Autonomous Agents |
+| 旧 s12 | 新 s17 | Worktree Isolation |
+| 新版新增 | s03、s04、s09、s10、s11、s14、s18、s19、s20、s21 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Comprehensive Agent、Workflow Runtime、Goal Loop |
 
-## 范围说明 (重要)
+## 课程边界
 
-本仓库是一个 0->1 的 harness 工程学习项目 -- 构建围绕 agent 模型的工作环境。
-为保证学习路径清晰，仓库有意简化或省略了部分生产机制：
-
-- 完整事件 / Hook 总线 (例如 PreToolUse、SessionStart/End、ConfigChange)。
-  s12 仅提供教学用途的最小 append-only 生命周期事件流。
-- 基于规则的权限治理与信任流程
-- 会话生命周期控制 (resume/fork) 与更完整的 worktree 生命周期控制
-- 完整 MCP 运行时细节 (transport/OAuth/资源订阅/轮询)
-
-仓库中的团队 JSONL 邮箱协议是教学实现，不是对任何特定生产内部实现的声明。
+这是一个从 0 到 1 的 harness 工程课程。每章先单独展开一个机制，s19 再把它们接回完整的 Agent 循环。团队运行时使用 JSONL 邮箱，后续章节继续加入 workflow 编排和由目标控制的持续循环。
 
 ## 快速开始
 
-### 新版 22 章主线
+### 新版 21 章主线
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -291,7 +280,7 @@ cp .env.example .env   # 编辑 .env 填入你的 ANTHROPIC_API_KEY
 
 python s01_agent_loop/code.py        # 起点 — 一个循环 + bash
 python s08_context_compact/code.py    # 上下文压缩（复杂章）
-python s22_goal_loop/code.py          # 终点章：用目标闭合循环
+python s21_goal_loop/code.py          # 终点章：用目标闭合循环
 ```
 
 ### 旧版 12 章过渡线
@@ -304,7 +293,7 @@ python agents/s_full.py
 
 ### Web 平台
 
-Web 平台从根目录课程生成内容。s21、s22 提供阅读、源码、模拟和架构视图；仅专用首屏可视化保持精简。
+Web 平台从根目录课程生成内容。s20、s21 提供阅读、源码、模拟和架构视图；仅专用首屏可视化保持精简。
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -344,9 +333,9 @@ flowchart TD
         direction LR
         S4["<b>第四阶段：让任务长期运行</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ 任务落盘记依赖<br/><br/><b>s13 Background Tasks</b><br/>└─ 慢操作丢后台<br/><br/><b>s14 Cron Scheduler</b><br/>└─ 按时自动触发"]:::stage4
 
-        S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>Agent Teams 模块</b><br/>├─ s15 运行时实验：队友 + 邮箱<br/>└─ s16 协议实验：带类型的请求-回复<br/><br/><b>s17 Autonomous Agents</b><br/>└─ 自己看板认领活<br/><br/><b>s18 Worktree Isolation</b><br/>└─ 隔离目录"]:::stage5
+        S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ 队友 + 消息投递 + 协作协议<br/><br/><b>s16 Autonomous Agents</b><br/>└─ 自己看板认领就绪任务<br/><br/><b>s17 Worktree Isolation</b><br/>└─ 隔离目录"]:::stage5
 
-        S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s19 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s20 Comprehensive Agent</b><br/>└─ 全机制回单循环"]:::stage6
+        S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s18 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s19 Comprehensive Agent</b><br/>└─ 全机制回单循环"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -354,7 +343,7 @@ flowchart TD
     %% 第三层：编排与目标闭环
     subgraph Phase3 ["🎯 第七阶段：编排与目标闭环"]
         direction LR
-        S7["<b>第七阶段：编排并完成</b><br/>━━━━━━━━━━━━━<br/><b>s21 Workflow Runtime</b><br/>└─ 脚本拥有固定编排<br/><br/><b>s22 Goal Loop</b><br/>└─ 可信证据决定何时停止"]:::stage1
+        S7["<b>第七阶段：编排并完成</b><br/>━━━━━━━━━━━━━<br/><b>s20 Workflow Runtime</b><br/>└─ 脚本拥有固定编排<br/><br/><b>s21 Goal Loop</b><br/>└─ 可信证据决定何时停止"]:::stage1
         S6 ==> S7
     end
 
@@ -383,14 +372,13 @@ flowchart TD
 | [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / 磁盘持久化 |
 | [s13](./s13_background_tasks/) | Background Tasks | 线程执行 / 通知队列 |
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | 持久化调度 / 会话级触发 |
-| [s15](./s15_agent_teams/) | Agent Teams：运行时实验 | `MessageBus` / 收件箱 / 权限冒泡 |
-| [s16](./s16_team_protocols/) | Agent Teams：协议实验 | 类型消息 / 关机握手 / 计划审批 |
-| [s17](./s17_autonomous_agents/) | Autonomous Agents | 空闲循环 / 自动认领 |
-| [s18](./s18_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / 任务-目录绑定 |
-| [s19](./s19_mcp_plugin/) | MCP Plugin | 多传输 / 通道路由 / 工具池组装 |
-| [s20](./s20_comprehensive/) | Comprehensive Agent | 全部机制归到一个循环 |
-| [s21](./s21_workflow_runtime/) | Workflow Runtime | 脚本编排 / 后台运行 / journal 续跑 |
-| [s22](./s22_goal_loop/) | Goal Loop | 目标闸门 / 可信证据 / 自动续轮 |
+| [s15](./s15_agent_teams/) | Agent Teams | 持久队友 / 自动消息投递 / 类型协议 / 计划闸门 |
+| [s16](./s16_autonomous_agents/) | Autonomous Agents | 扫描任务板 / 原子认领 / 自组织 |
+| [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / 任务-目录绑定 |
+| [s18](./s18_mcp_plugin/) | MCP Plugin | 工具发现 / 命名空间 / 工具池组装 |
+| [s19](./s19_comprehensive/) | Comprehensive Agent | 全部机制归到一个循环 |
+| [s20](./s20_workflow_runtime/) | Workflow Runtime | 脚本编排 / 后台运行 / journal 续跑 |
+| [s21](./s21_goal_loop/) | Goal Loop | 目标闸门 / 可信证据 / 自动续轮 |
 
 ## 项目结构
 
@@ -404,10 +392,10 @@ learn-claude-code/
     images/                #   SVG 流程图
   s02_tool_use/
   ...
-  s19_mcp_plugin/
-  s20_comprehensive/
-  s21_workflow_runtime/
-  s22_goal_loop/           # 终点章
+  s18_mcp_plugin/
+  s19_comprehensive/
+  s20_workflow_runtime/
+  s21_goal_loop/           # 终点章
   agents/                  # 旧 12 章可运行副本 + s_full.py
   skills/                  # s07 使用的 skill 文件
   docs/                    # 旧 12 章文档，过渡期保留
@@ -417,7 +405,7 @@ learn-claude-code/
 
 ## 学完之后 -- 从理解到落地
 
-22 个课程走完, 你已经从内到外理解了 harness 工程的运作原理。两种方式把知识变成产品:
+21 个课程走完, 你已经从内到外理解了 harness 工程的运作原理。两种方式把知识变成产品:
 
 ### Kode Agent CLI -- 开源 Coding Agent CLI
 

@@ -50,9 +50,9 @@
 
   <!-- 原理 -->
   <rect x="20" y="228" width="680" height="62" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
-  <text x="35" y="248" fill="#1e3a5f" font-size="11" font-weight="600">方法（教学版）</text>
-  <text x="130" y="248" fill="#475569" font-size="10">tool_result を走査し、最新 3 件のみ完全保持、古いものはプレースホルダーに置換。</text>
-  <text x="35" y="264" fill="#1e3a5f" font-size="11" font-weight="600">実際の CC</text>
-  <text x="110" y="264" fill="#475569" font-size="10">API cache_edits で旧結果をクリア（prompt cache プレフィックスを破壊しない）、COMPACTABLE_TOOLS のみ対象：</text>
-  <text x="110" y="280" fill="#94a3b8" font-size="9">Read, Bash, Grep, Glob, WebSearch, WebFetch, Edit, Write。教学版はテキストプレースホルダーで同様の効果を模擬。</text>
+  <text x="35" y="248" fill="#1e3a5f" font-size="11" font-weight="600">処理規則</text>
+  <text x="95" y="248" fill="#475569" font-size="10">最新 3 件の tool_result を完全保持し、古い結果をプレースホルダーに置換する。</text>
+  <text x="35" y="264" fill="#1e3a5f" font-size="11" font-weight="600">プレースホルダー</text>
+  <text x="125" y="264" fill="#475569" font-size="10">結果が圧縮済みで、必要ならツールを再実行できることを示す。</text>
+  <text x="125" y="280" fill="#94a3b8" font-size="9">メッセージ構造を保ったまま次のループへ進める。</text>
 </svg>

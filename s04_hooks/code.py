@@ -159,7 +159,7 @@ def register_hook(event: str, callback):
 def trigger_hooks(event: str, *args):
     for callback in HOOKS[event]:
         result = callback(*args)
-        if result is not None:  # teaching shortcut: block this tool call
+        if result is not None:  # A hook result blocks this tool call.
             return result
     return None
 

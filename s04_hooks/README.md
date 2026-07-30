@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s20 → s21 → s22
+s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s20 → s21
 
 > *"Hang on the loop, don't write into it"* — Hooks inject extension logic before and after tool execution.
 >
@@ -48,7 +48,7 @@ Four events, covering a complete agent cycle:
 | UserPromptSubmit | After user input, before entering LLM | Input validation, context injection |
 | PreToolUse | Before tool execution | Permission checks, logging |
 | PostToolUse | After tool execution | Side effects (auto git add etc.), output checking |
-| Stop | When the loop is about to exit | Cleanup (CC also supports force continuation) |
+| Stop | When the loop is about to exit | Cleanup, decide whether the loop continues |
 
 Extensions are added via `register_hook()`. The loop only calls `trigger_hooks()`.
 
@@ -77,9 +77,9 @@ def trigger_hooks(event: str, *args):
     return None
 ```
 
-In the teaching version, PreToolUse returning non-None means block execution; Stop returning non-None means force continuation. UserPromptSubmit and PostToolUse return values are unused.
+When `PreToolUse` returns non-None, the current tool execution is blocked. When `Stop` returns non-None, the loop continues. Return values from `UserPromptSubmit` and `PostToolUse` do not affect control flow.
 
-**UserPromptSubmit**, triggers after user input, before entering the LLM. CC can intercept or modify input; the teaching version only logs:
+**UserPromptSubmit** triggers after user input and before entering the LLM. The following hook records the current working directory:
 
 ```python
 def context_inject_hook(query: str) -> str | None:
@@ -130,7 +130,7 @@ register_hook("PreToolUse", log_hook)
 register_hook("PostToolUse", large_output_hook)
 ```
 
-**Stop**, triggers when the loop is about to exit (`stop_reason != "tool_use"`). The teaching version prints a cleanup summary:
+**Stop** triggers when the loop is about to exit (`stop_reason != "tool_use"`). The following hook prints a cleanup summary:
 
 ```python
 def summary_hook(messages: list) -> str | None:
@@ -220,64 +220,5 @@ The Agent can now safely execute operations. But does it ever stop to think "wha
 
 → s05 TodoWrite: Give the Agent a planning tool. Make a list first, then execute.
 
-<details>
-<summary>Dive into CC Source Code</summary>
-
-> The following is based on a complete analysis of CC source code `toolHooks.ts` (650 lines), `hooks.ts`, `stopHooks.ts`, and `coreTypes.ts`.
-
-### 1. Hook Events: Not Just 4, but 27
-
-The teaching version covers only PreToolUse and PostToolUse. CC actually has 27 hook events (`coreTypes.ts:25-53`):
-
-| Category | Events |
-|----------|--------|
-| Tool-related | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` |
-| Session-related | `SessionStart`, `SessionEnd`, `Stop`, `StopFailure`, `Setup` |
-| User interaction | `UserPromptSubmit`, `Notification`, `PermissionRequest`, `PermissionDenied` |
-| Sub-agents | `SubagentStart`, `SubagentStop` |
-| Compaction-related | `PreCompact`, `PostCompact` |
-| Team-related | `TeammateIdle`, `TaskCreated`, `TaskCompleted` |
-| Other | `Elicitation`, `ElicitationResult`, `ConfigChange`, `WorktreeCreate`, `WorktreeRemove`, `InstructionsLoaded`, `CwdChanged`, `FileChanged` |
-
-The teaching version covers only 4 core events (UserPromptSubmit, PreToolUse, PostToolUse, Stop) because they cover every critical node of a complete agent cycle. The other 23 follow the same pattern.
-
-### 2. HookResult Common Fields
-
-CC's `HookResult` (`types/hooks.ts:260-275`) has 14 fields. Common ones:
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `message` | Message | Optional UI message |
-| `blockingError` | HookBlockingError | Blocking error → injected into conversation for model self-correction |
-| `outcome` | success/blocking/non_blocking_error/cancelled | Execution result |
-| `preventContinuation` | boolean | Prevent subsequent execution |
-| `stopReason` | string | Stop reason description |
-| `permissionBehavior` | allow/deny/ask/passthrough | Hook returns permission decision |
-| `updatedInput` | Record | Modify tool input |
-| `additionalContext` | string | Additional context |
-| `updatedMCPToolOutput` | unknown | MCP tool output modification |
-
-### 3. Key Invariant: Hook 'allow' Cannot Bypass deny/ask Rules
-
-This is the most important security design in CC's permission system (`toolHooks.ts:325-331`): **when a hook returns allow, it still checks settings.json deny/ask rules.** Even if the user's hook script says "allow", if the tool is disabled in settings.json, the operation is still blocked.
-
-The teaching version doesn't have this layer; hooks returning non-None directly interrupt. This is sufficient for teaching, but would create a security vulnerability in production.
-
-### 4. stopHookActive Mechanism
-
-CC's Stop hooks have an infinite-loop prevention mechanism (`query.ts:212,1300`): the `stopHookActive` state field. When stop hooks produce a blockingError, the loop re-enters with `stopHookActive: true`. Subsequent iterations see this flag and don't trigger stop hooks again. This prevents a never-stopping bug: model self-corrects → stop hook errors again → model self-corrects again → stop hook errors again...
-
-### 5. hook_stopped_continuation
-
-When PostToolUse hooks return `preventContinuation: true`, a `hook_stopped_continuation` attachment is produced (`toolHooks.ts:117-130`). query.ts (L1388-1393) detects it and sets `shouldPreventContinuation = true`, causing the loop to exit. This is the mechanism for "hooks gracefully shut down the Agent" — not a crash, but a completion.
-
-### Teaching Version Simplifications Are Intentional
-
-- 27 events → 4 (UserPromptSubmit/PreToolUse/PostToolUse/Stop): covers agent cycle critical nodes
-- 14 fields → simple return values (None = continue, non-None = interrupt/continue): minimal cognitive load
-- Hook allow vs deny/ask invariant → omitted: teaching version has no settings.json layer
-- stopHookActive → omitted: teaching version Stop hook only does simple continuation, no infinite-loop prevention needed
-
-</details>
 
 <!-- translation-sync: zh@v1, en@v1, ja@v1 -->
