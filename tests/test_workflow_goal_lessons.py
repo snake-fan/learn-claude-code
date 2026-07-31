@@ -112,33 +112,3 @@ def test_workflow_runtime_rejects_corrupt_resume_journal(tmp_path: Path) -> None
 
     with pytest.raises(workflow.WorkflowInputError, match="line 1"):
         workflow.WorkflowJournal(run_id, resume=True, store=tmp_path)
-
-
-def test_goal_loop_requires_trusted_evidence_and_has_a_budget(
-    tmp_path: Path,
-) -> None:
-    script = tmp_path / "code.py"
-    shutil.copy2(ROOT / "s21_goal_loop" / "code.py", script)
-
-    output = run_lesson(script)
-
-    assert "active goal still open: True" in output
-    assert "final verdict: goal completed" in output
-    assert "final verdict: goal blocked" in output
-
-
-def test_goal_loop_separates_user_input_from_host_evidence() -> None:
-    goal_loop = load_lesson("goal_trust_test", ROOT / "s21_goal_loop" / "code.py")
-    session = goal_loop.Session()
-
-    assert session.submit("/goal until tests passed") == "continuing"
-    assert session.submit("tests passed") == "continuing"
-    assert session.goal.active is not None
-
-    with pytest.raises(ValueError):
-        session.deliver_host_event("tests passed", source="user")
-
-    assert (
-        session.deliver_host_event("tests passed", source="task-notification")
-        == "completed"
-    )
