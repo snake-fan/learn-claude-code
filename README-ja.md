@@ -364,7 +364,7 @@ flowchart TD
 | [s05](./s05_todo_write/) | TodoWrite | `TodoItem` / 計画してから実行 |
 | [s06](./s06_subagent/) | Subagent | `fresh messages[]` / コンテキスト分離 |
 | [s07](./s07_skill_loading/) | Skill Loading | `SkillManifest` / オンデマンド注入 |
-| [s08](./s08_context_compact/) | Context Compact | snip / micro / budget / auto 4層圧縮 |
+| [s08](./s08_context_compact/) | Context Compact | budget / snip / micro / summary の 4 ステップ |
 | [s09](./s09_memory/) | Memory | selection / extraction / consolidation |
 | [s10](./s10_system_prompt/) | Context Assembly | 実行時状態 / 安定セクション / モデル入力 |
 | [s11](./s11_error_recovery/) | Error Recovery | token 拡張 / fallback モデル / リトライ戦略 |

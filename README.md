@@ -315,7 +315,7 @@ flowchart TD
 | [s05](./s05_todo_write/) | TodoWrite | `TodoItem` / plan-then-execute |
 | [s06](./s06_subagent/) | Subagent | `fresh messages[]` / context isolation |
 | [s07](./s07_skill_loading/) | Skill Loading | `SkillManifest` / on-demand injection |
-| [s08](./s08_context_compact/) | Context Compact | snipCompact / microCompact / toolResultBudget / autoCompact |
+| [s08](./s08_context_compact/) | Context Compact | tool_result_budget / snip_compact / micro_compact / compact_history |
 | [s09](./s09_memory/) | Memory System | selection / extraction / consolidation |
 | [s10](./s10_system_prompt/) | Context Assembly | runtime state / stable sections / model input |
 | [s11](./s11_error_recovery/) | Error Recovery | token escalation / fallback model / retry strategies |

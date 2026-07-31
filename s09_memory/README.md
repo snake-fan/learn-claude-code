@@ -11,7 +11,7 @@ s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 �
 
 ## The Problem
 
-s08's autoCompact preserves current goals, remaining work, and user constraints in the summary, but details get lost: "use tabs not spaces" might get simplified to "user has code style preferences". And when you start a new session, even the summary is gone.
+s08's `compact_history` preserves current goals, remaining work, and user constraints in the summary, but details get lost: "use tabs not spaces" might get simplified to "user has code style preferences". And when you start a new session, even the summary is gone.
 
 LLMs have no persistent state; all information lives in the context window. When context fills up, it gets compressed, and compression is lossy. What's needed is a storage layer that doesn't participate in compression and persists across sessions.
 

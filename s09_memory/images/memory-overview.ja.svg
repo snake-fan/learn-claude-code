@@ -38,7 +38,7 @@
   <rect x="155" y="86" width="135" height="72" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
   <text x="222" y="108" fill="#1e3a5f" font-size="11" font-weight="700" text-anchor="middle">圧縮パイプライン</text>
   <text x="222" y="124" fill="#64748b" font-size="9" text-anchor="middle">budget → snip → micro</text>
-  <text x="222" y="138" fill="#64748b" font-size="9" text-anchor="middle">→ autoCompact</text>
+  <text x="222" y="138" fill="#64748b" font-size="9" text-anchor="middle">→ compact_history</text>
   <text x="222" y="152" fill="#94a3b8" font-size="8" text-anchor="middle">(s08)</text>
 
   <!-- arrow → Loading (purple) -->
@@ -98,7 +98,7 @@
   <!-- ===== Bottom notes ===== -->
   <rect x="40" y="358" width="680" height="56" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
   <rect x="60" y="372" width="12" height="10" rx="2" fill="#f0f4ff" stroke="#2563eb" stroke-width="1"/>
-  <text x="80" y="382" fill="#475569" font-size="10">s08 維持：圧縮パイプライン（budget → snip → micro → auto）+ 緊急トリム + ループ</text>
+  <text x="80" y="382" fill="#475569" font-size="10">s08 維持：budget → snip → micro → summary + エラー回復 + ループ</text>
   <rect x="60" y="392" width="12" height="10" rx="2" fill="#f3e8ff" stroke="#7c3aed" stroke-width="1"/>
   <text x="80" y="402" fill="#475569" font-size="10">s09 追加：Loading（インデックス常駐 + オンデマンド注入）+ Extraction（毎ターン終了後）+ Consolidation（閾値トリガー）</text>
 </svg>
