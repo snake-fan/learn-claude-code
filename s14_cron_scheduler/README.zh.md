@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s20 → s21
+s01 → ... → s12 → s13 → `s14` → [s15](../s15_agent_teams/) → s16 → ... → s18 → s19
 > *"按时间表生产工作, 调度与执行解耦"* — cron 调度, 持久化或会话级。
 >
 > **Harness 层**: 调度 — 独立线程判断时间, 队列传递触发。

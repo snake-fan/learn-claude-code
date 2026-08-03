@@ -7,7 +7,7 @@ CHAPTERS = sorted(ROOT.glob("s[0-9][0-9]_*"))
 
 
 def test_every_chapter_uses_english_as_the_default_readme() -> None:
-    assert len(CHAPTERS) == 21
+    assert len(CHAPTERS) == 19
 
     for chapter in CHAPTERS:
         assert (chapter / "README.md").is_file()

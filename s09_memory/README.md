@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s20 → s21
+s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s18 → s19
 > *"Compression loses details, keep a layer that doesn't"* — File store + index + on-demand loading, across compactions, across sessions.
 >
 > **Harness Layer**: Memory — knowledge that survives compaction and sessions.

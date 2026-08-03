@@ -2,45 +2,45 @@
   "version": "s17",
   "decisions": [
     {
-      "id": "worktree-name-validation",
-      "title": "Worktree Names Are Validated Before Git Runs",
-      "description": "The tool validates names before creating branches or directories, so unsafe user input never reaches git or filesystem operations.",
-      "alternatives": "Passing names directly to git is shorter, but it turns a collaboration feature into an injection hazard.",
+      "id": "composition-over-new-loop",
+      "title": "The Harness Composes Previous Layers",
+      "description": "The integrated harness does not replace the loop with a new architecture. It composes memory, tasks, skills, background work, teams, worktrees, and MCP around the same core model-tool-result cycle.",
+      "alternatives": "A new orchestration framework would look more impressive, but it would hide the continuity across the course.",
       "zh": {
-        "title": "运行 Git 前先校验 Worktree 名称",
-        "description": "工具在创建分支或目录前先校验名称，不让不安全的用户输入进入 git 或文件系统操作。"
+        "title": "Harness 组合既有层，而不是换掉循环",
+        "description": "集成后的 Harness 没有用新架构替换循环，而是把 memory、task、skill、后台任务、团队、worktree、MCP 组合到同一个模型-工具-结果循环周围。"
       },
       "ja": {
-        "title": "git 実行前に worktree 名を検証する",
-        "description": "ブランチやディレクトリ作成前に名前を検証し、危険なユーザー入力が git やファイルシステム操作へ流れないようにします。"
+        "title": "Harness は既存レイヤーを統合する",
+        "description": "統合された Harness はループを新しい構造で置き換えません。memory、task、skill、バックグラウンド処理、チーム、worktree、MCP を同じ model-tool-result サイクルの周囲に合成します。"
       }
     },
     {
-      "id": "task-bound-worktree",
-      "title": "The Task Record Owns the Worktree Binding",
-      "description": "A task stores its assigned worktree so future commands know where to run. The binding is explicit data, not a hidden convention based on naming or current working directory.",
-      "alternatives": "Deriving the worktree path from branch names is convenient, but brittle when tasks are renamed or moved.",
+      "id": "single-source-of-runtime-truth",
+      "title": "Runtime State Has Named Sources",
+      "description": "Context assembly pulls from named sources such as memory, task graph, skills, tool registry, and policy. This keeps a large agent debuggable because each piece of prompt context has an owner.",
+      "alternatives": "Dumping everything into one prompt string is shorter, but it becomes impossible to tell which subsystem caused a bad decision.",
       "zh": {
-        "title": "任务记录持有 Worktree 绑定关系",
-        "description": "任务会记录自己分配到的 worktree，因此后续命令知道应该在哪里运行。这个绑定是显式数据，而不是依赖命名或当前目录的隐藏约定。"
+        "title": "运行时状态来自具名来源",
+        "description": "上下文组装从 memory、task graph、skills、tool registry、policy 等具名来源读取。大型 agent 因此仍可调试，因为每块 prompt context 都有清晰归属。"
       },
       "ja": {
-        "title": "タスクレコードが worktree の紐付けを持つ",
-        "description": "タスクは割り当てられた worktree を保持し、後続コマンドは実行場所を把握できます。この紐付けは命名や現在ディレクトリに依存する暗黙の規約ではなく、明示的なデータです。"
+        "title": "ランタイム状態には名前付きの出所がある",
+        "description": "コンテキスト組み立ては memory、task graph、skills、tool registry、policy などの名前付きソースから取得します。各 prompt context に所有者があるため、大きなエージェントでもデバッグ可能です。"
       }
     },
     {
-      "id": "lifecycle-event-stream",
-      "title": "Lifecycle Events Stay Separate from Tool Results",
-      "description": "Creation, status, keep, and removal events are emitted to a side-channel log. That makes worktree state observable without overloading the conversational transcript.",
-      "alternatives": "Only returning tool results is simpler, but later debugging needs a durable audit trail of worktree lifecycle changes.",
+      "id": "recovery-is-first-class",
+      "title": "Recovery Is Part of the Main Flow",
+      "description": "Compaction, error recovery, and asynchronous result collection are normal loop behavior. The harness handles recovery and resumption through named paths instead of scattered exception branches.",
+      "alternatives": "Leaving recovery at the edges makes it harder to see which state is safe to resume.",
       "zh": {
-        "title": "生命周期事件与工具结果分离",
-        "description": "创建、状态、保留和移除事件会写入旁路日志。这样 worktree 状态可观察，同时不会把对话 transcript 塞满运行时事件。"
+        "title": "恢复能力是一等流程",
+        "description": "压缩、错误恢复和异步结果收集都属于正常循环。Harness 通过明确的路径处理恢复与续跑，而不是把逻辑散落在异常分支中。"
       },
       "ja": {
-        "title": "ライフサイクルイベントをツール結果から分離する",
-        "description": "作成、状態、保持、削除のイベントはサイドチャネルログへ出力します。会話 transcript をランタイムイベントで埋めずに worktree 状態を観測できます。"
+        "title": "リカバリは主要フローの一部",
+        "description": "圧縮、エラー回復、非同期結果収集を通常のループ動作として扱います。Harness は回復と再開を名前付きの経路にまとめ、例外分岐へ散らしません。"
       }
     }
   ]

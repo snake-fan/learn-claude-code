@@ -1,57 +1,49 @@
 {
   "version": "s19",
-  "title": "Integrated Harness",
-  "description": "The harness composes context assembly, tools, memory, teams, background work, cron, worktrees, and MCP.",
+  "title": "Goal Loop",
+  "description": "A separate evaluator reads the conversation at the end of a turn and sends unfinished work back through the same loop.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Prepare this project for release. Check the code, update the docs, and report deployment readiness.",
-      "annotation": "One ordinary request needs several earlier capabilities to work together."
-    },
-    {
-      "type": "system_event",
-      "content": "assemble_prompt: memory + task graph + skills + available tools + policy",
-      "annotation": "The runtime builds the prompt from layered sources of context."
+      "content": "/goal pytest tests/auth exits with code 0",
+      "annotation": "The command stores an active completion condition and starts the work."
     },
     {
       "type": "assistant_text",
-      "content": "I'll inspect the task graph, delegate docs, start the slow scan in the background, and use the release checklist skill.",
-      "annotation": "The model chooses multiple mechanisms while keeping one coherent plan."
+      "content": "The authentication code looks correct. The tests should pass now.",
+      "annotation": "With no more tool calls, the session asks the evaluator whether the active goal is complete."
     },
     {
-      "type": "tool_call",
-      "toolName": "load_skill",
-      "content": "{\"name\":\"release-check\"}",
-      "annotation": "Skills contribute procedural context before execution."
+      "type": "system_event",
+      "content": "goal_evaluated ok=false -> block",
+      "annotation": "The evaluator finds no test exit code in the conversation."
     },
     {
-      "type": "tool_call",
-      "toolName": "spawn_teammate",
-      "content": "{\"name\":\"docs\",\"role\":\"Update release notes in its worktree.\"}",
-      "annotation": "Team delegation handles a parallel slice of the release."
+      "type": "system_event",
+      "content": "[Goal still active] Run pytest tests/auth and surface the exit code.",
+      "annotation": "The controller appends the reason to messages[] and continues the same loop; no queue is involved."
     },
     {
       "type": "tool_call",
       "toolName": "bash",
-      "content": "npm run lint && npm run test",
-      "toolInput": "{\"background\":true}",
-      "annotation": "Long-running validation goes through the background task path."
+      "content": "pytest tests/auth",
+      "annotation": "The next agent turn runs the missing check."
     },
     {
-      "type": "tool_call",
-      "toolName": "connect_mcp",
-      "content": "{\"server\":\"deploy\",\"command\":\"mock-deploy-server\"}",
-      "annotation": "External capabilities are added only when needed."
-    },
-    {
-      "type": "system_event",
-      "content": "recover: background task done, teammate replied, MCP deploy status ready",
-      "annotation": "The integrated runtime folds asynchronous results back into the loop."
+      "type": "tool_result",
+      "toolName": "bash",
+      "content": "exit_code=0\n12 passed in 0.42s",
+      "annotation": "The concrete command result enters the same conversation."
     },
     {
       "type": "assistant_text",
-      "content": "Release preparation is ready: checks passed, docs are updated in the teammate worktree, and deployment status is available.",
-      "annotation": "The integrated harness returns a single user-facing outcome."
+      "content": "pytest tests/auth exited 0: 12 tests passed.",
+      "annotation": "A turn with no further tool call reaches the Stop hook again."
+    },
+    {
+      "type": "system_event",
+      "content": "goal_evaluated ok=true -> achieved",
+      "annotation": "The controller records success, clears the active goal, and returns."
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s20 → s21
+`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s18 → s19
 > *"One loop & Bash is all you need"* — One tool + one loop = one Agent.
 >
 > **Harness Layer**: The Loop — the first bridge between the model and the real world.

@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "s08": REPO_ROOT / "s08_context_compact" / "code.py",
     "s09": REPO_ROOT / "s09_memory" / "code.py",
-    "s19": REPO_ROOT / "s19_comprehensive" / "code.py",
+    "s17": REPO_ROOT / "s17_integrated_harness" / "code.py",
 }
 
 
@@ -244,9 +244,9 @@ class CompactionToolPairTests(unittest.TestCase):
                 self.assertEqual(compacted[1:], messages[3:])
                 assert_no_orphan_tool_results(self, compacted)
 
-    def test_s19_has_tool_use_still_accepts_content_blocks(self):
+    def test_s17_has_tool_use_still_accepts_content_blocks(self):
         with tempfile.TemporaryDirectory() as tmp:
-            module = load_module("s19_has_tool_use_under_test", MODULES["s19"], Path(tmp))
+            module = load_module("s17_has_tool_use_under_test", MODULES["s17"], Path(tmp))
             self.assertTrue(module.has_tool_use([types.SimpleNamespace(type="tool_use")]))
             self.assertFalse(module.has_tool_use([types.SimpleNamespace(type="text")]))
 

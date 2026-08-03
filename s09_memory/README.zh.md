@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s20 → s21
+s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s18 → s19
 > *"压缩会丢细节, 要有一层不丢的"* — 文件仓库 + 索引 + 按需加载，跨压缩、跨会话。
 >
 > **Harness 层**: 记忆 — 跨压缩、跨会话的知识积累。

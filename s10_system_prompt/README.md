@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s18 → s19
 > *"Model input is assembled, not hardcoded"* — Stable sections + runtime state + caching.
 >
 > **Harness Layer**: Context assembly — turn stable instructions and dynamic state into model input.

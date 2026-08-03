@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s20 → s21
+s01 → ... → s08 → s09 → `s10` → [s11](../s11_error_recovery/) → s12 → ... → s18 → s19
 > *"模型输入是组装出来的，不是写死的"* — 稳定分段 + 运行时状态 + 缓存。
 >
 > **Harness 层**: 上下文组装 — 把稳定指令和动态状态组成模型输入。

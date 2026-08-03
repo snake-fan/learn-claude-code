@@ -2,31 +2,33 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s13 → s14 → `s15` → [s16](../s16_autonomous_agents/) → s17 → s18 → s19 → s20 → s21
+s01 → ... → s13 → s14 → `s15` → [s16](../s16_mcp_plugin/) → s17 → s18 → s19
 
-> *"一个 Agent 顾不过来，就让队友分工协作。"* — 持久队友、消息投递与协作协议。
+> *“一个 Agent 装不下整项工作时，就让队友分头完成。”* — 持久队友、共享任务认领、可选 worktree 与协作协议。
 >
-> **Harness 层**：团队 — 多个 Agent 如何并行工作，又如何保持可控。
+> **Harness 层**：Team（团队）— 多个 Agent 如何分工、共享状态，同时接受 Lead 控制。
 
 ---
 
 ## 问题
 
-当我们需要 Agent 帮助我们重构整个后端时，任务可能同时涉及配置加载、认证逻辑和测试。一个 Agent 依次处理所有模块，不但耗时更长，早期细节也会逐渐退出上下文。
+假设我们让 Agent 重构整个后端，工作涉及配置加载、认证和测试。一个 Agent 可以依次处理，但总耗时更长，早期细节也会逐渐离开上下文。
 
-这类任务适合拆给多个 Agent，但用户通常只会描述需求，不会先设计一套团队：
+这类工作适合并行，可用户通常只描述目标，不会替运行时设计团队：
 
 ```text
-请重构这个示例后端，分别整理配置加载、认证逻辑和测试，
-保持现有接口兼容，并确保测试通过。
+重构这个示例后端。清理配置加载、认证和测试，
+保持现有接口，并确保测试通过。
 ```
 
-因此，Harness 需要连续解决四个问题：
+Harness 需要回答一组相互关联的问题：
 
-1. 谁判断任务是否值得并行，以及如何征得用户确认？
-2. 队友如何保留自己的身份和上下文，持续接收工作？
-3. 队友的结果如何自动回到 Lead，而不是依赖模型反复检查邮箱？
-4. 关机与计划审批如何变成可追踪、可执行的协议？
+1. 谁判断并行是否有用，新增 Agent 又由谁确认？
+2. 每个队友如何跨任务保留身份和上下文？
+3. 结果如何自动返回 Lead，而不是让模型轮询收件箱？
+4. 空闲队友能否直接接手 ready task，不再等待 Lead 逐项派发？
+5. 并行修改可能冲突时，任务应该使用哪个工作目录？
+6. 关机和计划审批如何成为可追踪、可执行的协议？
 
 ---
 
@@ -34,16 +36,17 @@ s01 → ... → s13 → s14 → `s15` → [s16](../s16_autonomous_agents/) → s
 
 ![Agent Teams Overview](images/agent-teams-overview.svg)
 
-s15 在单 Agent Harness 外增加一个由 Lead 管理的团队运行时：
+s15 在单 Agent Harness 外增加一套由 Lead 管理的团队运行时：
 
-- **Lead** 保持用户对话，判断是否需要团队，提出分工并等待确认。
-- **队友** 在独立线程中运行自己的 Agent Loop，完成工作后进入空闲。
-- **MessageBus** 用文件邮箱传递普通消息、结果和控制事件。
-- **运行时投递** 自动消费 Lead 的邮箱，把团队事件注入下一轮上下文。
-- **协作协议** 用 `type`、`request_id` 和状态机处理关机与计划审批。
-- **计划闸门** 在计划未批准时拦截队友的 `bash` 和 `write_file`。
+- **Lead** 负责用户对话，提出分工方案并等待确认。
+- **队友** 运行独立 Agent Loop，在 WORK 和 IDLE 之间切换。
+- **MessageBus** 通过文件收件箱传递普通消息、结果和控制事件。
+- **运行时投递** 消费 Lead 的收件箱，把团队事件注入下一轮对话。
+- **共享任务板** 让空闲队友发现 ready task，并在锁内完成认领。
+- **可选 worktree** 在需要时把任务绑定到另一个工作目录；未绑定任务仍使用仓库目录。
+- **类型化协议和计划闸门** 显式记录关机与审批状态，并在计划获批前阻止修改型工具。
 
-模型负责理解任务与分工，代码负责消息投递、生命周期和协议约束。
+这些机制都属于 Team 这一层。任务发现不需要另一套 Agent Loop，worktree 也不会产生另一种 Agent。
 
 ---
 
@@ -51,7 +54,7 @@ s15 在单 Agent Harness 外增加一个由 Lead 管理的团队运行时：
 
 ### 1. Lead 先提出团队，再等待用户确认
 
-是否创建团队会改变成本、并发度和可写入范围，不应该被隐藏在一次普通工具调用里。Lead 的 system prompt 明确规定：
+启动队友会改变成本、并发度和可以修改工作区的角色集合。Lead 的系统提示词会把这条边界明确写出来：
 
 ```python
 "When parallel work would help, first propose a small team with clear "
@@ -59,35 +62,35 @@ s15 在单 Agent Harness 外增加一个由 Lead 管理的团队运行时：
 "spawn_teammate before the user confirms."
 ```
 
-第一次输入需求时，Lead 只需要说明建议的拆分：
+收到第一条需求后，Lead 只提出分工：
 
 ```text
-我建议分成三个方向并行处理：
-- config：整理配置加载
-- auth：重构认证逻辑
-- tests：补齐回归测试
+我建议并行处理三个方向：
+- config：清理配置加载
+- auth：重构认证
+- tests：补充回归测试
 
-确认后我会启动队友并协调结果。
+你确认后我再启动队友。
 ```
 
-用户回复“开始吧”后，Lead 才调用 `spawn_teammate`。用户表达目标，Lead 设计团队，用户确认执行边界；三者的职责不会混在一起。
+用户回复“开始吧”后，Lead 才能调用 `spawn_teammate`。用户给出目标，Lead 设计团队，用户确认执行边界。
 
 ### 2. 每个队友拥有独立循环
 
-s06 的子 Agent 是一次性调用，返回结果后就结束。队友则是持久执行单元：
+s06 的 subagent 是一次性调用，队友则是持久执行单元：
 
-| | s06 子 Agent | s15 队友 |
+| | s06 Subagent | s15 队友 |
 |---|---|---|
-| 生命周期 | 完成一次调用后结束 | `WORK → IDLE → WORK`，直到收到关机请求 |
-| 上下文 | 只服务当前任务 | 在多轮协作中保留 |
-| 通信 | 返回一次结果 | 持续接收消息并上报事件 |
-| 协调 | 主 Agent 单向委派 | Lead 与队友双向协作 |
+| 生命周期 | 一次调用后结束 | `WORK → IDLE → WORK`，直到关机 |
+| 上下文 | 只服务一个任务 | 跨任务保留 |
+| 通信 | 返回一次结果 | 接收消息并发出事件 |
+| 协作 | 单向委派 | 与 Lead 双向协作 |
 
-`spawn_teammate_thread()` 为队友创建独立的 system prompt、messages 和工具集，并把循环放入 daemon 线程。Lead 不必等待某个队友结束，仍可继续派发任务或处理其他结果。
+`spawn_teammate_thread()` 为每个队友保存独立的系统提示词、messages、工具和当前工作目录状态，再在线程中运行循环。队友工作时，Lead 可以继续协调其他任务。`lead` 和 `agent` 保留给运行时身份，但 `MessageBus` 仍允许把 `lead` 作为协调者收件箱。
 
-### 3. MessageBus 把通信放在上下文之外
+### 3. MessageBus 把通信放在模型上下文之外
 
-Lead 和队友不能共享同一份 messages，否则一个队友的工具结果会混入另一个队友的推理。`MessageBus` 为每个 Agent 建立 `.mailboxes/<name>.jsonl`：
+Lead 和队友不能共享同一个 messages 数组，否则一个队友的工具结果会进入另一个队友的推理上下文。`MessageBus` 为每个 Agent 提供 `.mailboxes/<name>.jsonl` 收件箱：
 
 ```python
 class MessageBus:
@@ -101,21 +104,27 @@ class MessageBus:
             "metadata": metadata or {},
         }
         with self._changed:
-            append_jsonl(self._path(to_agent), msg)
+            with open(self._path(to_agent), "a") as f:
+                f.write(json.dumps(msg) + "\n")
             self._changed.notify_all()
 
-    def wait_for_messages(self, agent):
+    def wait_for_messages(self, agent, timeout=None):
+        deadline = None if timeout is None else time.monotonic() + timeout
         with self._changed:
             while not self.peek(agent):
-                self._changed.wait()
+                remaining = (None if deadline is None
+                             else deadline - time.monotonic())
+                if remaining is not None and remaining <= 0:
+                    return []
+                self._changed.wait(remaining)
             return self._read_unlocked(agent)
 ```
 
-锁保证同一进程中的多个队友不会同时破坏邮箱文件，`Condition` 让空闲队友等待事件，而不是持续轮询。
+锁会保护收件箱文件，避免队友并发读写。`Condition` 既能在消息到达时唤醒队友，也能支持 IDLE 状态下的短时等待。
 
-### 4. 收件箱由运行时自动投递
+### 4. 收件箱事件由运行时投递
 
-`read_inbox()` 是消费式读取：读出后删除邮箱文件。因此，Lead 只保留一个消费入口 `consume_lead_inbox()`：
+`read_inbox()` 会读取并删除收件箱文件，因此 Lead 只保留一个消费者 `consume_lead_inbox()`：
 
 ```python
 def consume_lead_inbox():
@@ -126,33 +135,165 @@ def consume_lead_inbox():
     return messages
 ```
 
-主循环旁的事件线程发现新消息后，会唤醒 Lead：
+主循环旁边的事件线程会在新消息到达时唤醒 Lead：
 
 ```text
 MessageBus → consume_lead_inbox
            → 更新协议状态
-           → [Team events] 注入 history
-           → Lead 开始新一轮
+           → 把 [Team events] 注入 history
+           → 启动新一轮 Lead 调用
 ```
 
-`check_inbox` 不再是模型工具。消息何时到达属于运行时职责；模型只需要处理已经送入上下文的事件。
+`check_inbox` 不是模型工具。消息到达和消费属于运行时，模型只处理已经投递到上下文里的事件。
 
-### 5. 结果与空闲是两个不同事件
+### 5. 结果与 IDLE 是两个事件
 
-队友完成一项工作时，运行时依次发送：
+队友完成一项任务后，运行时按顺序发送两个事件：
 
 ```text
-result:            "认证逻辑已重构，相关测试通过。"
+result:            "认证已重构，相关测试通过。"
 idle_notification: "Waiting for more work."
 ```
 
-`result` 回答“这次工作产出了什么”，`idle_notification` 表示“这个队友现在可以接新任务”。如果把两者合成一个模糊的“done”，Lead 就无法区分任务结果和资源状态。
+`result` 回答“这项任务产出了什么”，`idle_notification` 回答“这个队友能否继续接任务”。一个含糊的“完成了”无法同时表达这两种状态。
 
-队友进入 IDLE 后不会退出。新普通消息会让它回到 WORK；`shutdown_request` 则让它完成关机握手并结束线程。
+空闲队友不会退出。直接消息或 ready task 会让它回到 WORK，`shutdown_request` 则会启动平滑关机握手。
 
-### 6. 控制消息使用类型和 request_id
+### 6. IDLE 先看收件箱，再找 ready task
 
-普通消息可以交给模型理解，关机和审批不能依赖自由文本猜测。它们使用结构化消息：
+队友进入 IDLE 后优先处理消息，然后检查共享任务板：
+
+```python
+while True:
+    inbox = BUS.wait_for_messages(name, IDLE_SCAN_INTERVAL)
+    if inbox:
+        should_stop = handle_messages(inbox)
+        if should_stop or messages[-1]["role"] == "user":
+            break
+        continue
+
+    task = claim_next_task(name)
+    if task:
+        messages.append({
+            "role": "user",
+            "content": f"[Auto-claimed task {task.id}] {task.subject}",
+        })
+        break
+```
+
+关机、计划审批和 Lead 的直接指令应该先于临时发现的工作。如果没有消息，也没有 ready task，队友会保持 IDLE。前置任务完成后，当前受阻的任务可能变为 ready。
+
+### 7. 发现和认领分成两步，认领必须原子执行
+
+扫描只负责找候选任务：
+
+```python
+def scan_unclaimed_tasks() -> list[Task]:
+    return [
+        task for task in list_tasks()
+        if task.status == "pending"
+        and task.owner is None
+        and can_start(task.id)
+    ]
+```
+
+候选列表只是某一时刻的快照。另一个队友也可能看到同一任务，因此所有权变更必须放进 `claim_task()`，并由 `task_lock` 包住：
+
+```python
+def claim_task(task_id: str, owner: str) -> str:
+    with task_lock:
+        task = load_task(task_id)
+        if task.status != "pending" or task.owner is not None:
+            return "Task is no longer available"
+        if _owner_in_progress(owner):
+            return "Owner must complete its current task first"
+        if not can_start(task_id):
+            return "Task is blocked"
+        cwd, error = task_worktree_cwd(task)
+        if error:
+            return f"Cannot claim {task_id}: {error}"
+        task.owner = owner
+        task.status = "in_progress"
+        save_task(task)
+        teammate_assignments[owner] = {"task_id": task.id, "cwd": cwd}
+        return f"Claimed {task.id}"
+```
+
+多个队友可以同时发现同一候选，但只有一个 claim 能把它推进到 `in_progress`。队友完成当前任务后才能再认领下一项；worktree 绑定损坏时，认领会直接失败，不会回退到仓库目录。
+
+### 8. 认领后的工作复用同一个 WORK 循环
+
+认领成功后，运行时把任务 ID、标题和描述放进队友的 messages：
+
+```text
+任务板出现 ready task
+  → IDLE 队友发现候选
+  → claim_task 写入 owner 和 in_progress
+  → 任务进入队友 messages
+  → WORK
+  → complete_task
+  → result + idle_notification
+  → IDLE
+```
+
+队友继续使用直接派发任务时的模型调用、文件工具、Shell、计划闸门、结果上报和关机协议。任务发现只是现有 WORK 循环的另一个入口。
+
+### 9. 由任务选择工具的工作目录
+
+`Task.worktree` 是可选字段：
+
+```python
+@dataclass
+class Task:
+    id: str
+    subject: str
+    description: str
+    status: str
+    owner: str | None
+    blockedBy: list[str]
+    worktree: str | None = None
+```
+
+并行修改需要分开目录时，Lead 可以创建并绑定 worktree：
+
+```python
+create_worktree(name="auth-refactor", task_id="task_1234")
+```
+
+`create_worktree` 只提供给 Lead。它要求任务处于 pending、无人认领且尚未绑定，随后检查名称、路径、分支和 Git 注册信息，创建 checkout，最后才写入任务绑定。如果 Git 报告失败却已经留下分支或已注册的 checkout，运行时会报告 partial operation，让任务保持未绑定，并保留这些内容供人工恢复。队友只使用任务工具和文件工具。
+
+认领任务时，运行时会把解析后的目录写入 `teammate_assignments`，该队友的 `bash`、`read_file` 和 `write_file` 包装器从 assignment 读取目录。没有绑定 worktree 的任务解析到 `WORKDIR`，所以 worktree 默认不开启：
+
+```python
+cwd, error = task_worktree_cwd(task)
+if not error:
+    teammate_assignments[owner] = {
+        "task_id": task.id,
+        "cwd": cwd,
+    }
+```
+
+`complete_task(task_id, owner)` 会检查调用者是否拥有这个进行中的任务。只有任务成功完成后，运行时才会清除 assignment；完成失败时仍保留任务目录，队友可以修正问题后再次提交。任务上的 `worktree` 绑定会一直保留到 checkout 被移除。
+
+> Worktree 只分开 Git 工作目录和分支，不是安全沙箱。Shell 命令仍能访问父进程有权访问的路径和资源。
+
+### 10. Worktree 清理默认保留工作
+
+模型可调用的 `remove_worktree(name)` 工具会拒绝移除仍绑定 `pending` 或 `in_progress` 任务的 worktree。任务完成后，它仍把已跟踪、未跟踪和已忽略文件都视为未提交数据，只会不带 `--force` 移除干净的 checkout。
+
+底层 Python 函数保留 `discard_changes=True`，供已经另行取得用户明确确认的宿主调用，但模型的工具 schema 不包含这个参数。遇到有改动的 worktree，模型只能停下来交给用户检查。两种移除路径都会保留仓库里的 `wt/<name>` 分支，包括没有 upstream 的干净本地提交。移除成功后，任务的 worktree 绑定会被清空，因为对应 checkout 已不存在。
+
+```text
+干净 worktree   → 移除目录，保留 wt/<name> 分支
+有改动 worktree → 模型工具拒绝；由用户决定保留还是丢弃
+待办/进行中任务 → 拒绝移除
+```
+
+任务完成与 worktree 清理也互相独立。`complete_task` 记录任务结果，Lead 随后可以检查、合并、保留或移除 worktree。
+
+### 11. 控制消息使用类型和 request_id
+
+普通协作可以使用自由文本，关机和审批则不能依靠猜测消息意图。它们使用结构化消息：
 
 ![Team Protocols](images/team-protocols-overview.svg)
 
@@ -170,21 +311,22 @@ class ProtocolState:
 pending_requests: dict[str, ProtocolState] = {}
 ```
 
-关机协议的完整路径是：
+关机路径如下：
 
 ```text
-Lead 创建 shutdown 请求，状态为 pending
-  → shutdown_request(request_id) 发给队友
-  → 队友完成当前步骤并回复 shutdown_response(request_id)
-  → Lead 用 request_id 找到原请求
-  → pending 变为 approved，队友线程退出
+Lead 创建 pending 状态的关机请求
+  → shutdown_request(request_id) 进入队友收件箱
+  → 队友完成当前步骤
+  → shutdown_response(request_id) 返回 Lead
+  → request_id 找到原始请求
+  → pending 变为 approved，队友循环退出
 ```
 
-`request_id` 负责关联请求与回复，`type` 防止错误类型的回复修改状态，`status` 防止重复响应被再次处理。
+ID 把回复关联到请求，类型阻止不匹配的回复修改状态，状态则阻止同一回复重复生效。
 
-### 7. 计划审批不仅传消息，还约束执行
+### 12. 计划审批会约束执行
 
-计划协议沿相反方向流动：
+计划协议的方向相反：
 
 ```text
 Lead → plan_request
@@ -192,7 +334,7 @@ Lead → plan_request
 Lead → plan_approval_response(request_id, approve, feedback)
 ```
 
-只告诉队友“请等待批准”并不可靠，所以工具分发器检查计划状态：
+工具分发层负责执行闸门：
 
 ```python
 def _run_teammate_tool(name, block, handlers):
@@ -204,30 +346,36 @@ def _run_teammate_tool(name, block, handlers):
     return handlers[block.name](**block.input)
 ```
 
-当状态为 `required`、`pending` 或 `rejected` 时，队友仍可读取文件、提交或修改计划，但不能执行 Shell 或写文件。批准消息到达后，状态变为 `approved`，工具才会放行。
+状态是 `required`、`pending` 或 `rejected` 时，队友可以读取文件、提交或修改计划，但不能运行 Shell 命令或写文件。审批回复把状态改成 `approved` 后，这些工具才会放开。
 
 ---
 
 ## 一次完整运行
 
 ```text
-s15 >> 请重构这个示例后端，分别整理配置加载、认证逻辑和测试，
-       保持现有接口兼容，并确保测试通过。
+s15 >> 把后端重构拆到共享任务板，尽量并行完成配置、认证和测试。
+       认证任务使用 worktree，保持现有接口，并确保测试通过。
 
-Lead: 建议由 config、auth、tests 三个方向并行处理，是否开始？
+Lead：我建议按 config、auth 和 tests 三个方向分工。
+      是否启动团队？
 
 s15 >> 开始吧
 
-[teammate] config spawned
-[teammate] auth spawned
-[teammate] tests spawned
-[bus] auth → lead (result) ...
-[bus] auth → lead (idle_notification) ...
+[task] config created
+[task] auth created → worktree auth-refactor
+[task] tests created
+[teammate] alice spawned
+[teammate] bob spawned
+[claim] alice → config (cwd: repository)
+[claim] bob → auth (cwd: .worktrees/auth-refactor)
+[complete] auth
+[bus] bob → lead (result) ...
+[bus] bob → lead (idle_notification) ...
 [wake: 2 team events → new turn]
-Lead: 已收到认证部分结果，继续等待并协调其他队友。
+Lead：我已收到认证任务的结果，接下来继续协调其余工作。
 ```
 
-终端中显示的是用户需求、Lead 分工、队友启动、消息流、结果、空闲和关机事件。用户不需要在提示词里指定谁是 Lead，也不需要手动要求检查邮箱。
+终端会显示用户请求、Lead 的团队方案、任务状态、认领结果、所选目录、结果、IDLE 切换和控制事件。用户不需要指定谁是 Lead，也不必提醒它检查收件箱。
 
 ---
 
@@ -235,13 +383,15 @@ Lead: 已收到认证部分结果，继续等待并协调其他队友。
 
 | 组件 | s14 | s15 |
 |---|---|---|
-| Agent 数量 | 一个 Agent | 一个 Lead + 多个持久队友 |
-| 用户交互 | 直接执行任务 | 先提出团队方案，再确认启动 |
-| 通信 | 无 | 文件邮箱 + 自动事件投递 |
-| 生命周期 | 单循环 | 队友 `WORK / IDLE / shutdown` |
-| 结果上报 | 当前 Agent 输出 | `result` 与 `idle_notification` 分离 |
-| 控制协议 | 无 | 关机与计划审批 |
-| 执行约束 | 无团队约束 | 未批准计划会拦截写入类工具 |
+| Agent | 单个 Agent | 一个 Lead 加持久队友 |
+| 用户流程 | 直接执行请求 | 先提团队方案，再确认启动 |
+| 通信 | 无 | 文件收件箱加运行时投递 |
+| 生命周期 | 一个循环 | 队友 `WORK / IDLE / shutdown` |
+| 共享工作 | Lead 已有的任务工具 | IDLE 扫描加队友原子认领 |
+| 工作目录 | 仓库 `WORKDIR` | 默认 `WORKDIR`，任务可选 worktree |
+| 结果上报 | 当前 Agent 输出 | 分开的 `result` 与 `idle_notification` |
+| 控制 | 无 | 类型化关机与计划审批协议 |
+| 执行约束 | 无团队约束 | 必需计划会锁住修改型工具 |
 
 ---
 
@@ -252,27 +402,29 @@ cd learn-claude-code
 python s15_agent_teams/code.py
 ```
 
-先输入一个自然需求：
+输入一个自然需求：
 
 ```text
-请重构这个示例后端，分别整理配置加载、认证逻辑和测试，
-保持现有接口兼容，并确保测试通过。
+把后端重构拆到共享任务板，在依赖允许时并行完成配置、认证和测试。
+认证任务使用 worktree，保持现有接口，并在最后汇总结果。
 ```
 
-看到 Lead 给出分工后，再回复：
+Lead 提出团队方案后回复：
 
 ```text
 开始吧
 ```
 
-观察终端中的 `spawned`、`result`、`idle_notification`、`plan_approval_*` 和 `shutdown_*` 事件，以及 `.mailboxes/` 中消息写入和消费的过程。
+观察 `.tasks/` 如何从 `pending` 进入 `in_progress` 和 `completed`，`.mailboxes/` 如何投递 `result` 与 `idle_notification`，以及 `.worktrees/` 是否只为绑定的任务创建。还可以检查直接消息是否先于任务板扫描，以及 `complete_task` 失败后队友的工作目录是否保持不变。
 
 ---
 
 ## 接下来
 
-s15 中，Lead 仍然要明确告诉每个队友做什么。下一章把共享任务看板交给空闲队友，让它们自己发现并认领可执行任务。
+团队运行时现在可以处理委派、共享任务认领和可选工作目录，但工具仍然直接定义在 Python 代码里。
 
-下一章：[s16 Autonomous Agents](../s16_autonomous_agents/)。
+下一章通过标准的发现与调用协议接入外部工具。
 
-<!-- translation-sync: zh@v2, en@v2, ja@v2 -->
+下一章：[s16 MCP Tools](../s16_mcp_plugin/)。
+
+<!-- translation-sync: zh@v3, en@v3, ja@v3 -->

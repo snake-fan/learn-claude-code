@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s20 → s21
+s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s18 → s19
 
 > *"Hang on the loop, don't write into it"* — Hooks inject extension logic before and after tool execution.
 >

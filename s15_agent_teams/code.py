@@ -8,6 +8,8 @@ Need: pip install anthropic python-dotenv + .env with ANTHROPIC_API_KEY
 Changes from s14:
   - MessageBus: thread-safe, file-backed mailboxes (.mailboxes/*.jsonl)
   - Persistent teammate loops with WORK and IDLE states
+  - Idle teammates discover and atomically claim ready tasks
+  - Task-bound Git worktrees give teammate file operations separate checkouts
   - Runtime delivery of teammate results and idle notifications to Lead
   - Typed shutdown and plan-approval protocols with request_id matching
   - Plan approval gates bash and write_file until Lead approves
@@ -46,6 +48,12 @@ MODEL = os.environ["MODEL_ID"]
 
 TASKS_DIR = WORKDIR / ".tasks"
 TASKS_DIR.mkdir(exist_ok=True)
+TASKS_ROOT = TASKS_DIR.resolve()
+task_lock = threading.RLock()
+
+# owner -> {"task_id": str, "cwd": Path}. A teammate gets one assignment at
+# a time, and every filesystem tool resolves its cwd through this registry.
+teammate_assignments: dict[str, dict[str, object]] = {}
 
 
 @dataclass
@@ -56,10 +64,19 @@ class Task:
     status: str          # pending | in_progress | completed
     owner: str | None
     blockedBy: list[str]
+    worktree: str | None = None
 
 
 def _task_path(task_id: str) -> Path:
-    return TASKS_DIR / f"{task_id}.json"
+    if not isinstance(task_id, str) or not task_id:
+        raise ValueError("Task ID must be a non-empty string")
+    if Path(task_id).name != task_id or task_id in {".", ".."}:
+        raise ValueError(f"Invalid task ID: {task_id!r}")
+    path = (TASKS_DIR / f"{task_id}.json").resolve()
+    if (not TASKS_ROOT.is_relative_to(WORKDIR.resolve())
+            or not path.is_relative_to(TASKS_ROOT)):
+        raise ValueError(f"Invalid task ID: {task_id!r}")
+    return path
 
 
 def create_task(subject: str, description: str = "",
@@ -75,16 +92,21 @@ def create_task(subject: str, description: str = "",
 
 
 def save_task(task: Task):
-    _task_path(task.id).write_text(json.dumps(asdict(task), indent=2))
+    with task_lock:
+        _task_path(task.id).write_text(json.dumps(asdict(task), indent=2))
 
 
 def load_task(task_id: str) -> Task:
-    return Task(**json.loads(_task_path(task_id).read_text()))
+    with task_lock:
+        return Task(**json.loads(_task_path(task_id).read_text()))
 
 
 def list_tasks() -> list[Task]:
-    return [Task(**json.loads(p.read_text()))
-            for p in sorted(TASKS_DIR.glob("task_*.json"))]
+    with task_lock:
+        if not TASKS_ROOT.is_relative_to(WORKDIR.resolve()):
+            raise ValueError("Tasks directory escapes workspace")
+        return [load_task(path.stem)
+                for path in sorted(TASKS_DIR.glob("task_*.json"))]
 
 
 def get_task(task_id: str) -> str:
@@ -98,42 +120,328 @@ def can_start(task_id: str) -> bool:
     Missing dependencies are treated as blocked."""
     task = load_task(task_id)
     for dep_id in task.blockedBy:
-        if not _task_path(dep_id).exists():
+        try:
+            dep_path = _task_path(dep_id)
+        except ValueError:
+            return False
+        if not dep_path.exists():
             return False
         if load_task(dep_id).status != "completed":
             return False
     return True
 
 
+def _owner_in_progress(owner: str) -> Task | None:
+    return next((task for task in list_tasks()
+                 if task.status == "in_progress" and task.owner == owner), None)
+
+
+def _incomplete_dependencies(task: Task) -> list[str]:
+    incomplete = []
+    for dep_id in task.blockedBy:
+        try:
+            dep_path = _task_path(dep_id)
+        except ValueError:
+            incomplete.append(dep_id)
+            continue
+        if not dep_path.exists() or load_task(dep_id).status != "completed":
+            incomplete.append(dep_id)
+    return incomplete
+
+
 def claim_task(task_id: str, owner: str = "agent") -> str:
-    task = load_task(task_id)
-    if task.status != "pending":
-        return f"Task {task_id} is {task.status}, cannot claim"
-    if not can_start(task_id):
-        deps = [d for d in task.blockedBy
-                if not _task_path(d).exists() or load_task(d).status != "completed"]
-        return f"Blocked by: {deps}"
-    task.owner = owner
-    task.status = "in_progress"
-    save_task(task)
+    """Atomically claim one task and bind the owner's filesystem cwd."""
+    with task_lock:
+        task = load_task(task_id)
+        if task.status != "pending":
+            return f"Task {task_id} is {task.status}, cannot claim"
+        if task.owner:
+            return f"Task {task_id} is already owned by {task.owner}"
+        current = _owner_in_progress(owner)
+        if current:
+            return (f"Owner {owner} must complete {current.id} before "
+                    "claiming another task")
+        if not can_start(task_id):
+            return f"Blocked by: {_incomplete_dependencies(task)}"
+        cwd, error = task_worktree_cwd(task)
+        if error:
+            return f"Cannot claim {task_id}: {error}"
+        task.owner = owner
+        task.status = "in_progress"
+        save_task(task)
+        teammate_assignments[owner] = {"task_id": task.id, "cwd": cwd}
     print(f"  \033[36m[claim] {task.subject} → in_progress (owner: {owner})\033[0m")
     return f"Claimed {task.id} ({task.subject})"
 
 
-def complete_task(task_id: str) -> str:
-    task = load_task(task_id)
-    if task.status != "in_progress":
-        return f"Task {task_id} is {task.status}, cannot complete"
-    task.status = "completed"
-    save_task(task)
-    unblocked = [t.subject for t in list_tasks()
-                 if t.status == "pending" and t.blockedBy and can_start(t.id)]
+def complete_task(task_id: str, owner: str = "agent") -> str:
+    """Complete an assignment only when the caller owns it."""
+    with task_lock:
+        task = load_task(task_id)
+        if task.status != "in_progress":
+            return f"Task {task_id} is {task.status}, cannot complete"
+        if task.owner != owner:
+            return (f"Task {task_id} is owned by {task.owner}, "
+                    f"not {owner}; cannot complete")
+        task.status = "completed"
+        save_task(task)
+        assignment = teammate_assignments.get(owner)
+        if assignment and assignment.get("task_id") == task_id:
+            teammate_assignments.pop(owner, None)
+        unblocked = [t.subject for t in list_tasks()
+                     if t.status == "pending" and t.blockedBy and can_start(t.id)]
     print(f"  \033[32m[complete] {task.subject} ✓\033[0m")
     msg = f"Completed {task.id} ({task.subject})"
     if unblocked:
         msg += f"\nUnblocked: {', '.join(unblocked)}"
         print(f"  \033[33m[unblocked] {', '.join(unblocked)}\033[0m")
     return msg
+
+
+# ── Task-bound Worktrees ──
+
+WORKTREES_DIR = WORKDIR / ".worktrees"
+WORKTREES_DIR.mkdir(exist_ok=True)
+WORKTREES_ROOT = WORKTREES_DIR.resolve()
+VALID_WORKTREE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def validate_worktree_name(name: str) -> str | None:
+    if not isinstance(name, str) or not VALID_WORKTREE_NAME.fullmatch(name):
+        return ("worktree name must be 1-64 letters, digits, dots, "
+                "underscores, or dashes, and start with a letter or digit")
+    if name in {".", ".."} or ".." in name:
+        return "worktree name cannot contain '..'"
+    return None
+
+
+def _worktree_path(name: str) -> Path:
+    path = (WORKTREES_DIR / name).resolve()
+    if (not WORKTREES_ROOT.is_relative_to(WORKDIR.resolve())
+            or not path.is_relative_to(WORKTREES_ROOT)
+            or path == WORKTREES_ROOT):
+        raise ValueError(f"Worktree path escapes directory: {name!r}")
+    return path
+
+
+def _worktree_branch(name: str) -> str:
+    return f"wt/{name}"
+
+
+def run_git(args: list[str], cwd: Path | None = None) -> tuple[bool, str]:
+    """Run Git without shell interpolation and return (ok, combined output)."""
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=cwd or WORKDIR,
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    output = (result.stdout + result.stderr).strip()
+    return result.returncode == 0, output[:5000] or "(no output)"
+
+
+def _registered_worktrees() -> tuple[dict[Path, dict[str, str]], str | None]:
+    ok, output = run_git(["worktree", "list", "--porcelain"])
+    if not ok:
+        return {}, f"cannot read Git worktree registry: {output}"
+    entries: dict[Path, dict[str, str]] = {}
+    current: dict[str, str] = {}
+    for line in output.splitlines() + [""]:
+        if not line:
+            raw_path = current.get("worktree")
+            if raw_path:
+                entries[Path(raw_path).resolve()] = current
+            current = {}
+            continue
+        key, _, value = line.partition(" ")
+        current[key] = value
+    return entries, None
+
+
+def _registered_worktree(name: str) -> tuple[Path | None, str | None]:
+    try:
+        path = _worktree_path(name)
+    except ValueError as exc:
+        return None, str(exc)
+    entries, error = _registered_worktrees()
+    if error:
+        return None, error
+    if path not in entries:
+        return None, f"worktree '{name}' is not registered with Git"
+    if not path.is_dir():
+        return None, f"worktree '{name}' is missing at {path}"
+    expected_branch = f"refs/heads/{_worktree_branch(name)}"
+    if entries[path].get("branch") != expected_branch:
+        return None, (f"worktree '{name}' is not registered on expected "
+                      f"branch '{_worktree_branch(name)}'")
+    return path, None
+
+
+def task_worktree_cwd(task: Task) -> tuple[Path, str | None]:
+    """Resolve a task cwd, failing closed for broken worktree bindings."""
+    if not task.worktree:
+        return WORKDIR, None
+    path, error = _registered_worktree(task.worktree)
+    return (path or WORKDIR), error
+
+
+def assignment_cwd(owner: str) -> Path:
+    with task_lock:
+        assignment = teammate_assignments.get(owner)
+        if not assignment:
+            if _owner_in_progress(owner):
+                raise ValueError(f"Missing assignment metadata for {owner}")
+            return WORKDIR
+        task = load_task(str(assignment["task_id"]))
+        if task.status != "in_progress" or task.owner != owner:
+            raise ValueError(f"Assignment for {owner} is no longer active")
+        cwd, error = task_worktree_cwd(task)
+        if error:
+            raise ValueError(error)
+        if cwd.resolve() != Path(assignment["cwd"]).resolve():
+            raise ValueError(f"Assignment cwd changed for task {task.id}")
+        return cwd
+
+
+def release_teammate_assignment(owner: str):
+    """Return abandoned teammate work to the task board on thread exit."""
+    with task_lock:
+        try:
+            task = _owner_in_progress(owner)
+            if task:
+                task.status = "pending"
+                task.owner = None
+                save_task(task)
+        finally:
+            teammate_assignments.pop(owner, None)
+
+
+def create_worktree(name: str, task_id: str) -> str:
+    """Create and bind a dedicated worktree after all inputs validate."""
+    error = validate_worktree_name(name)
+    if error:
+        return f"Error: {error}"
+    try:
+        path = _worktree_path(name)
+        task_path = _task_path(task_id)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    branch = _worktree_branch(name)
+
+    with task_lock:
+        if not task_path.exists():
+            return f"Error: Task {task_id} not found"
+        task = load_task(task_id)
+        if task.status != "pending" or task.owner is not None:
+            return f"Error: Task {task_id} must be pending and unowned"
+        if task.worktree:
+            return f"Error: Task {task_id} already uses worktree '{task.worktree}'"
+        if any(t.worktree == name for t in list_tasks() if t.id != task_id):
+            return f"Error: Worktree '{name}' is already bound to another task"
+        if path.exists():
+            return f"Error: Worktree path already exists: {path}"
+
+        ok, root = run_git(["rev-parse", "--show-toplevel"])
+        if not ok or Path(root).resolve() != WORKDIR.resolve():
+            return "Error: Working directory must be the root of a Git repository"
+        ok, branch_check = run_git(["check-ref-format", "--branch", branch])
+        if not ok:
+            return f"Error: Invalid worktree branch '{branch}': {branch_check}"
+        exists, _ = run_git(["show-ref", "--verify", "--quiet",
+                             f"refs/heads/{branch}"])
+        if exists:
+            return f"Error: Branch '{branch}' already exists"
+        entries, registry_error = _registered_worktrees()
+        if registry_error:
+            return f"Error: {registry_error}"
+        if path in entries:
+            return f"Error: Worktree path is already registered: {path}"
+
+        ok, result = run_git(["worktree", "add", "-b", branch,
+                              str(path), "HEAD"])
+        if not ok:
+            entries, registry_error = _registered_worktrees()
+            branch_exists, _ = run_git(
+                ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"]
+            )
+            artifacts = []
+            if path.exists():
+                artifacts.append(f"checkout path '{path}'")
+            if registry_error is None and path in entries:
+                artifacts.append("registered Git worktree")
+            if branch_exists:
+                artifacts.append(f"branch '{branch}'")
+            if artifacts:
+                return (
+                    "Partial operation: git worktree add reported an error "
+                    f"after leaving {', '.join(artifacts)}. Task {task_id} "
+                    "remains unbound and no Git data was deleted. Run "
+                    f"`git worktree list`, inspect '{path}' and '{branch}', "
+                    "then keep or remove those artifacts manually after "
+                    f"preserving any work. Git error: {result}"
+                )
+            return f"Git error: {result}"
+
+        try:
+            task.worktree = name
+            save_task(task)
+        except Exception as exc:
+            return (f"Partial success: Worktree '{name}' was created at "
+                    f"{path} on branch '{branch}', but task binding failed: "
+                    f"{exc}. Git data was retained for manual recovery.")
+
+    print(f"  \033[33m[worktree] created: {name} at {path}\033[0m")
+    return f"Worktree '{name}' created at {path} for task {task_id}"
+
+
+def remove_worktree(name: str, discard_changes: bool = False) -> str:
+    """Remove a registered checkout while always retaining its branch."""
+    error = validate_worktree_name(name)
+    if error:
+        return f"Error: {error}"
+
+    with task_lock:
+        path, error = _registered_worktree(name)
+        if error:
+            return f"Error: {error}"
+        bound = [task for task in list_tasks() if task.worktree == name]
+        if not bound:
+            return f"Error: Worktree '{name}' is not bound to a task"
+        active = [task for task in bound if task.status != "completed"]
+        if active:
+            return (f"Error: Worktree '{name}' is bound to active task "
+                    f"{active[0].id}; complete it before removal")
+
+        ok, status = run_git(
+            ["status", "--porcelain", "--ignored"], cwd=path
+        )
+        if not ok:
+            return f"Error: Cannot verify worktree '{name}' status: {status}"
+        if status != "(no output)" and not discard_changes:
+            changed = len([line for line in status.splitlines() if line.strip()])
+            return (f"Error: Worktree '{name}' has {changed} uncommitted "
+                    "change(s); preserve or discard them manually")
+
+        args = ["worktree", "remove"]
+        if discard_changes:
+            args.append("--force")
+        args.append(str(path))
+        ok, result = run_git(args)
+        if not ok:
+            return f"Git error: {result}"
+
+        try:
+            for task in bound:
+                task.worktree = None
+                save_task(task)
+        except Exception as exc:
+            return (f"Partial success: Worktree '{name}' was removed and "
+                    f"branch '{_worktree_branch(name)}' retained, but task "
+                    f"unbinding failed: {exc}. Manual recovery is required.")
+
+    print(f"  \033[33m[worktree] removed: {name}; branch retained\033[0m")
+    return f"Worktree '{name}' removed; branch '{_worktree_branch(name)}' retained"
 
 
 # ── Prompt Assembly (from s10, synced) ──
@@ -144,13 +452,18 @@ PROMPT_SECTIONS = {
              "get_task, create_task, list_tasks, claim_task, complete_task, "
              "schedule_cron, list_crons, cancel_cron, "
              "spawn_teammate, send_message, request_shutdown, "
-             "request_plan, review_plan.",
+             "request_plan, review_plan, create_worktree, remove_worktree.",
     "teams": (
         "When parallel work would help, first propose a small team with clear "
         "responsibilities and wait for the user's confirmation. Do not call "
         "spawn_teammate before the user confirms. After confirmation, delegate "
-        "independent work, react to team events delivered by the runtime, and "
-        "shut teammates down when coordination is complete."
+        "independent work by creating a Task for each parallel change, then "
+        "create a task-bound worktree only when a separate working directory "
+        "would prevent conflicting edits. A teammate must complete its current "
+        "Task before claiming another. A worktree changes tool default cwd "
+        "only; it is not a sandbox. The remove_worktree tool removes only clean "
+        "checkouts and never discards changes. React to team events delivered by the "
+        "runtime, and shut teammates down when coordination is complete."
     ),
     "workspace": f"Working directory: {WORKDIR}",
     "memory": "Relevant memories are injected below when available.",
@@ -183,27 +496,32 @@ def get_system_prompt(context: dict) -> str:
 
 # ── Tools ──
 
-def safe_path(p: str) -> Path:
-    path = (WORKDIR / p).resolve()
-    if not path.is_relative_to(WORKDIR):
+def safe_path(p: str, cwd: Path | None = None) -> Path:
+    base = (cwd or WORKDIR).resolve()
+    path = (base / p).resolve()
+    if not path.is_relative_to(base):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
 
-def run_bash(command: str, run_in_background: bool = False) -> str:
+def run_bash(command: str, run_in_background: bool = False,
+             cwd: Path | None = None) -> str:
     # run_in_background is handled by agent_loop dispatch, not here
     try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
+        r = subprocess.run(command, shell=True, cwd=cwd or WORKDIR,
                            capture_output=True, text=True, timeout=120)
         out = (r.stdout + r.stderr).strip()
         return out[:50000] if out else "(no output)"
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
+    except OSError as exc:
+        return f"Error: {type(exc).__name__}: {exc}"
 
 
-def run_read(path: str, limit: int | None = None) -> str:
+def run_read(path: str, limit: int | None = None,
+             cwd: Path | None = None) -> str:
     try:
-        lines = safe_path(path).read_text().splitlines()
+        lines = safe_path(path, cwd).read_text().splitlines()
         if limit and limit < len(lines):
             lines = lines[:limit] + [f"... ({len(lines) - limit} more lines)"]
         return "\n".join(lines)
@@ -211,9 +529,9 @@ def run_read(path: str, limit: int | None = None) -> str:
         return f"Error: {e}"
 
 
-def run_write(path: str, content: str) -> str:
+def run_write(path: str, content: str, cwd: Path | None = None) -> str:
     try:
-        fp = safe_path(path)
+        fp = safe_path(path, cwd)
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content)
         return f"Wrote {len(content)} bytes to {path}"
@@ -241,24 +559,37 @@ def run_list_tasks() -> str:
                 "completed": "✓"}.get(t.status, "?")
         deps = f" (blockedBy: {', '.join(t.blockedBy)})" if t.blockedBy else ""
         owner = f" [{t.owner}]" if t.owner else ""
+        worktree = f" (worktree: {t.worktree})" if t.worktree else ""
         lines.append(f"  {icon} {t.id}: {t.subject} "
-                     f"[{t.status}]{owner}{deps}")
+                     f"[{t.status}]{owner}{deps}{worktree}")
     return "\n".join(lines)
 
 
 def run_get_task(task_id: str) -> str:
     try:
         return get_task(task_id)
+    except ValueError as exc:
+        return f"Error: {exc}"
     except FileNotFoundError:
         return f"Error: Task {task_id} not found"
 
 
 def run_claim_task(task_id: str) -> str:
-    return claim_task(task_id, owner="agent")
+    try:
+        return claim_task(task_id, owner="agent")
+    except ValueError as exc:
+        return f"Error: {exc}"
+    except FileNotFoundError:
+        return f"Error: Task {task_id} not found"
 
 
 def run_complete_task(task_id: str) -> str:
-    return complete_task(task_id)
+    try:
+        return complete_task(task_id, owner="agent")
+    except ValueError as exc:
+        return f"Error: {exc}"
+    except FileNotFoundError:
+        return f"Error: Task {task_id} not found"
 
 
 # ── Background Tasks (from s13, synced) ──
@@ -301,6 +632,8 @@ def execute_tool(block) -> str:
         "request_shutdown": run_request_shutdown,
         "request_plan": run_request_plan,
         "review_plan": run_review_plan,
+        "create_worktree": run_create_worktree,
+        "remove_worktree": run_remove_worktree,
     }.get(block.name)
     if handler:
         return handler(**block.input)
@@ -607,6 +940,7 @@ MAILBOX_DIR = WORKDIR / ".mailboxes"
 MAILBOX_DIR.mkdir(exist_ok=True)
 MAILBOX_ROOT = MAILBOX_DIR.resolve()
 VALID_AGENT_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+RESERVED_TEAMMATE_NAMES = {"lead", "agent"}
 
 
 def is_valid_agent_name(name: str) -> bool:
@@ -852,6 +1186,37 @@ def _teammate_send_message(from_name: str, to: str, content: str) -> str:
     return f"Sent to {to}"
 
 
+# ── Autonomous Task Discovery ──
+
+IDLE_SCAN_INTERVAL = 2.0
+
+
+def scan_unclaimed_tasks() -> list[Task]:
+    """Return ready tasks whose optional worktree binding is usable."""
+    with task_lock:
+        ready = []
+        for task in list_tasks():
+            if (task.status != "pending" or task.owner is not None
+                    or not can_start(task.id)):
+                continue
+            _, error = task_worktree_cwd(task)
+            if not error:
+                ready.append(task)
+        return ready
+
+
+def claim_next_task(name: str) -> Task | None:
+    """Claim the first still-available task, never a second assignment."""
+    with task_lock:
+        if _owner_in_progress(name):
+            return None
+    for task in scan_unclaimed_tasks():
+        result = claim_task(task.id, owner=name)
+        if result.startswith("Claimed "):
+            return load_task(task.id)
+    return None
+
+
 # ── Teammate Thread ──
 
 def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
@@ -859,19 +1224,60 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
     if not is_valid_agent_name(name):
         return ("Invalid teammate name: use 1-64 letters, digits, "
                 "underscores, or dashes")
+    if name.lower() in RESERVED_TEAMMATE_NAMES:
+        return f"Invalid teammate name: '{name}' is reserved by the runtime"
     with team_lock:
-        if name in active_teammates:
+        if any(existing.casefold() == name.casefold()
+               for existing in active_teammates):
             return f"Teammate '{name}' already exists"
         active_teammates[name] = "working"
         plan_gates[name] = "not_required"
 
     system = (f"You are '{name}', a {role}. "
-              "Use tools to complete assigned work. "
+              "Use tools to complete assigned work. You can list, claim, and "
+              "complete tasks from the shared board. For a bound task, the "
+              "runtime defaults bash, read_file, and write_file to its "
+              "worktree; otherwise they use the shared WORKDIR. This default "
+              "cwd is not a sandbox. "
               "When asked for a plan, call submit_plan before bash or "
               "write_file and wait for approval. End each assignment with a "
               "concise result; the runtime delivers it to Lead.")
 
-    def run():
+    def run_loop():
+        def current_cwd() -> tuple[Path | None, str | None]:
+            try:
+                return assignment_cwd(name), None
+            except (FileNotFoundError, ValueError) as exc:
+                return None, f"Error: Invalid task assignment: {exc}"
+
+        def teammate_bash(command: str) -> str:
+            cwd, error = current_cwd()
+            return error or run_bash(command, cwd=cwd)
+
+        def teammate_read(path: str) -> str:
+            cwd, error = current_cwd()
+            return error or run_read(path, cwd=cwd)
+
+        def teammate_write(path: str, content: str) -> str:
+            cwd, error = current_cwd()
+            return error or run_write(path, content, cwd=cwd)
+
+        def teammate_claim(task_id: str) -> str:
+            try:
+                return claim_task(task_id, owner=name)
+            except ValueError as exc:
+                return f"Error: {exc}"
+            except FileNotFoundError:
+                return f"Error: Task {task_id} not found"
+
+        def teammate_complete(task_id: str) -> str:
+            try:
+                return complete_task(task_id, owner=name)
+            except ValueError as exc:
+                return f"Error: {exc}"
+            except FileNotFoundError:
+                return f"Error: Task {task_id} not found"
+
         messages = [{"role": "user", "content": prompt}]
         sub_tools = [
             {"name": "bash", "description": "Run a shell command.",
@@ -898,12 +1304,31 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
              "input_schema": {"type": "object",
                               "properties": {"plan": {"type": "string"}},
                               "required": ["plan"]}},
+            {"name": "list_tasks",
+             "description": "List tasks on the shared board.",
+             "input_schema": {"type": "object", "properties": {},
+                              "required": []}},
+            {"name": "claim_task",
+             "description": "Claim a ready task from the shared board.",
+             "input_schema": {"type": "object",
+                              "properties": {"task_id": {"type": "string"}},
+                              "required": ["task_id"]}},
+            {"name": "complete_task",
+             "description": "Complete the task owned by this teammate.",
+             "input_schema": {"type": "object",
+                              "properties": {"task_id": {"type": "string"}},
+                              "required": ["task_id"]}},
         ]
         sub_handlers = {
-            "bash": run_bash, "read_file": run_read, "write_file": run_write,
+            "bash": teammate_bash,
+            "read_file": teammate_read,
+            "write_file": teammate_write,
             "send_message": lambda to, content: _teammate_send_message(
                 name, to, content),
             "submit_plan": lambda plan: _teammate_submit_plan(name, plan),
+            "list_tasks": run_list_tasks,
+            "claim_task": teammate_claim,
+            "complete_task": teammate_complete,
         }
 
         def handle_messages(inbox: list[dict]) -> bool:
@@ -979,20 +1404,60 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                          "idle_notification")
 
             while True:
-                inbox = BUS.wait_for_messages(name)
-                should_stop = handle_messages(inbox)
-                if should_stop or messages[-1]["role"] == "user":
-                    break
+                inbox = BUS.wait_for_messages(name, IDLE_SCAN_INTERVAL)
+                if inbox:
+                    should_stop = handle_messages(inbox)
+                    if should_stop or messages[-1]["role"] == "user":
+                        break
+                    continue
 
-        with team_lock:
-            active_teammates.pop(name, None)
-            plan_gates.pop(name, None)
-            plan_request_ids.pop(name, None)
-        print(f"  \033[32m[teammate] {name} finished\033[0m")
+                task = claim_next_task(name)
+                if not task:
+                    continue
+                try:
+                    cwd = str(assignment_cwd(name))
+                except (FileNotFoundError, ValueError) as exc:
+                    cwd = f"unavailable ({exc})"
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[Auto-claimed task {task.id}] {task.subject}\n"
+                        f"{task.description}\nWork directory: {cwd}"
+                    ),
+                })
+                print(f"  \033[32m[idle] {name} claimed "
+                      f"{task.id}: {task.subject}\033[0m")
+                break
+
+    def run():
+        try:
+            run_loop()
+        except Exception as exc:
+            try:
+                BUS.send(name, "lead", f"{type(exc).__name__}: {exc}", "error")
+            except Exception:
+                pass
+        finally:
+            try:
+                release_teammate_assignment(name)
+            except Exception as exc:
+                try:
+                    BUS.send(
+                        name, "lead",
+                        f"Assignment cleanup failed: {type(exc).__name__}: {exc}",
+                        "error",
+                    )
+                except Exception:
+                    pass
+            with team_lock:
+                active_teammates.pop(name, None)
+                plan_gates.pop(name, None)
+                plan_request_ids.pop(name, None)
+            print(f"  \033[32m[teammate] {name} finished\033[0m")
 
     threading.Thread(target=run, daemon=True).start()
     print(f"  \033[36m[teammate] {name} spawned as {role}\033[0m")
-    return f"Teammate '{name}' spawned as {role}"
+    return f"Teammate '{name}' spawned as {role} (autonomous)"
 
 
 # ── Lead Team Tools ──
@@ -1053,6 +1518,15 @@ def run_review_plan(request_id: str, approve: bool,
     BUS.send("lead", state.sender, content, "plan_approval_response",
              {"request_id": request_id, "approve": approve})
     return f"Plan {state.status} ({request_id})"
+
+
+def run_create_worktree(name: str, task_id: str) -> str:
+    return create_worktree(name, task_id)
+
+
+def run_remove_worktree(name: str) -> str:
+    """Model-facing cleanup never opts into destructive removal."""
+    return remove_worktree(name)
 
 
 # ── Tool Definitions ──
@@ -1160,6 +1634,30 @@ TOOLS = [
                           "approve": {"type": "boolean"},
                           "feedback": {"type": "string"}},
                       "required": ["request_id", "approve"]}},
+    {"name": "create_worktree",
+     "description": "Create a task-bound Git worktree and dedicated branch.",
+     "input_schema": {"type": "object",
+                      "properties": {"name": {
+                                         "type": "string",
+                                         "pattern": ("^(?!.*\\.\\.)[A-Za-z0-9]"
+                                                     "[A-Za-z0-9._-]{0,63}$"),
+                                         "maxLength": 64,
+                                     },
+                                     "task_id": {"type": "string"}},
+                      "required": ["name", "task_id"],
+                      "additionalProperties": False}},
+    {"name": "remove_worktree",
+     "description": "Remove a clean task worktree while retaining its branch.",
+     "input_schema": {"type": "object",
+                      "properties": {
+                          "name": {
+                              "type": "string",
+                              "pattern": ("^(?!.*\\.\\.)[A-Za-z0-9]"
+                                          "[A-Za-z0-9._-]{0,63}$"),
+                              "maxLength": 64,
+                          }},
+                      "required": ["name"],
+                      "additionalProperties": False}},
 ]
 
 

@@ -2,45 +2,45 @@
   "version": "s16",
   "decisions": [
     {
-      "id": "idle-state-discovers-work",
-      "title": "Idle Teammates Look for Ready Work",
-      "description": "s15 already keeps teammates alive in IDLE. s16 gives that state one more input: after waiting for messages, a teammate scans the shared task board for pending, unowned, unblocked work.",
-      "alternatives": "The Lead could dispatch every assignment, but then an idle teammate cannot help with work that becomes ready later.",
+      "id": "normalized-mcp-namespace",
+      "title": "MCP Tools Use a Normalized Namespace",
+      "description": "Discovered tools are exposed as mcp__server__tool. The prefix makes the source explicit and avoids collisions with built-in tools or tools from another server.",
+      "alternatives": "Using the raw tool name is shorter, but search from two servers could overwrite each other.",
       "zh": {
-        "title": "空闲队友主动寻找就绪任务",
-        "description": "s15 已经让队友在 IDLE 中保持存活。s16 为这个状态增加任务板入口：等待消息后，队友会扫描 pending、未分配且依赖已完成的任务。"
+        "title": "MCP 工具使用规范化命名空间",
+        "description": "发现到的工具会暴露为 mcp__server__tool。前缀让工具来源明确，也避免和内置工具或其他服务器工具冲突。"
       },
       "ja": {
-        "title": "待機中のチームメイトが実行可能な仕事を探す",
-        "description": "s15 ですでにチームメイトは IDLE のまま残る。s16 はその状態にタスクボード入口を追加し、メッセージ待機後に pending、未所有、依存解決済みのタスクを探す。"
+        "title": "MCP ツールは正規化された名前空間を使う",
+        "description": "発見されたツールは mcp__server__tool として公開されます。接頭辞により出所が明確になり、組み込みツールや別サーバーのツールとの衝突を避けます。"
       }
     },
     {
-      "id": "atomic-claim",
-      "title": "Claiming Is Atomic",
-      "description": "The ownership check and task update run under one lock. When two teammates see the same ready task, only one can move it from pending to in_progress.",
-      "alternatives": "Scanning and writing without a shared lock can assign the same task twice.",
+      "id": "dynamic-tool-pool",
+      "title": "Tool Discovery Updates the Active Tool Pool",
+      "description": "After connecting to a server, the runtime assembles a new tool pool for the next LLM call. The model can only use MCP tools after discovery has made them visible.",
+      "alternatives": "Preloading every possible MCP tool would create a huge prompt and expose capabilities the user did not request.",
       "zh": {
-        "title": "任务认领必须原子化",
-        "description": "所有权检查与任务更新在同一把锁内完成。两个队友同时看到一个就绪任务时，只有一个能把它从 pending 推进到 in_progress。"
+        "title": "工具发现会更新活动工具池",
+        "description": "连接服务器后，运行时会为下一次 LLM 调用组装新的工具池。模型只有在发现阶段让 MCP 工具可见之后，才能调用它们。"
       },
       "ja": {
-        "title": "タスク認領を原子的に行う",
-        "description": "所有権確認とタスク更新を同じ lock の中で行う。二つのチームメイトが同じ実行可能タスクを見ても、pending から in_progress へ進められるのは一方だけである。"
+        "title": "ツール発見がアクティブなツールプールを更新する",
+        "description": "サーバー接続後、ランタイムは次の LLM 呼び出し用に新しいツールプールを組み立てます。MCP ツールは発見で可視化された後にのみモデルが利用できます。"
       }
     },
     {
-      "id": "dependencies-filter-readiness",
-      "title": "Dependencies Define Readiness",
-      "description": "The scan returns a task only when every blockedBy dependency is completed. A teammate with nothing ready remains idle instead of starting work out of order.",
-      "alternatives": "Ignoring dependencies increases utilization, but produces work against unfinished inputs.",
+      "id": "external-results-append-like-tools",
+      "title": "External Results Reuse the Tool Result Path",
+      "description": "MCP responses are appended to the conversation like ordinary tool results. This keeps the agent loop unchanged while still letting external systems participate.",
+      "alternatives": "A separate external-response channel would make MCP feel special and require extra loop logic.",
       "zh": {
-        "title": "依赖关系决定任务是否就绪",
-        "description": "只有 blockedBy 中的依赖全部完成，扫描才会返回该任务。没有就绪任务的队友继续保持 IDLE，不会越过依赖提前开工。"
+        "title": "外部结果复用 Tool Result 路径",
+        "description": "MCP 响应会像普通 tool result 一样追加到对话中。这样 agent 循环无需改变，同时外部系统仍然可以参与。"
       },
       "ja": {
-        "title": "依存関係が実行可能性を決める",
-        "description": "blockedBy の依存がすべて完了したタスクだけを走査結果に含める。実行可能な仕事がなければ IDLE を維持し、順序を飛ばして開始しない。"
+        "title": "外部結果は tool result 経路を再利用する",
+        "description": "MCP の応答は通常の tool result と同じように会話へ追加されます。エージェントループを変えずに外部システムを参加させられます。"
       }
     }
   ]

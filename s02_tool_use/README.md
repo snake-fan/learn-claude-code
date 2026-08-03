@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s20 → s21
+s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s18 → s19
 > *"Add a tool, add just one handler"* — The loop stays the same. Register the new tool in the dispatch map and you're done.
 >
 > **Harness Layer**: Tool Dispatch — Expanding the model's reach.

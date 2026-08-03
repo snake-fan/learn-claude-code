@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s20 → s21
+`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s18 → s19
 > *"One loop & Bash is all you need"* — ツール一つ + ループ一つ = 一つの Agent。
 >
 > **Harness レイヤー**: ループ — モデルと現実世界をつなぐ最初の架け橋。

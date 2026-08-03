@@ -36,7 +36,7 @@ def run_lesson(script: Path, *args: str) -> str:
 
 def test_workflow_runtime_resumes_from_journal(tmp_path: Path) -> None:
     script = tmp_path / "code.py"
-    shutil.copy2(ROOT / "s20_workflow_runtime" / "code.py", script)
+    shutil.copy2(ROOT / "s18_workflow_runtime" / "code.py", script)
 
     first = run_lesson(script)
     resumed = run_lesson(script, "resume")
@@ -49,7 +49,7 @@ def test_workflow_runtime_resumes_from_journal(tmp_path: Path) -> None:
 
 def test_workflow_runtime_rejects_unsafe_artifact_names() -> None:
     workflow = load_lesson(
-        "workflow_name_test", ROOT / "s20_workflow_runtime" / "code.py"
+        "workflow_name_test", ROOT / "s18_workflow_runtime" / "code.py"
     )
 
     for name in ("../escape", "../../escape", "nested/name"):
@@ -61,7 +61,7 @@ def test_workflow_runtime_enforces_budget_and_shared_agent_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_limit_test", ROOT / "s20_workflow_runtime" / "code.py"
+        "workflow_limit_test", ROOT / "s18_workflow_runtime" / "code.py"
     )
     budget = workflow.Budget(total=1)
     with pytest.raises(workflow.WorkflowInputError):
@@ -105,7 +105,7 @@ def test_workflow_runtime_enforces_budget_and_shared_agent_cap(
 
 def test_workflow_runtime_rejects_corrupt_resume_journal(tmp_path: Path) -> None:
     workflow = load_lesson(
-        "workflow_journal_test", ROOT / "s20_workflow_runtime" / "code.py"
+        "workflow_journal_test", ROOT / "s18_workflow_runtime" / "code.py"
     )
     run_id = "wf_corrupt_0001"
     (tmp_path / f"{run_id}.journal.jsonl").write_text("{not-json}\n")

@@ -1,60 +1,105 @@
 {
   "version": "s15",
-  "title": "Agent Teams",
-  "description": "The Lead proposes a team for a normal user request, waits for confirmation, then coordinates persistent teammates through runtime-delivered events.",
+  "title": "Agent Team Runtime",
+  "description": "The Lead coordinates persistent teammates while the runtime owns message delivery, atomic task claims, and task-bound worktree directories.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Refactor the configuration loader and authentication flow, then update the tests.",
-      "annotation": "The user describes the goal without designing a team."
+      "content": "Refactor authentication and update its dependent tests in parallel without mixing the edits.",
+      "annotation": "The user states the outcome and parallel-edit boundary, not an implementation-specific worktree procedure."
     },
     {
       "type": "assistant_text",
-      "content": "These areas can be handled in parallel. I propose one teammate for configuration and authentication, and another for tests. Shall I start that team?",
-      "annotation": "The Lead chooses a small team and makes the extra-agent decision visible."
+      "content": "I propose a backend teammate for authentication and a test teammate that picks up the dependent checks once they are ready. Shall I start the team?",
+      "annotation": "The Lead makes the extra-agent decision visible before spawning."
     },
     {
       "type": "user_message",
       "content": "Yes, go ahead.",
-      "annotation": "Teammates start only after explicit confirmation."
+      "annotation": "The team starts only after explicit confirmation."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "create_task",
+      "content": "{\"subject\":\"Refactor authentication\"}",
+      "annotation": "The shared task board remains the source of ownership and status."
+    },
+    {
+      "type": "tool_result",
+      "toolName": "create_task",
+      "content": "Created task_1712345678_0042: Refactor authentication",
+      "annotation": "The runtime-generated task ID is carried into every later operation on this task."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "create_worktree",
+      "content": "{\"name\":\"auth-refactor\",\"task_id\":\"task_1712345678_0042\"}",
+      "annotation": "The worktree directory is recorded on the task instead of managed as a separate workflow or security sandbox."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "create_task",
+      "content": "{\"subject\":\"Update authentication tests\",\"blockedBy\":[\"task_1712345678_0042\"]}",
+      "annotation": "The task graph keeps dependent work from starting early."
+    },
+    {
+      "type": "tool_result",
+      "toolName": "create_task",
+      "content": "Created task_1712345678_0043: Update authentication tests (blockedBy: task_1712345678_0042)",
+      "annotation": "The second generated ID names the dependent task that the test teammate will later claim."
     },
     {
       "type": "tool_call",
       "toolName": "spawn_teammate",
-      "content": "{\"name\":\"backend\",\"role\":\"backend engineer\",\"prompt\":\"Refactor configuration and authentication while preserving interfaces.\"}",
-      "annotation": "The first persistent teammate enters WORK with a focused assignment."
+      "content": "{\"name\":\"backend\",\"role\":\"backend engineer\",\"prompt\":\"Claim the authentication task and propose a plan.\"}",
+      "annotation": "A persistent teammate receives focused work through the team runtime."
     },
     {
       "type": "tool_call",
       "toolName": "spawn_teammate",
-      "content": "{\"name\":\"tests\",\"role\":\"test engineer\",\"prompt\":\"Update and run tests for the refactor.\"}",
-      "annotation": "The second teammate gets an independent slice."
+      "content": "{\"name\":\"tests\",\"role\":\"test engineer\",\"prompt\":\"Watch the board and claim the dependent test task when it becomes ready.\"}",
+      "annotation": "A second persistent teammate can wait in IDLE without another direct dispatch."
     },
     {
       "type": "system_event",
-      "content": "backend -> Lead: result(refactor complete) -> idle_notification",
+      "content": "plan_request(req_plan_7) -> plan_response(req_plan_7, approved=true)",
+      "annotation": "Typed correlation and an approval gate protect mutating tools."
+    },
+    {
+      "type": "system_event",
+      "content": "claim_next_task(backend) -> task_1712345678_0042; task_lock commits owner=backend",
+      "annotation": "The ownership check and state transition are atomic."
+    },
+    {
+      "type": "system_event",
+      "content": "backend tool cwd -> .worktrees/auth-refactor",
+      "annotation": "Bash, read, and write derive their directory from the claimed task binding."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "complete_task",
+      "content": "{\"task_id\":\"task_1712345678_0042\"}",
+      "annotation": "Completing the first task makes its dependent test task ready."
+    },
+    {
+      "type": "system_event",
+      "content": "backend -> Lead: result(auth refactor complete) -> idle_notification",
       "annotation": "Result and idle state are separate events; the teammate remains available."
     },
     {
       "type": "system_event",
-      "content": "tests -> Lead: result(test suite passed) -> idle_notification",
-      "annotation": "The runtime observes mailbox writes and wakes the Lead without a polling tool."
-    },
-    {
-      "type": "assistant_text",
-      "content": "Both parts are complete. The interfaces were preserved and the updated tests pass.",
-      "annotation": "The Lead combines teammate results into one user-facing answer."
-    },
-    {
-      "type": "tool_call",
-      "toolName": "request_shutdown",
-      "content": "{\"teammate\":\"backend\"}",
-      "annotation": "A typed request with a request id closes the persistent teammate cleanly."
+      "content": "claim_next_task(tests) -> task_1712345678_0043; task_lock commits owner=tests",
+      "annotation": "An idle teammate discovers newly ready work without another direct assignment."
     },
     {
       "type": "system_event",
-      "content": "shutdown_response(request_id=req_42, approve=true)",
-      "annotation": "The matching response resolves the pending protocol request."
+      "content": "tests -> Lead: result(test suite passed) -> idle_notification",
+      "annotation": "The runtime wakes the Lead when mailbox events arrive instead of asking the model to poll."
+    },
+    {
+      "type": "assistant_text",
+      "content": "Authentication was refactored in its task-bound worktree and the dependent tests pass.",
+      "annotation": "The Lead combines parallel results into one user-facing outcome."
     }
   ]
 }

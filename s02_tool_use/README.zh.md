@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s20 → s21
+s01 → `s02` → [s03](../s03_permission/) → s04 → ... → s18 → s19
 > *"加一个工具, 只加一个 handler"* — 循环不用动, 新工具注册进 dispatch map 就行。
 >
 > **Harness 层**: 工具分发 — 扩展模型能触达的边界。

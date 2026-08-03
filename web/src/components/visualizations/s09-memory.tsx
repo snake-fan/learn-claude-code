@@ -42,7 +42,7 @@ const MEMORY_FILES: MemoryFile[] = [
     title: "Verification commands",
     filename: "lcc_test_commands.md",
     description: "Useful smoke checks for the course website.",
-    body: "Run npm run build, then browser-check /zh/s09 and /zh/s20.",
+    body: "Run npm run build, then browser-check /zh/s09 and /zh/s19.",
   },
 ];
 

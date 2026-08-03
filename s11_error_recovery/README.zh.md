@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s20 → s21
+s01 → ... → s09 → s10 → `s11` → [s12](../s12_task_system/) → s13 → ... → s18 → s19
 > *"错误不是终点, 是重试的起点"* — 升级 token、压缩上下文、切换模型。
 >
 > **Harness 层**: 韧性 — 主循环遇到错误时分类并恢复。

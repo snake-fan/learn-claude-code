@@ -1,120 +1,107 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 470" font-family="system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 620" font-family="system-ui, -apple-system, sans-serif">
   <defs>
     <linearGradient id="header" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#0891b2"/>
     </linearGradient>
-    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
     </marker>
-    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#0891b2"/>
     </marker>
-    <marker id="arrow-amber" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/>
-    </marker>
-    <marker id="arrow-green" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/>
     </marker>
   </defs>
 
-  <rect width="760" height="470" fill="#fafbfc" rx="8"/>
+  <rect width="760" height="620" rx="8" fill="#fafbfc"/>
+  <rect width="760" height="44" rx="8" fill="url(#header)"/>
+  <rect y="36" width="760" height="8" fill="url(#header)"/>
+  <text x="380" y="28" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">Agent Teams — One Team Harness</text>
 
-  <!-- Title -->
-  <rect x="0" y="0" width="760" height="44" fill="url(#header)" rx="8"/>
-  <rect x="0" y="36" width="760" height="8" fill="url(#header)"/>
-  <text x="380" y="28" fill="#fff" font-size="15" font-weight="700" text-anchor="middle">Agent Teams — Lead Loop + Teammate Threads + MessageBus</text>
+  <!-- User confirmation, Lead, and typed control -->
+  <rect x="28" y="82" width="140" height="62" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="98" y="106" text-anchor="middle" fill="#334155" font-size="11" font-weight="700">User</text>
+  <text x="98" y="124" text-anchor="middle" fill="#64748b" font-size="9">confirm team first</text>
 
-  <!-- Legend -->
-  <rect x="40" y="56" width="12" height="10" rx="2" fill="#f0f4ff" stroke="#2563eb" stroke-width="1"/>
-  <text x="58" y="66" fill="#2563eb" font-size="10" font-weight="600">s10-s14 Preserved</text>
-  <rect x="180" y="56" width="12" height="10" rx="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1"/>
-  <text x="198" y="66" fill="#0891b2" font-size="10" font-weight="600">s15 New</text>
-  <rect x="280" y="56" width="12" height="10" rx="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>
-  <text x="298" y="66" fill="#16a34a" font-size="10" font-weight="600">Teammate</text>
-  <rect x="395" y="56" width="12" height="10" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
-  <text x="413" y="66" fill="#d97706" font-size="10" font-weight="600">Protocol gate</text>
+  <line x1="168" y1="113" x2="220" y2="113" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- ===== Row 1: Lead Agent Loop ===== -->
-  <rect x="28" y="90" width="70" height="40" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
-  <text x="63" y="114" fill="#4f46e5" font-size="8" font-weight="600" text-anchor="middle">cron_queue</text>
+  <rect x="220" y="72" width="300" height="82" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="370" y="96" text-anchor="middle" fill="#1e3a5f" font-size="12" font-weight="700">Lead Agent Loop</text>
+  <text x="370" y="116" text-anchor="middle" fill="#475569" font-size="9">user conversation · task creation · team coordination</text>
+  <text x="370" y="134" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">spawn · send · worktree create/remove · plan review</text>
 
-  <line x1="98" y1="110" x2="112" y2="110" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="520" y1="113" x2="570" y2="113" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
 
-  <rect x="115" y="90" width="72" height="40" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="151" y="114" fill="#1e3a5f" font-size="10" font-weight="600" text-anchor="middle">messages</text>
+  <rect x="570" y="82" width="162" height="62" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="651" y="105" text-anchor="middle" fill="#92400e" font-size="10" font-weight="700">Typed control</text>
+  <text x="651" y="122" text-anchor="middle" fill="#a16207" font-size="8.5">request_id · shutdown</text>
+  <text x="651" y="136" text-anchor="middle" fill="#a16207" font-size="8.5">plan approval gate</text>
 
-  <line x1="187" y1="110" x2="201" y2="110" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Connect top row to MessageBus; endpoints meet box edges -->
+  <line x1="370" y1="154" x2="370" y2="190" stroke="#0891b2" stroke-width="1.8" marker-end="url(#arrow-cyan)"/>
+  <line x1="651" y1="144" x2="651" y2="190" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
 
-  <rect x="204" y="86" width="86" height="48" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="247" y="114" fill="#1e3a5f" font-size="9" font-weight="600" text-anchor="middle">prompt + cache</text>
+  <rect x="60" y="190" width="640" height="44" rx="22" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+  <text x="380" y="209" text-anchor="middle" fill="#0e7490" font-size="11" font-weight="700">MessageBus · .mailboxes/&lt;name&gt;.jsonl</text>
+  <text x="380" y="225" text-anchor="middle" fill="#0f766e" font-size="8.5">runtime delivery · ordinary messages · result · idle_notification · control events</text>
 
-  <line x1="290" y1="110" x2="304" y2="110" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- MessageBus and teammate loops -->
+  <line x1="118" y1="234" x2="118" y2="282" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="348" y1="234" x2="348" y2="282" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="578" y1="234" x2="578" y2="282" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="182" y1="282" x2="182" y2="234" stroke="#0891b2" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)"/>
+  <line x1="412" y1="282" x2="412" y2="234" stroke="#0891b2" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)"/>
+  <line x1="642" y1="282" x2="642" y2="234" stroke="#0891b2" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)"/>
 
-  <rect x="307" y="86" width="74" height="48" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="344" y="114" fill="#1e3a5f" font-size="9" font-weight="600" text-anchor="middle">LLM call</text>
+  <rect x="40" y="282" width="220" height="82" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="150" y="305" text-anchor="middle" fill="#166534" font-size="10.5" font-weight="700">Teammate: config</text>
+  <text x="150" y="324" text-anchor="middle" fill="#15803d" font-size="8.5">independent prompt · messages · tools</text>
+  <text x="150" y="342" text-anchor="middle" fill="#475569" font-size="8.5">WORK → result → IDLE</text>
+  <text x="150" y="356" text-anchor="middle" fill="#64748b" font-size="8">direct message returns to WORK</text>
 
-  <line x1="381" y1="110" x2="395" y2="110" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="270" y="282" width="220" height="82" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="380" y="305" text-anchor="middle" fill="#166534" font-size="10.5" font-weight="700">Teammate: auth</text>
+  <text x="380" y="324" text-anchor="middle" fill="#15803d" font-size="8.5">independent prompt · messages · tools</text>
+  <text x="380" y="342" text-anchor="middle" fill="#475569" font-size="8.5">WORK → result → IDLE</text>
+  <text x="380" y="356" text-anchor="middle" fill="#64748b" font-size="8">claimed task returns to WORK</text>
 
-  <rect x="398" y="80" width="336" height="60" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="566" y="98" fill="#1e3a5f" font-size="10" font-weight="600" text-anchor="middle">TOOL DISPATCH</text>
-  <text x="414" y="114" fill="#2563eb" font-size="8">bash · read · write · task(4) · cron(3)</text>
-  <text x="414" y="128" fill="#0891b2" font-size="8" font-weight="700">★ spawn · send · shutdown · plan review</text>
+  <rect x="500" y="282" width="220" height="82" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="610" y="305" text-anchor="middle" fill="#166534" font-size="10.5" font-weight="700">Teammate: tests</text>
+  <text x="610" y="324" text-anchor="middle" fill="#15803d" font-size="8.5">independent prompt · messages · tools</text>
+  <text x="610" y="342" text-anchor="middle" fill="#475569" font-size="8.5">WORK → result → IDLE</text>
+  <text x="610" y="356" text-anchor="middle" fill="#64748b" font-size="8">shutdown exits the loop</text>
 
-  <!-- Loop back -->
-  <path d="M 734 110 L 748 110 L 748 150 L 63 150 L 63 130" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="6,3"/>
+  <!-- IDLE task discovery -->
+  <line x1="150" y1="364" x2="150" y2="404" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="380" y1="364" x2="380" y2="404" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="610" y1="364" x2="610" y2="404" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
 
-  <!-- ===== Spawn arrow: TOOLS bottom → MessageBus top ===== -->
-  <line x1="560" y1="140" x2="560" y2="178" stroke="#0891b2" stroke-width="2" marker-end="url(#arrow-cyan)"/>
-  <rect x="543" y="152" width="38" height="14" rx="3" fill="#ecfeff"/>
-  <text x="562" y="163" fill="#0891b2" font-size="8" font-weight="600" text-anchor="middle">spawn</text>
+  <rect x="60" y="404" width="640" height="54" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="380" y="425" text-anchor="middle" fill="#334155" font-size="11" font-weight="700">Shared Task Board · .tasks/</text>
+  <text x="380" y="444" text-anchor="middle" fill="#475569" font-size="9">IDLE: wait for mailbox first → scan ready tasks → claim atomically → reuse WORK loop</text>
 
-  <!-- ===== Row 2: MessageBus ===== -->
-  <rect x="60" y="178" width="640" height="34" rx="17" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
-  <text x="380" y="200" fill="#0e7490" font-size="11" font-weight="700" text-anchor="middle">MessageBus (.mailboxes/*.jsonl)</text>
+  <!-- Task binding selects cwd -->
+  <line x1="380" y1="458" x2="380" y2="482" stroke="#475569" stroke-width="1.5"/>
+  <line x1="220" y1="482" x2="540" y2="482" stroke="#475569" stroke-width="1.5"/>
+  <line x1="220" y1="482" x2="220" y2="506" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="482" x2="540" y2="506" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="311" y="468" width="138" height="18" rx="4" fill="#fafbfc"/>
+  <text x="380" y="480" text-anchor="middle" fill="#475569" font-size="8.5" font-weight="600">Task.worktree selects cwd</text>
 
-  <!-- ===== Row 3: Teammates ===== -->
-  <line x1="170" y1="212" x2="170" y2="248" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
-  <line x1="380" y1="212" x2="380" y2="248" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
-  <line x1="590" y1="212" x2="590" y2="248" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
-  <text x="124" y="226" fill="#16a34a" font-size="9" font-weight="600">receive</text>
-  <text x="334" y="226" fill="#16a34a" font-size="9" font-weight="600">receive</text>
-  <text x="544" y="226" fill="#16a34a" font-size="9" font-weight="600">receive</text>
+  <rect x="60" y="506" width="300" height="66" rx="8" fill="#f0f4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="210" y="529" text-anchor="middle" fill="#1e3a5f" font-size="10.5" font-weight="700">Default: repository WORKDIR</text>
+  <text x="210" y="548" text-anchor="middle" fill="#475569" font-size="8.5">task.worktree is null</text>
+  <text x="210" y="562" text-anchor="middle" fill="#64748b" font-size="8">same behavior as earlier lessons</text>
 
-  <line x1="200" y1="248" x2="200" y2="212" stroke="#0891b2" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-cyan)"/>
-  <line x1="410" y1="248" x2="410" y2="212" stroke="#0891b2" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-cyan)"/>
-  <line x1="620" y1="248" x2="620" y2="212" stroke="#0891b2" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-cyan)"/>
-  <text x="214" y="241" fill="#0891b2" font-size="9" font-weight="600">send</text>
-  <text x="424" y="241" fill="#0891b2" font-size="9" font-weight="600">send</text>
-  <text x="634" y="241" fill="#0891b2" font-size="9" font-weight="600">send</text>
+  <rect x="400" y="506" width="300" height="66" rx="8" fill="#fff7ed" stroke="#d97706" stroke-width="1.5"/>
+  <text x="550" y="529" text-anchor="middle" fill="#92400e" font-size="10.5" font-weight="700">Opt-in: .worktrees/&lt;name&gt;</text>
+  <text x="550" y="548" text-anchor="middle" fill="#a16207" font-size="8.5">separate checkout + retained wt/&lt;name&gt; branch</text>
+  <text x="550" y="562" text-anchor="middle" fill="#78716c" font-size="8">working-directory isolation, not a sandbox</text>
 
-  <rect x="60" y="248" width="220" height="66" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="170" y="268" fill="#166534" font-size="10" font-weight="700" text-anchor="middle">Teammate: alice (Backend)</text>
-  <text x="75" y="284" fill="#16a34a" font-size="8">inbox → LLM → bash/read/write/send</text>
-  <text x="75" y="298" fill="#6b7280" font-size="8">WORK → result → IDLE → next message</text>
-
-  <rect x="270" y="248" width="220" height="66" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="380" y="268" fill="#166534" font-size="10" font-weight="700" text-anchor="middle">Teammate: bob (Frontend)</text>
-  <text x="285" y="284" fill="#16a34a" font-size="8">Independent agent_loop, shared client</text>
-  <text x="285" y="298" fill="#6b7280" font-size="8">Thread(daemon=True)</text>
-
-  <rect x="480" y="248" width="220" height="66" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="590" y="268" fill="#166534" font-size="10" font-weight="700" text-anchor="middle">Teammate: charlie (QA)</text>
-  <text x="495" y="284" fill="#16a34a" font-size="8">Cannot spawn other teammates</text>
-  <text x="495" y="298" fill="#6b7280" font-size="8">spawn → work → result → idle</text>
-
-  <!-- ===== Row 4: Plan approval gate ===== -->
-  <path d="M 60 360 L 10 360 L 10 195 L 60 195" fill="none" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow-amber)" stroke-dasharray="5,3"/>
-  <rect x="20" y="318" width="126" height="18" rx="4" fill="#fffbeb" stroke="#f59e0b" stroke-width="1"/>
-  <text x="83" y="331" fill="#d97706" font-size="10" font-weight="700" text-anchor="middle">plan_request</text>
-
-  <rect x="60" y="340" width="640" height="50" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
-  <text x="380" y="360" fill="#92400e" font-size="11" font-weight="700" text-anchor="middle">Plan Approval Gate</text>
-  <text x="80" y="378" fill="#78716c" font-size="9">① Teammate submits plan  ② Lead approves or rejects  ③ bash / write_file stay blocked until approved</text>
-
-  <!-- ===== Row 5: Bottom notes ===== -->
-  <rect x="60" y="410" width="640" height="44" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
-  <rect x="80" y="424" width="12" height="10" rx="2" fill="#f0f4ff" stroke="#2563eb" stroke-width="1"/>
-  <text x="100" y="434" fill="#475569" font-size="10">s10-s14: prompt assembly, error recovery, task graph, background threads, cron scheduling</text>
-  <rect x="80" y="440" width="12" height="10" rx="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1"/>
-  <text x="100" y="450" fill="#475569" font-size="10">s15: MessageBus + persistent teammates + event delivery + typed protocols + plan gate</text>
+  <rect x="60" y="590" width="640" height="20" rx="5" fill="#ecfdf5" stroke="#bbf7d0"/>
+  <text x="380" y="604" text-anchor="middle" fill="#166534" font-size="8.5" font-weight="600">Only successful task completion clears the teammate assignment and cwd.</text>
 </svg>

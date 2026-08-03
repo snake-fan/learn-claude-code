@@ -1,50 +1,46 @@
 {
   "version": "s16",
-  "title": "Autonomous Agents",
-  "description": "Idle teammates discover ready tasks on a shared board and use an atomic claim before starting work.",
+  "title": "MCP Tools",
+  "description": "The agent discovers external MCP tools and exposes them through a normalized tool namespace.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Update the API examples, then add tests that use the final examples.",
-      "annotation": "The request contains two tasks with a clear dependency."
+      "content": "Search the documentation for deployment guidance.",
+      "annotation": "The user asks for a tool source outside the built-in set."
     },
     {
       "type": "tool_call",
-      "toolName": "create_task",
-      "content": "{\"subject\":\"Update API examples\"}",
-      "annotation": "The Lead creates the first task in the shared graph."
+      "toolName": "connect_mcp",
+      "content": "{\"name\":\"docs\"}",
+      "annotation": "The runtime creates an MCP client for the named server."
+    },
+    {
+      "type": "system_event",
+      "content": "normalize_mcp_name(\"docs\", \"search\") -> mcp__docs__search",
+      "annotation": "External tools are namespaced to avoid collisions."
+    },
+    {
+      "type": "tool_result",
+      "toolName": "connect_mcp",
+      "content": "Connected to MCP server 'docs'. Discovered 2 tools: search, get_version",
+      "annotation": "Tool discovery expands the active tool pool."
     },
     {
       "type": "tool_call",
-      "toolName": "create_task",
-      "content": "{\"subject\":\"Add example tests\",\"blockedBy\":[\"task_examples\"]}",
-      "annotation": "The second task cannot start until the examples are complete."
+      "toolName": "mcp__docs__search",
+      "content": "{\"query\":\"deployment\"}",
+      "annotation": "The LLM can now call the discovered tool by its normalized name."
     },
     {
-      "type": "system_event",
-      "content": "alice, bob: state=IDLE -> scan_unclaimed_tasks()",
-      "annotation": "Existing IDLE teammates scan the board after waiting for messages."
+      "type": "tool_result",
+      "toolName": "mcp__docs__search",
+      "content": "[docs] Found 3 results for 'deployment'",
+      "annotation": "The external result is appended like any other tool result."
     },
     {
-      "type": "system_event",
-      "content": "claim_next_task(alice) -> task_examples; task_lock commits owner=alice",
-      "annotation": "The ownership check and pending-to-in_progress update are atomic."
-    },
-    {
-      "type": "system_event",
-      "content": "claim_next_task(bob) -> no ready task; remain IDLE",
-      "annotation": "The test task is still blocked, so Bob does not start it early."
-    },
-    {
-      "type": "tool_call",
-      "toolName": "complete_task",
-      "content": "{\"task_id\":\"task_examples\"}",
-      "annotation": "Completing the examples unblocks the dependent test task."
-    },
-    {
-      "type": "system_event",
-      "content": "claim_next_task(bob) -> task_tests; task_lock commits owner=bob",
-      "annotation": "Bob claims the newly ready work without another direct assignment."
+      "type": "assistant_text",
+      "content": "The docs server found three matches for deployment guidance.",
+      "annotation": "The agent summarizes external tool output for the user."
     }
   ]
 }

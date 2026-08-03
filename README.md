@@ -96,7 +96,7 @@ Claude Code = one agent loop
             + subagent spawning
             + task system with dependency graphs
             + async mailbox team coordination
-            + worktree-isolated parallel execution
+            + task-bound worktrees for parallel edits
             + permission governance
             + hooks extension system
             + memory persistence
@@ -167,16 +167,16 @@ The loop is constant. Tools, knowledge, and permissions change. Agent = Model (L
 
 This repository currently contains two tutorial tracks:
 
-- **Current track: root-level `s01-s21`**
-  The root-level `s01_*` ... `s21_*` folders are the canonical version. Each chapter contains an English default README, Chinese/Japanese translations, runnable `code.py`, and diagrams where needed.
+- **Current track: root-level `s01-s19`**
+  The root-level `s01_*` ... `s19_*` folders are the canonical version. Each chapter contains an English default README, Chinese/Japanese translations, runnable `code.py`, and diagrams where needed.
 - **Legacy transition track: `docs/` and `agents/`**
   These preserve the older 12-lesson version for existing readers and old links during migration.
 
-If you are starting now, read the root-level `s01_agent_loop/` through `s21_goal_loop/` chapters. The legacy and current chapter numbers do not always match, so avoid mixing chapter numbers across tracks.
+If you are starting now, read the root-level `s01_agent_loop/` through `s19_goal_loop/` chapters. The legacy and current chapter numbers do not always match, so avoid mixing chapter numbers across tracks.
 
 ### Legacy-to-Current Mapping
 
-| Legacy 12-lesson track | Current 21-lesson track | Topic |
+| Legacy 12-lesson track | Current 19-lesson track | Topic |
 |---|---|---|
 | old s01 | new s01 | Agent Loop |
 | old s02 | new s02 | Tool Use |
@@ -188,19 +188,19 @@ If you are starting now, read the root-level `s01_agent_loop/` through `s21_goal
 | old s08 | new s13 | Background Tasks |
 | old s09 | new s15 | Agent Teams |
 | old s10 | new s15 | Team Protocols |
-| old s11 | new s16 | Autonomous Agents |
-| old s12 | new s17 | Worktree Isolation |
-| new only | s03, s04, s09, s10, s11, s14, s18, s19, s20, s21 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Integrated Harness, Workflow Runtime, Goal Loop |
+| old s11 | new s15 | Autonomous task claiming |
+| old s12 | new s15 | Task-bound worktrees |
+| new only | s03, s04, s09, s10, s11, s14, s16, s17, s18, s19 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Integrated Harness, Workflow Runtime, Goal Loop |
 
 ---
 
 ## Course Boundary
 
-This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s19 reconnects them in a complete agent loop. The team runtime uses a JSONL mailbox, and later chapters add workflow orchestration and a goal-controlled continuation loop.
+This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s17 reconnects them in a complete agent loop. The team runtime uses a JSONL mailbox, and later chapters add workflow orchestration and a goal-controlled continuation loop.
 
 ---
 
-## 21 Progressive Lessons
+## 19 Progressive Lessons
 
 **Each lesson adds one harness mechanism. Each mechanism has a motto.**
 
@@ -232,19 +232,15 @@ This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism
 >
 > **s14** &nbsp; *"Fire on schedule, no human kick needed"* &mdash; trigger tasks automatically by time
 >
-> **s15** &nbsp; *"Too big for one agent -- let teammates divide the work"* &mdash; persistent teammates, automatic message delivery, and typed coordination protocols
+> **s15** &nbsp; *"Too big for one agent -- let teammates divide the work"* &mdash; persistent teammates coordinate, claim ready tasks, and use task-bound working directories
 >
-> **s16** &nbsp; *"Idle teammates check the board and claim ready work"* &mdash; task discovery and atomic claiming without one-by-one dispatch
+> **s16** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
 >
-> **s17** &nbsp; *"Each works in its own directory, no interference"* &mdash; tasks own goals, worktrees own directories, bound by ID
+> **s17** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one integrated harness
 >
-> **s18** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
+> **s18** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
 >
-> **s19** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one integrated harness
->
-> **s20** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
->
-> **s21** &nbsp; *"A goal decides when the loop may stop"* &mdash; continue until trusted evidence satisfies the goal
+> **s19** &nbsp; *"A goal decides when the loop may stop"* &mdash; continue until an independent evaluator finds the goal satisfied in the conversation
 
 ---
 
@@ -282,9 +278,9 @@ flowchart TD
         direction LR
         S4["<b>4. Run long tasks</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ persist tasks and deps<br/><br/><b>s13 Background Tasks</b><br/>└─ send slow work background<br/><br/><b>s14 Cron Scheduler</b><br/>└─ trigger by time"]:::stage4
 
-        S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ teammates + delivery + protocols<br/><br/><b>s16 Autonomous Agents</b><br/>└─ claim ready work from the board<br/><br/><b>s17 Worktree Isolation</b><br/>└─ separate directories"]:::stage5
+        S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ teammates + delivery + protocols<br/>└─ atomic task claims<br/>└─ task-bound worktrees"]:::stage5
 
-        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s18 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s19 Integrated Harness</b><br/>└─ all mechanisms, one loop"]:::stage6
+        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s16 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s17 Integrated Harness</b><br/>└─ all mechanisms, one loop"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -292,7 +288,7 @@ flowchart TD
     %% Layer 3: orchestration and goal closure
     subgraph Phase3 ["🎯 Stage 7: Orchestration and goal closure"]
         direction LR
-        S7["<b>7. Orchestrate and finish</b><br/>━━━━━━━━━━━━━<br/><b>s20 Workflow Runtime</b><br/>└─ scripts own fixed orchestration<br/><br/><b>s21 Goal Loop</b><br/>└─ trusted evidence decides when to stop"]:::stage1
+        S7["<b>7. Orchestrate and finish</b><br/>━━━━━━━━━━━━━<br/><b>s18 Workflow Runtime</b><br/>└─ scripts own fixed orchestration<br/><br/><b>s19 Goal Loop</b><br/>└─ independent evaluation decides when to stop"]:::stage1
         S6 ==> S7
     end
 
@@ -322,13 +318,11 @@ flowchart TD
 | [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / disk persistence |
 | [s13](./s13_background_tasks/) | Background Tasks | threaded execution / notification queue |
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | durable scheduling / session-scoped triggers |
-| [s15](./s15_agent_teams/) | Agent Teams | persistent teammates / automatic delivery / typed protocols / plan gate |
-| [s16](./s16_autonomous_agents/) | Autonomous Agents | task-board scan / atomic claim / self-organization |
-| [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / task-directory binding |
-| [s18](./s18_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
-| [s19](./s19_comprehensive/) | Integrated Harness | all mechanisms around one loop |
-| [s20](./s20_workflow_runtime/) | Workflow Runtime | script orchestration / background execution / journal resume |
-| [s21](./s21_goal_loop/) | Goal Loop | goal gate / trusted evidence / automatic continuation |
+| [s15](./s15_agent_teams/) | Agent Teams | persistent teammates / atomic task claims / task-bound worktrees / typed protocols |
+| [s16](./s16_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
+| [s17](./s17_integrated_harness/) | Integrated Harness | all mechanisms around one loop |
+| [s18](./s18_workflow_runtime/) | Workflow Runtime | script orchestration / background execution / journal resume |
+| [s19](./s19_goal_loop/) | Goal Loop | goal gate / conversation evaluation / automatic continuation |
 
 ---
 
@@ -347,13 +341,13 @@ s08_context_compact/
 
 Read the `README.md` for the core idea and work through the code. Complex chapters have `<details>` folds for deep dives -- open them when you want to go deeper. Simple chapters have 0-1 diagrams, complex chapters have more.
 
-Read from s01 through s21 in order. Each chapter assumes you've read the previous ones and ends with a hook into the next.
+Read from s01 through s19 in order. Each chapter assumes you've read the previous ones and ends with a hook into the next.
 
 ---
 
 ## Quick Start
 
-### Current 21-Lesson Track
+### Current 19-Lesson Track
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -363,7 +357,7 @@ cp .env.example .env   # configure ANTHROPIC_API_KEY
 
 python s01_agent_loop/code.py        # Start here -- one loop + bash
 python s08_context_compact/code.py   # Context compaction (complex)
-python s21_goal_loop/code.py         # Endpoint: close the loop with a durable goal
+python s19_goal_loop/code.py         # Endpoint: close the loop with a durable goal
 ```
 
 ### Legacy 12-Lesson Track
@@ -376,7 +370,7 @@ python agents/s_full.py
 
 ### Web Platform
 
-The web app extracts the root-level course. Lessons s20 and s21 include reading, source, simulator, and architecture views; only their dedicated hero visualizations remain intentionally minimal.
+The web app extracts the root-level course. Lessons s18 and s19 include reading, source, simulator, and architecture views; only their dedicated hero visualizations remain intentionally minimal.
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -396,10 +390,10 @@ learn-claude-code/
     images/                #   SVG diagrams
   s02_tool_use/
   ...
-  s18_mcp_plugin/
-  s19_comprehensive/
-  s20_workflow_runtime/
-  s21_goal_loop/           # endpoint chapter
+  s16_mcp_plugin/
+  s17_integrated_harness/
+  s18_workflow_runtime/
+  s19_goal_loop/           # endpoint chapter
   agents/                  # legacy 12 runnable copies + s_full.py
   skills/                  # skill files used by s07
   docs/                    # legacy 12-lesson docs, kept during transition
@@ -411,7 +405,7 @@ learn-claude-code/
 
 ## What's Next
 
-After 21 lessons, you understand harness engineering from the inside out. Two paths to turn that knowledge into product:
+After 19 lessons, you understand harness engineering from the inside out. Two paths to turn that knowledge into product:
 
 ### Kode Agent CLI -- Open-Source Coding Agent CLI
 
@@ -450,7 +444,7 @@ claw agent = agent core + heartbeat + cron + IM chat + memory + soul
 learn-claude-code                   claw0
 (agent harness internals:            (always-on harness:
  loop, tools, planning,               heartbeat, cron, IM channels,
- teams, worktree isolation)            memory, Soul personality)
+ teams, task-bound worktrees)          memory, Soul personality)
 ```
 
 ## License

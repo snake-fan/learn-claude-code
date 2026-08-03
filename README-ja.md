@@ -100,13 +100,13 @@ Claude Code = 一つの agent loop
             + サブ Agent スポーン
             + 依存グラフ付きタスクシステム
             + 非同期メールボックスによるチーム協調
-            + worktree 分離による並列実行
+            + タスクに紐付く worktree での並列実行
             + 権限ガバナンス
 ```
 
 これがすべてだ。これが全アーキテクチャ。すべてのコンポーネントは Harness メカニズム -- Agent が住む世界の一部。Agent そのものは？ Claude だ。モデル。Anthropic が人類の推論とコードの全幅で訓練した。Harness が Claude を賢くしたのではない。Claude は元々賢い。Harness が Claude に手と目とワークスペースを与えた。
 
-これが Claude Code を教材として扱う理由だ：**モデルを信頼し、工学的努力を Harness に集中させるとどうなるかを示している。** このリポジトリの各セッション（s01-s21）は Harness メカニズムを段階的に分解し、最後に組み直す。終了時には、一つの coding agent の仕組みだけでなく、さまざまな領域に適用できる Harness 工学の原則を理解できる。
+これが Claude Code を教材として扱う理由だ：**モデルを信頼し、工学的努力を Harness に集中させるとどうなるかを示している。** このリポジトリの各セッション（s01-s19）は Harness メカニズムを段階的に分解し、最後に組み直す。終了時には、一つの coding agent の仕組みだけでなく、さまざまな領域に適用できる Harness 工学の原則を理解できる。
 
 教訓は「Claude Code をコピーせよ」ではない。教訓は：**最高の Agent プロダクトは、自分の仕事が Harness であって Intelligence ではないと理解しているエンジニアが作る。**
 
@@ -159,7 +159,7 @@ Claude Code = 一つの agent loop
     Agent を特定ドメインで効果的にする Harness -- の作り方を教える。
 ```
 
-**21 の段階的セッション、シンプルなループから目標を閉じる Harness まで。**
+**19 の段階的セッション、シンプルなループから目標を閉じる Harness まで。**
 **各セッションは 1 つの Harness メカニズムを追加する。各メカニズムには 1 つのモットーがある。**
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 1つのツール + 1つのループ = エージェント
@@ -190,19 +190,15 @@ Claude Code = 一つの agent loop
 >
 > **s14** &nbsp; *"スケジュールで発火、人間の起動は不要"* &mdash; 時間になったら自動でタスクを動かす
 >
-> **s15** &nbsp; *"一人で扱いきれないなら、チームメイトで分担する"* &mdash; 永続チームメイト、自動メッセージ配信、型付き協調プロトコル
+> **s15** &nbsp; *"一人で扱いきれないなら、チームメイトで分担する"* &mdash; 永続チームメイトが協調し、実行可能なタスクを認領して、タスクに紐付いた作業ディレクトリを使う
 >
-> **s16** &nbsp; *"待機中のチームメイトがボードを見て仕事を取る"* &mdash; 実行可能なタスクを発見し、原子的に認領する
+> **s16** &nbsp; *"能力不足？ MCP でプラグイン"* &mdash; 外部ツールを同じツールプールに接続する
 >
-> **s17** &nbsp; *"各自のディレクトリで作業し、互いに干渉しない"* &mdash; タスクは目標を管理、worktree はディレクトリを管理、IDで紐付け
+> **s17** &nbsp; *"仕組みは多く、ループは一つ"* &mdash; すべての仕組みを 1 つの Harness に戻す
 >
-> **s18** &nbsp; *"能力不足？ MCP でプラグイン"* &mdash; 外部ツールを同じツールプールに接続する
+> **s18** &nbsp; *"編成の形が固定なら、コードにする"* &mdash; 再開可能なジャーナルを持つ決定的 Workflow
 >
-> **s19** &nbsp; *"仕組みは多く、ループは一つ"* &mdash; すべての仕組みを 1 つの Harness に戻す
->
-> **s20** &nbsp; *"編成の形が固定なら、コードにする"* &mdash; 再開可能なジャーナルを持つ決定的 Workflow
->
-> **s21** &nbsp; *"本当に終われる時を目標が決める"* &mdash; 信頼できる証拠が目標を満たすまで継続する
+> **s19** &nbsp; *"本当に終われる時を目標が決める"* &mdash; 独立した evaluator が conversation から目標達成を確認するまで継続する
 
 ---
 
@@ -239,16 +235,16 @@ def agent_loop(messages):
 
 このリポジトリには現在、2 つのチュートリアルトラックが共存している：
 
-- **現行トラック：ルート直下の `s01-s21`**
-  ルート直下の `s01_*` から `s21_*` までが新しい正規版であり、現在推奨する読書経路。各セッションには既定の英語 README、中国語/日本語訳、実行可能な `code.py`、必要に応じた図が含まれる。
+- **現行トラック：ルート直下の `s01-s19`**
+  ルート直下の `s01_*` から `s19_*` までが新しい正規版であり、現在推奨する読書経路。各セッションには既定の英語 README、中国語/日本語訳、実行可能な `code.py`、必要に応じた図が含まれる。
 - **旧版移行トラック：`docs/`、`agents/`**
   これらは旧 12 セッション版を保持している。既存読者と旧リンクのために移行期間中は一時的に残している。
 
-新しく読む場合は、ルート直下の `s01_agent_loop/` から `s21_goal_loop/` までを読む。旧版と現行版のセッション番号は常に一致しないため、番号を混同しないこと。
+新しく読む場合は、ルート直下の `s01_agent_loop/` から `s19_goal_loop/` までを読む。旧版と現行版のセッション番号は常に一致しないため、番号を混同しないこと。
 
 ### 旧版から現行版への対応
 
-| 旧 12 セッション版 | 現行 21 セッション版 | トピック |
+| 旧 12 セッション版 | 現行 19 セッション版 | トピック |
 |---|---|---|
 | 旧 s01 | 現行 s01 | Agent Loop |
 | 旧 s02 | 現行 s02 | Tool Use |
@@ -260,17 +256,17 @@ def agent_loop(messages):
 | 旧 s08 | 現行 s13 | Background Tasks |
 | 旧 s09 | 現行 s15 | Agent Teams |
 | 旧 s10 | 現行 s15 | Team Protocols |
-| 旧 s11 | 現行 s16 | Autonomous Agents |
-| 旧 s12 | 現行 s17 | Worktree Isolation |
-| 現行版のみ | s03、s04、s09、s10、s11、s14、s18、s19、s20、s21 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Integrated Harness、Workflow Runtime、Goal Loop |
+| 旧 s11 | 現行 s15 | 自律的なタスク認領 |
+| 旧 s12 | 現行 s15 | タスクに紐付く Worktree |
+| 現行版のみ | s03、s04、s09、s10、s11、s14、s16、s17、s18、s19 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Integrated Harness、Workflow Runtime、Goal Loop |
 
 ## コースの範囲
 
-これは Harness 工学を 0 から組み立てるコースである。各セッションで一つの仕組みを分けて扱い、s19 で一つの Agent loop に戻す。チームランタイムは JSONL メールボックスを使い、その後のセッションで Workflow 編成と目標による継続ループを追加する。
+これは Harness 工学を 0 から組み立てるコースである。各セッションで一つの仕組みを分けて扱い、s17 で一つの Agent loop に戻す。チームランタイムは JSONL メールボックスを使い、その後のセッションで Workflow 編成と目標による継続ループを追加する。
 
 ## クイックスタート
 
-### 現行 21 セッション版
+### 現行 19 セッション版
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -280,7 +276,7 @@ cp .env.example .env   # .env を編集して ANTHROPIC_API_KEY を入力
 
 python s01_agent_loop/code.py        # ここから開始 — 1ループ + bash
 python s08_context_compact/code.py    # コンテキスト圧縮（複雑章）
-python s21_goal_loop/code.py          # 終点: 目標でループを閉じる
+python s19_goal_loop/code.py          # 終点: 目標でループを閉じる
 ```
 
 ### 旧 12 セッション移行版
@@ -293,7 +289,7 @@ python agents/s_full.py
 
 ### Web プラットフォーム
 
-Web プラットフォームはルート直下のコースから内容を生成する。s20 と s21 は読解、ソース、シミュレーター、アーキテクチャの各 view を提供し、専用 hero visualization だけを最小限に保つ。
+Web プラットフォームはルート直下のコースから内容を生成する。s18 と s19 は読解、ソース、シミュレーター、アーキテクチャの各 view を提供し、専用 hero visualization だけを最小限に保つ。
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -333,9 +329,9 @@ flowchart TD
         direction LR
         S4["<b>第4段階：長く動くタスク</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ タスクと依存関係を保存<br/><br/><b>s13 Background Tasks</b><br/>└─ 遅い作業をバックグラウンドへ<br/><br/><b>s14 Cron Scheduler</b><br/>└─ 時間で自動実行"]:::stage4
 
-        S5["<b>第5段階：複数 Agent の協作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ チームメイト + 配信 + プロトコル<br/><br/><b>s16 Autonomous Agents</b><br/>└─ 実行可能な仕事をボードから認領<br/><br/><b>s17 Worktree Isolation</b><br/>└─ 別ディレクトリで作業"]:::stage5
+        S5["<b>第5段階：複数 Agent の協作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ チームメイト + 配信 + プロトコル<br/>└─ 実行可能なタスクを原子的に認領<br/>└─ タスクに紐付く Worktree"]:::stage5
 
-        S6["<b>第6段階：外部能力と統合</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ スキルを必要時に展開<br/><br/><b>s18 MCP Plugin</b><br/>└─ 外部ツールを同じプールへ<br/><br/><b>s19 Integrated Harness</b><br/>└─ すべてを1つのループへ"]:::stage6
+        S6["<b>第6段階：外部能力と統合</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ スキルを必要時に展開<br/><br/><b>s16 MCP Plugin</b><br/>└─ 外部ツールを同じプールへ<br/><br/><b>s17 Integrated Harness</b><br/>└─ すべてを1つのループへ"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -343,7 +339,7 @@ flowchart TD
     %% 第3層：編成と目標の完了
     subgraph Phase3 ["第7段階：編成と目標の完了"]
         direction LR
-        S7["<b>第7段階：編成して完了する</b><br/>━━━━━━━━━━━━━<br/><b>s20 Workflow Runtime</b><br/>└─ 固定編成はスクリプトが担う<br/><br/><b>s21 Goal Loop</b><br/>└─ 信頼できる証拠で停止を決める"]:::stage1
+        S7["<b>第7段階：編成して完了する</b><br/>━━━━━━━━━━━━━<br/><b>s18 Workflow Runtime</b><br/>└─ 固定編成はスクリプトが担う<br/><br/><b>s19 Goal Loop</b><br/>└─ 独立した評価で停止を決める"]:::stage1
         S6 ==> S7
     end
 
@@ -371,13 +367,11 @@ flowchart TD
 | [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / ディスク永続化 |
 | [s13](./s13_background_tasks/) | Background Tasks | スレッド実行 / 通知キュー |
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | 永続スケジューリング / セッション限定トリガー |
-| [s15](./s15_agent_teams/) | Agent Teams | 永続チームメイト / 自動配信 / 型付きプロトコル / プランゲート |
-| [s16](./s16_autonomous_agents/) | Autonomous Agents | タスクボード走査 / 原子的認領 / 自己組織化 |
-| [s17](./s17_worktree_isolation/) | Worktree Isolation | `WorktreeRecord` / タスク-ディレクトリ紐付け |
-| [s18](./s18_mcp_plugin/) | MCP Plugin | ツール発見 / 名前空間 / ツールプール組み立て |
-| [s19](./s19_comprehensive/) | Integrated Harness | すべての仕組みを 1 つのループへ |
-| [s20](./s20_workflow_runtime/) | Workflow Runtime | スクリプト編成 / バックグラウンド実行 / ジャーナル再開 |
-| [s21](./s21_goal_loop/) | Goal Loop | 目標ゲート / 信頼できる証拠 / 自動継続 |
+| [s15](./s15_agent_teams/) | Agent Teams | 永続チームメイト / 原子的認領 / タスクに紐付く Worktree / 型付きプロトコル |
+| [s16](./s16_mcp_plugin/) | MCP Plugin | ツール発見 / 名前空間 / ツールプール組み立て |
+| [s17](./s17_integrated_harness/) | Integrated Harness | すべての仕組みを 1 つのループへ |
+| [s18](./s18_workflow_runtime/) | Workflow Runtime | スクリプト編成 / バックグラウンド実行 / ジャーナル再開 |
+| [s19](./s19_goal_loop/) | Goal Loop | 目標ゲート / conversation の評価 / 自動継続 |
 
 ## プロジェクト構成
 
@@ -391,10 +385,10 @@ learn-claude-code/
     images/                #   SVG ダイアグラム
   s02_tool_use/
   ...
-  s18_mcp_plugin/
-  s19_comprehensive/
-  s20_workflow_runtime/
-  s21_goal_loop/           # 終点セッション
+  s16_mcp_plugin/
+  s17_integrated_harness/
+  s18_workflow_runtime/
+  s19_goal_loop/           # 終点セッション
   agents/                  # 旧 12 セッションの実行可能コピー + s_full.py
   skills/                  # s07 で使用するスキルファイル
   docs/                    # 旧 12 セッション文書、移行期間中は保持
@@ -404,7 +398,7 @@ learn-claude-code/
 
 ## 次のステップ -- 理解から出荷へ
 
-21 セッションを終えれば、Harness 工学の内部構造を理解できる。その知識を活かす 2 つの方法:
+19 セッションを終えれば、Harness 工学の内部構造を理解できる。その知識を活かす 2 つの方法:
 
 ### Kode Agent CLI -- オープンソース Coding Agent CLI
 
@@ -443,7 +437,7 @@ claw agent = agent core + heartbeat + cron + IM chat + memory + soul
 learn-claude-code                   claw0
 (agent harness コア:                 (能動的な常時稼働 harness:
  ループ、ツール、計画、                ハートビート、cron、IM チャネル、
- チーム、worktree 分離)                メモリ、Soul パーソナリティ)
+ チーム、タスクに紐付く worktree)       メモリ、Soul パーソナリティ)
 ```
 
 ## ライセンス

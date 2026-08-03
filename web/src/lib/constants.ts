@@ -20,8 +20,6 @@ export const VERSION_ORDER = [
   "s17",
   "s18",
   "s19",
-  "s20",
-  "s21",
 ] as const;
 
 export const LEARNING_PATH = VERSION_ORDER;
@@ -149,60 +147,44 @@ export const VERSION_META: Record<string, {
     prevVersion: "s13",
   },
   s15: {
-    title: "Agent Teams",
-    subtitle: "Persistent Teammates and Coordination Protocols",
-    coreAddition: "Team runtime and typed protocols",
-    keyInsight: "A Lead can coordinate persistent teammates when message delivery, approval, and shutdown belong to the runtime.",
+    title: "Agent Team Runtime",
+    subtitle: "Persistent Teammates, Atomic Claims, Task-Bound Worktrees",
+    coreAddition: "Team runtime with task-bound worktrees",
+    keyInsight: "Persistent teammates can reliably discover and execute parallel work when the runtime owns messaging, atomic claims, and task-bound working directories.",
     layer: "collaboration",
     prevVersion: "s14",
   },
   s16: {
-    title: "Autonomous Agents",
-    subtitle: "Check the Board, Claim the Task",
-    coreAddition: "Autonomous task claiming",
-    keyInsight: "Idle teammates can discover ready work when claiming is atomic and respects task dependencies.",
-    layer: "collaboration",
-    prevVersion: "s15",
-  },
-  s17: {
-    title: "Worktree Isolation",
-    subtitle: "Separate Directories, No Conflicts",
-    coreAddition: "Worktree lifecycle",
-    keyInsight: "Parallel agents need isolated filesystems as much as isolated conversations.",
-    layer: "collaboration",
-    prevVersion: "s16",
-  },
-  s18: {
     title: "MCP Tools",
     subtitle: "External Tools, Standard Protocol",
     coreAddition: "MCP tool bridge",
     keyInsight: "External services can become agent tools through a standard discovery and call protocol.",
     layer: "collaboration",
-    prevVersion: "s17",
+    prevVersion: "s15",
   },
-  s19: {
+  s17: {
     title: "Integrated Harness",
     subtitle: "Many Mechanisms, One Loop",
     coreAddition: "Integrated harness",
     keyInsight: "The integrated harness is still one loop, surrounded by the systems introduced across the course.",
     layer: "collaboration",
-    prevVersion: "s18",
+    prevVersion: "s16",
   },
-  s20: {
+  s18: {
     title: "Workflow Runtime",
     subtitle: "Scripts Own Fixed Orchestration",
     coreAddition: "Resumable workflow runtime",
     keyInsight: "When orchestration has a fixed shape, code can make it parallel, deterministic, and resumable.",
     layer: "concurrency",
-    prevVersion: "s19",
+    prevVersion: "s17",
   },
-  s21: {
+  s19: {
     title: "Goal Loop",
-    subtitle: "Trusted Evidence Decides When to Stop",
+    subtitle: "Independent Evaluation Decides When to Stop",
     coreAddition: "Goal completion gate",
-    keyInsight: "A durable goal keeps the loop working until trusted evidence satisfies an explicit condition.",
+    keyInsight: "A durable goal keeps the loop working until an independent evaluator finds the completion condition satisfied in the conversation.",
     layer: "planning",
-    prevVersion: "s20",
+    prevVersion: "s18",
   },
 };
 
@@ -217,7 +199,7 @@ export const LAYERS = [
     id: "planning" as const,
     label: "Planning & Control",
     color: "#10B981",
-    versions: ["s05", "s06", "s07", "s10", "s11", "s21"],
+    versions: ["s05", "s06", "s07", "s10", "s11", "s19"],
   },
   {
     id: "memory" as const,
@@ -229,12 +211,12 @@ export const LAYERS = [
     id: "concurrency" as const,
     label: "Concurrency & Scheduling",
     color: "#F59E0B",
-    versions: ["s13", "s14", "s20"],
+    versions: ["s13", "s14", "s18"],
   },
   {
     id: "collaboration" as const,
     label: "Multi-Agent Platform",
     color: "#EF4444",
-    versions: ["s12", "s15", "s16", "s17", "s18", "s19"],
+    versions: ["s12", "s15", "s16", "s17"],
   },
 ] as const;

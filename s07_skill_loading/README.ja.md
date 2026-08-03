@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s20 → s21
+s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s18 → s19
 > *"Load when needed, don't stuff the prompt"* — tool_result で注入、system prompt には詰め込まない。
 >
 > **Harness レイヤー**: 知識 — 必要に応じて読み込み、コンテキストに詰め込まない。
