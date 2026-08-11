@@ -1,122 +1,102 @@
 {
   "version": "s15",
-  "title": "Agent Team Runtime",
-  "description": "The Lead coordinates persistent teammates while the runtime owns message delivery, atomic task claims, and task-bound worktree directories.",
+  "title": "Integrated Harness",
+  "description": "The harness combines system instructions, tools, memory, teams, background work, cron, worktrees, and MCP.",
   "steps": [
     {
       "type": "user_message",
-      "content": "Refactor authentication and update its dependent tests in parallel without mixing the edits.",
-      "annotation": "The user states the outcome and parallel-edit boundary, not an implementation-specific worktree procedure."
+      "content": "Prepare this project for release. Check the code, update the docs, and report deployment readiness.",
+      "annotation": "One ordinary request needs several earlier capabilities to work together."
+    },
+    {
+      "type": "system_event",
+      "content": "assemble_prompt: memory + task graph + skills + available tools + policy",
+      "annotation": "The runtime builds the prompt from layered sources of context."
     },
     {
       "type": "assistant_text",
-      "content": "I propose a backend teammate for authentication and a test teammate that picks up the dependent checks once they are ready. Shall I start the team?",
-      "annotation": "The Lead makes the extra-agent decision visible before spawning."
+      "content": "I suggest a docs teammate while I run the release checks and inspect deployment status. Shall I start that team?",
+      "annotation": "The Lead proposes the team before adding another persistent agent."
     },
     {
       "type": "user_message",
-      "content": "Yes, go ahead.",
-      "annotation": "The team starts only after explicit confirmation."
+      "content": "Yes. Start the docs teammate and continue.",
+      "annotation": "User confirmation opens the team boundary inherited from S13."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "load_skill",
+      "content": "{\"name\":\"code-review\"}",
+      "annotation": "Skills contribute procedural context before execution."
     },
     {
       "type": "tool_call",
       "toolName": "create_task",
-      "content": "{\"subject\":\"Refactor authentication\"}",
-      "annotation": "The shared task board remains the source of ownership and status."
+      "content": "{\"subject\":\"Update release notes\",\"description\":\"Prepare release documentation and report the result.\"}",
+      "annotation": "The shared task board gives the docs work a stable owner and lifecycle."
     },
     {
       "type": "tool_result",
       "toolName": "create_task",
-      "content": "Created task_1712345678_0042: Refactor authentication",
-      "annotation": "The runtime-generated task ID is carried into every later operation on this task."
+      "content": "Created task_1712345678_0042: Update release notes",
+      "annotation": "The task ID connects the assignment to its working directory."
     },
     {
       "type": "tool_call",
       "toolName": "create_worktree",
-      "content": "{\"name\":\"auth-refactor\",\"task_id\":\"task_1712345678_0042\"}",
-      "annotation": "The worktree directory is recorded on the task instead of managed as a separate workflow or security sandbox."
-    },
-    {
-      "type": "tool_call",
-      "toolName": "create_task",
-      "content": "{\"subject\":\"Update authentication tests\",\"blockedBy\":[\"task_1712345678_0042\"]}",
-      "annotation": "The task graph keeps dependent work from starting early."
+      "content": "{\"name\":\"release-docs\",\"task_id\":\"task_1712345678_0042\"}",
+      "annotation": "The pending docs task receives a separate checkout before it is claimed."
     },
     {
       "type": "tool_result",
-      "toolName": "create_task",
-      "content": "Created task_1712345678_0043: Update authentication tests (blockedBy: task_1712345678_0042)",
-      "annotation": "The second generated ID names the dependent task that the test teammate will later claim."
+      "toolName": "create_worktree",
+      "content": "Worktree 'release-docs' created for task_1712345678_0042",
+      "annotation": "The task now carries the checkout used by its eventual owner."
     },
     {
       "type": "tool_call",
       "toolName": "spawn_teammate",
-      "content": "{\"name\":\"backend\",\"role\":\"backend engineer\",\"prompt\":\"Claim the authentication task and propose a plan.\",\"require_plan\":true}",
-      "annotation": "The plan gate is active before the teammate thread starts, so claim and mutation cannot race ahead of approval."
+      "content": "{\"name\":\"docs\",\"role\":\"documentation engineer\",\"prompt\":\"Claim task_1712345678_0042, update the release notes in its task-bound worktree, and report the result.\"}",
+      "annotation": "Team delegation handles a parallel slice of the release."
     },
     {
       "type": "tool_call",
-      "toolName": "spawn_teammate",
-      "content": "{\"name\":\"tests\",\"role\":\"test engineer\",\"prompt\":\"Watch the board and claim the dependent test task when it becomes ready.\"}",
-      "annotation": "A second persistent teammate can wait in IDLE without another direct dispatch."
+      "toolName": "bash",
+      "content": "{\"command\":\"python -m unittest tests.test_agent_teams_runtime\",\"run_in_background\":true}",
+      "annotation": "Long-running validation goes through the background task path."
     },
     {
       "type": "system_event",
-      "content": "claim_next_task(backend) -> task_1712345678_0042; task_store_lock commits owner=backend",
-      "annotation": "The ownership check and persisted state transition share the cross-process task-store lock."
+      "content": "permission: user approved the exact test command",
+      "annotation": "Team confirmation does not authorize shell execution; the foreground turn asks separately before dispatch."
     },
     {
       "type": "tool_call",
-      "toolName": "request_plan",
-      "content": "{\"teammate\":\"backend\",\"task\":\"Inspect the claimed authentication task and submit a plan before changing files.\"}",
-      "annotation": "The Lead delivers the plan request for the current assignment; the gate was already active before the teammate thread started."
-    },
-    {
-      "type": "system_event",
-      "content": "backend submit_plan -> plan_approval_request(request_id=req_000007, task_id=task_1712345678_0042)",
-      "annotation": "The request records the task and work version that the plan is meant to authorize."
+      "toolName": "connect_mcp",
+      "content": "{\"name\":\"deploy\"}",
+      "annotation": "External capabilities are added only when needed."
     },
     {
       "type": "tool_call",
-      "toolName": "review_plan",
-      "content": "{\"request_id\":\"req_000007\",\"approve\":true,\"feedback\":\"Proceed with the scoped refactor.\"}",
-      "annotation": "Approval is correlated by request ID and cannot carry into a different assignment."
+      "toolName": "mcp__deploy__status",
+      "content": "{\"service\":\"web\"}",
+      "annotation": "Connecting discovers the tool; a separate call performs the status check."
+    },
+    {
+      "type": "tool_result",
+      "toolName": "mcp__deploy__status",
+      "content": "[deploy] web: running (v1.4.2)",
+      "annotation": "The readiness statement now comes from the MCP tool result rather than the connection event."
     },
     {
       "type": "system_event",
-      "content": "plan_approval_response(request_id=req_000007, approve=true) -> backend",
-      "annotation": "The teammate receives the typed response before mutating tools are released."
-    },
-    {
-      "type": "system_event",
-      "content": "backend tool cwd -> .worktrees/auth-refactor",
-      "annotation": "Bash, read, and write derive their directory from the claimed task binding."
-    },
-    {
-      "type": "tool_call",
-      "toolName": "complete_task",
-      "content": "{\"task_id\":\"task_1712345678_0042\"}",
-      "annotation": "Completing the first task makes its dependent test task ready."
-    },
-    {
-      "type": "system_event",
-      "content": "backend -> Lead: result(auth refactor complete) -> idle_notification",
-      "annotation": "The task directory stays selected through the completion turn, then IDLE releases the assignment."
-    },
-    {
-      "type": "system_event",
-      "content": "claim_next_task(tests) -> task_1712345678_0043; task_lock commits owner=tests",
-      "annotation": "An idle teammate discovers newly ready work without another direct assignment."
-    },
-    {
-      "type": "system_event",
-      "content": "tests -> Lead: result(test suite passed) -> idle_notification",
-      "annotation": "The runtime wakes the Lead when mailbox events arrive instead of asking the model to poll."
+      "content": "task_notification(status=completed): tests passed; teammate result and deploy status appended",
+      "annotation": "The integrated runtime folds asynchronous results back into the loop."
     },
     {
       "type": "assistant_text",
-      "content": "Authentication was refactored in its task-bound worktree and the dependent tests pass.",
-      "annotation": "The Lead combines parallel results into one user-facing outcome."
+      "content": "Release preparation is ready: checks passed, docs are updated in the teammate worktree, and deployment status is available.",
+      "annotation": "The integrated harness returns a single user-facing outcome."
     }
   ]
 }

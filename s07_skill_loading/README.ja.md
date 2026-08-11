@@ -1,17 +1,18 @@
-# s07: Skill Loading — 必要なときにだけ読み込む
+# s07: Skill Loading — 必要なときにスキルを読み込む
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s18 → s19
-> *"Load when needed, don't stuff the prompt"* — tool_result で注入、system prompt には詰め込まない。
+s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s16 → s17
+
+> system prompt にはスキルカタログを入れ、`load_skill` は完全な `SKILL.md` を返す。
 >
-> **Harness レイヤー**: 知識 — 必要に応じて読み込み、コンテキストに詰め込まない。
+> **Harness レイヤー**：知識の読み込み — 利用可能なスキルをモデルに示し、名前で内容を読み込む。
 
 ---
 
 ## 課題
 
-あるプロジェクトに React コンポーネント仕様、SQL スタイルガイド、API 設計ドキュメントがあるとする。開発中、Agent にこれらの規約を守らせたい。最も直接的な方法は、すべてを system prompt に入れることだ：
+あるプロジェクトに React コンポーネント仕様、SQL スタイルガイド、API 設計ドキュメントがあるとする。開発中に Agent へこれらの規約を守らせたい場合、最も直接的な方法は、すべてを system prompt に入れることだ：
 
 ```python
 SYSTEM = (
@@ -22,7 +23,7 @@ SYSTEM = (
 )
 ```
 
-これで LLM を呼び出すたびに 3 つの文書すべてが渡される。現在のタスクで使うのが 1 つだけでも、残りの 2 つがコンテキストを占める。
+この方法で Agent はすべての規約を読めるが、3 つの文書すべてが system prompt に固定され、現在のタスクに必要な文書だけを選べない。LLM を呼び出すたびに、3 つの文書の全文がモデルへ送られる。タスクが React コンポーネントの変更だけなら、必要なのは React コンポーネント仕様だけである。無関係な SQL スタイルガイドと API 設計ドキュメントも入力 token とコンテキストウィンドウを使うため、コード、会話、tool result に使える領域が減る。
 
 ---
 
@@ -30,24 +31,20 @@ SYSTEM = (
 
 ![Skill Overview](images/skill-overview.ja.svg)
 
-前章の最小フック構造、`todo_write`、サブ Agent を維持し、本章は新規の `load_skill` ツールに注目する。起動時にスキルカタログを SYSTEM prompt に注入し、実行時に完全な内容を読み込むツールを登録する。使ったときだけトークンを消費。
+起動時に `SkillLoader` が `skills/*/SKILL.md` を走査し、YAML frontmatter の `name` と `description` を読み取って、カタログを system prompt に追加する。完全な指示が必要になると、モデルは `load_skill(name)` を呼ぶ。返された `SKILL.md` は `tool_result` としてメッセージリストへ追加される。
 
-2 層設計：
-
-| 層 | 場所 | タイミング | コスト |
-|---|------|-----------|--------|
-| 1. カタログ | system prompt | 起動時に注入（harness が skills/ をスキャン） | ~100 トークン/スキル、毎ターン携帯 |
-| 2. 内容 | tool_result | Agent が load_skill を呼び出したとき。SKILL.md は、必要に応じて read_file/bash で追加リソースへアクセスするための手がかりになる | ~2000 トークン/スキル、オンデマンド |
-
-ディスパッチ機構は変わらず、`load_skill` は `TOOL_HANDLERS[block.name]` を通じて自動的にディスパッチされる。
+| 内容 | モデル入力での位置 | 追加時点 |
+|------|--------------------|----------|
+| スキル名と説明 | system prompt | 起動時 |
+| 完全な `SKILL.md` | `tool_result` | `load_skill` 呼び出し時 |
 
 ---
 
 ## 仕組み
 
-**skills/ ディレクトリ**、スキルごとに 1 つのサブディレクトリ、それぞれに `SKILL.md` ファイルを含む：
+各スキルは `SKILL.md` を持つディレクトリである：
 
-```
+```text
 skills/
   agent-builder/SKILL.md
   code-review/SKILL.md
@@ -55,64 +52,58 @@ skills/
   pdf/SKILL.md
 ```
 
-**第 1 層：起動時にカタログを注入**：harness は起動時に `_scan_skills()` を呼び出して skills/ ディレクトリをスキャンし、各 SKILL.md の YAML frontmatter（`name`、`description`）を解析して `SKILL_REGISTRY` 辞書に格納する。`list_skills()` はレジストリからカタログを生成し、SYSTEM prompt に注入する。Agent は毎ターン「どのスキルが利用可能か」を確認できる。追加の API 呼び出しは不要：
+### スキルを走査する
 
 ```python
-SKILL_REGISTRY: dict[str, dict] = {}
+class SkillLoader:
+    def scan(self):
+        self.skills.clear()
+        for manifest in sorted(self.skills_dir.glob("*/SKILL.md")):
+            content = manifest.read_text()
+            metadata, body = self.parse_frontmatter(content)
+            name = str(metadata.get("name") or manifest.parent.name).strip()
+            description = metadata.get("description") or body.splitlines()[0]
+            description = " ".join(str(description).lstrip("# ").split())
+            self.skills[name] = {
+                "name": name,
+                "description": description,
+                "content": content,
+            }
+```
 
-def _scan_skills():
-    if not SKILLS_DIR.exists():
-        return
-    for d in sorted(SKILLS_DIR.iterdir()):
-        if not d.is_dir():
-            continue
-        manifest = d / "SKILL.md"
-        if manifest.exists():
-            raw = manifest.read_text()
-            meta, body = _parse_frontmatter(raw)
-            name = meta.get("name", d.name)
-            desc = meta.get("description", raw.split("\n")[0].lstrip("#").strip())
-            SKILL_REGISTRY[name] = {"name": name, "description": desc, "content": raw}
+`catalog()` は名前と説明だけを返す：
 
-_scan_skills()  # runs once at startup
+```text
+- code-review: Perform thorough code reviews...
+- pdf: Process PDF files...
+```
 
-def list_skills() -> str:
-    return "\n".join(f"- **{s['name']}**: {s['description']}" for s in SKILL_REGISTRY.values())
+### system prompt を組み立てる
 
-def build_system() -> str:
-    catalog = list_skills()
+```python
+def build_system_prompt() -> str:
     return (
-        f"You are a coding agent at {WORKDIR}. "
-        f"Skills available:\n{catalog}\n"
-        "Use load_skill to get full details when needed."
+        f"You are a coding agent at {WORKDIR}. Use tools to solve tasks. "
+        "Act, don't explain.\n\n"
+        f"Skills available:\n{SKILL_LOADER.catalog()}\n\n"
+        "Use load_skill to read the full instructions when a skill applies."
     )
-
-SYSTEM = build_system()
 ```
 
-**第 2 層：load_skill**：Agent が「SQL スタイルガイドが必要」と判断し、`load_skill("sql-style")` を呼び出す。レジストリを通じて検索し、ファイルパスを経由しないため、パストラバーサルのリスクがない。SKILL.md の内容は `tool_result` を通じて注入され、既存の file および bash ツールを通じて、参照される `references/`、`scripts/`、`assets/` へのその後のアクセスも含められる。
+固定された Agent の指示と、起動時に見つかったスキルカタログをこの関数で組み合わせる。
+
+### 完全な内容を読み込む
 
 ```python
-def load_skill(name: str) -> str:
-    skill = SKILL_REGISTRY.get(name)
-    if not skill:
-        return f"Skill not found: {name}"
-    return skill["content"]
+def load(self, name: str) -> str:
+    skill = self.skills.get(name)
+    if skill:
+        return skill["content"]
+    available = ", ".join(self.skills) or "none"
+    return f"Error: Unknown skill '{name}'. Available: {available}"
 ```
 
-重要な違い：スキル内容は system prompt の一部ではなく、ツール結果として現在の messages に入る。後続の呼び出しでは履歴とともに携帯され、コンテキスト圧縮、切り捨て、またはセッション終了まで保持される。これは s08 の compact と自然に接続する：オンデマンド読み込みで「運ぶべきでないものは運ばない」を解決し、compact が「捨てるべきものをどう捨てるか」を解決する。
-
----
-
-## s06 からの変更点
-
-| コンポーネント | 変更前 (s06) | 変更後 (s07) |
-|---------------|-------------|-------------|
-| ツール数 | 7 (bash, read, write, edit, glob, todo_write, task) | 8 (+load_skill) |
-| 知識読み込み | なし | 2 層：起動時カタログ注入 SYSTEM + 実行時 load_skill。SKILL.md がその後のリソースアクセスを案内できる |
-| SYSTEM プロンプト | 静的文字列 | 起動時に skills/ をスキャンしてカタログ注入 |
-| スキルレジストリ | なし | SKILL_REGISTRY（起動時に充填、パストラバーサル防止） |
-| ループ | 変更なし | 変更なし（スキルツールは自動ディスパッチ） |
+`name` は起動時に作られたレジストリの検索に使われ、ファイルパスとして解釈されない。ツールが返ると、既存の Agent Loop が内容を新しい `tool_result` メッセージとして追加する。
 
 ---
 
@@ -123,21 +114,21 @@ cd learn-claude-code
 python s07_skill_loading/code.py
 ```
 
-以下のプロンプトを試してみよう：
+以下の prompt を試す：
 
 1. `What skills are available?`
 2. `Load the code-review skill and follow its instructions`
-3. `I need to do a code review -- load the relevant skill first`
+3. `Review README.md and load the relevant skill first`
 
-観察のポイント：Agent は SYSTEM 内のカタログから利用可能なスキルを知っているか？ 完全な手順が必要なときに `[HOOK] load_skill` が表示されるか？ 読み込んだスキルの説明を使って回答しているか？
+system prompt にカタログだけが入り、`load_skill` の呼び出し後に完全な `SKILL.md` が現れることを確認する。
 
 ---
 
 ## 次へ
 
-オンデマンド読み込みで「運ぶべきでないものは運ばない」問題は解決した。しかし別の問題が待っている：Agent が 30 分連続で作業すると、messages リストが中間プロセスで埋め尽くされる。古い tool_result、期限切れのファイル内容、コンテキストを占領しているが価値を生まない。
+ツール呼び出しが増えると、`messages[]` には以前のファイル内容やツール結果が残る。
 
-→ s08 Context Compact：4 層圧縮戦略。安価な層を先に実行、高価な層を後に実行。
+s08 Context Compact → 過去のメッセージを短くし、後続の呼び出しで使えるコンテキストを確保する。
 
 
-<!-- translation-sync: zh@v2, en@v2, ja@v2 -->
+<!-- translation-sync: zh@v6, en@v6, ja@v6 -->

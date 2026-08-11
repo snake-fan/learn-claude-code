@@ -157,7 +157,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-Each lesson isolates one harness mechanism around this loop. s17 reconnects the cumulative runtime; s18 and s19 then study workflow orchestration and goal closure as focused examples. The loop belongs to the agent. The mechanisms belong to the harness.
+Each lesson isolates one harness mechanism around this loop. s15 reconnects the cumulative runtime; s16 and s17 then study workflow orchestration and goal closure as focused examples. The loop belongs to the agent. The mechanisms belong to the harness.
 
 The loop is constant. Tools, knowledge, and permissions change. Agent = Model (LLM) + a generalized operational environment (Harness).
 
@@ -167,16 +167,16 @@ The loop is constant. Tools, knowledge, and permissions change. Agent = Model (L
 
 This repository currently contains two tutorial tracks:
 
-- **Current track: root-level `s01-s19`**
-  The root-level `s01_*` ... `s19_*` folders are the canonical version. Each chapter contains an English default README, Chinese/Japanese translations, runnable `code.py`, and diagrams where needed.
+- **Current track: root-level `s01-s17`**
+  The root-level `s01_*` ... `s17_*` folders are the canonical version. Each chapter contains an English default README, Chinese/Japanese translations, runnable `code.py`, and diagrams where needed.
 - **Legacy transition track: `docs/` and `agents/`**
   These preserve the older 12-lesson version for existing readers and old links during migration.
 
-If you are starting now, read the root-level `s01_agent_loop/` through `s19_goal_loop/` chapters. The legacy and current chapter numbers do not always match, so avoid mixing chapter numbers across tracks.
+If you are starting now, read the root-level `s01_agent_loop/` through `s17_goal_loop/` chapters. The legacy and current chapter numbers do not always match, so avoid mixing chapter numbers across tracks.
 
 ### Legacy-to-Current Mapping
 
-| Legacy 12-lesson track | Current 19-lesson track | Topic |
+| Legacy 12-lesson track | Current 17-lesson track | Topic |
 |---|---|---|
 | old s01 | new s01 | Agent Loop |
 | old s02 | new s02 | Tool Use |
@@ -184,23 +184,23 @@ If you are starting now, read the root-level `s01_agent_loop/` through `s19_goal
 | old s04 | new s06 | Subagent |
 | old s05 | new s07 | Skill Loading |
 | old s06 | new s08 | Context Compact |
-| old s07 | new s12 | Task System |
-| old s08 | new s13 | Background Tasks |
-| old s09 | new s15 | Agent Teams |
-| old s10 | new s15 | Team Protocols |
-| old s11 | new s15 | Autonomous task claiming |
-| old s12 | new s15 | Task-bound worktrees |
-| new only | s03, s04, s09, s10, s11, s14, s16, s17, s18, s19 | Permission, Hooks, Memory, Context Assembly, Error Recovery, Cron, MCP, Integrated Harness, Workflow Runtime, Goal Loop |
+| old s07 | new s10 | Task System |
+| old s08 | new s11 | Background Tasks |
+| old s09 | new s13 | Agent Teams |
+| old s10 | new s13 | Team Protocols |
+| old s11 | new s13 | Autonomous task claiming |
+| old s12 | new s13 | Task-bound worktrees |
+| new only | s03, s04, s09, s12, s14, s15, s16, s17 | Permission, Hooks, Memory, Cron, MCP, Integrated Harness, Workflow Runtime, Goal Loop |
 
 ---
 
 ## Course Boundary
 
-This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s17 reconnects the cumulative runtime in a complete agent loop. s18 extends that loop with workflow orchestration. s19 uses a smaller tool pool to focus on goal-controlled continuation; it is a mechanism example, not another cumulative runtime.
+This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s15 reconnects the cumulative runtime in a complete agent loop. s16 extends that loop with workflow orchestration. s17 uses a smaller tool pool to focus on goal-controlled continuation; it is a mechanism example, not another cumulative runtime.
 
 ---
 
-## 19 Progressive Lessons
+## 17 Progressive Lessons
 
 **Each lesson adds one harness mechanism. Each mechanism has a motto.**
 
@@ -218,35 +218,31 @@ This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism
 >
 > **s07** &nbsp; *"Load knowledge on demand, not upfront"* &mdash; list skills first, expand them only when needed
 >
-> **s08** &nbsp; *"Context always fills up -- have a way to make room"* &mdash; multi-layer compaction strategies buy you infinite sessions
+> **s08** &nbsp; *"Context always fills up -- have a way to make room"* &mdash; four compaction steps reduce tool results first, then summarize history when it remains over the limit
 >
 > **s09** &nbsp; *"Remember what matters, forget what doesn't"* &mdash; three subsystems: selection, extraction, consolidation
 >
-> **s10** &nbsp; *"Prompts are assembled at runtime, not hardcoded"* &mdash; section-based concatenation, loaded on demand
+> **s10** &nbsp; *"Big goals break into small tasks, ordered, persisted to disk"* &mdash; a file-backed task graph that lays the groundwork for multi-agent coordination
 >
-> **s11** &nbsp; *"Errors aren't the end, they're the start of a retry"* &mdash; retry, make room, or take another path when things fail
+> **s11** &nbsp; *"Slow ops go background, agent keeps thinking"* &mdash; background threads run commands; notifications inject on completion
 >
-> **s12** &nbsp; *"Big goals break into small tasks, ordered, persisted to disk"* &mdash; a file-backed task graph that lays the groundwork for multi-agent coordination
+> **s12** &nbsp; *"Fire on schedule, no human kick needed"* &mdash; trigger tasks automatically by time
 >
-> **s13** &nbsp; *"Slow ops go background, agent keeps thinking"* &mdash; background threads run commands; notifications inject on completion
+> **s13** &nbsp; *"Too big for one agent -- let teammates divide the work"* &mdash; persistent teammates coordinate, claim ready tasks, and use task-bound working directories
 >
-> **s14** &nbsp; *"Fire on schedule, no human kick needed"* &mdash; trigger tasks automatically by time
+> **s14** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
 >
-> **s15** &nbsp; *"Too big for one agent -- let teammates divide the work"* &mdash; persistent teammates coordinate, claim ready tasks, and use task-bound working directories
+> **s15** &nbsp; *"Many mechanisms, one loop"* &mdash; the mechanisms used by the integrated example share one harness
 >
-> **s16** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
+> **s16** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; saved workflows with resumable journals
 >
-> **s17** &nbsp; *"Many mechanisms, one loop"* &mdash; the mechanisms used by the integrated example share one harness
->
-> **s18** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
->
-> **s19** &nbsp; *"A goal decides when the loop may stop"* &mdash; an independent evaluator reviews each proposed stop; impossible, failed, or over-limit goals return control to the user
+> **s17** &nbsp; *"A goal decides when the loop may stop"* &mdash; an independent evaluator reviews each proposed stop; impossible, failed, or over-limit goals return control to the user
 
 ---
 
 ## Learning Path
 
-Main line: act → handle complex work → remember and recover → run long tasks → collaborate → extend and assemble → orchestrate and close goals.
+Main line: act → handle complex work → remember across sessions → run long tasks → collaborate → extend and assemble → orchestrate and close goals.
 
 ```mermaid
 flowchart TD
@@ -268,7 +264,7 @@ flowchart TD
 
         S2["<b>2. Handle complex work</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ plan first, then execute<br/><br/><b>s06 Subagent</b><br/>└─ fresh messages, final text back<br/><br/><b>s08 Context Compact</b><br/>└─ make room in long context"]:::stage2
 
-        S3["<b>3. Remember and recover</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ persist and recall across sessions<br/><br/><b>s10 Context Assembly</b><br/>└─ build model input from runtime state<br/><br/><b>s11 Error Recovery</b><br/>└─ retry or change path"]:::stage3
+        S3["<b>3. Remember across sessions</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ persist and recall reusable knowledge"]:::stage3
 
         S1 ==> S2 ==> S3
     end
@@ -276,11 +272,11 @@ flowchart TD
     %% Layer 2: stages 4-6
     subgraph Phase2 ["🚀 Stages 4-6: Advanced capabilities (long-running, collaboration, integration)"]
         direction LR
-        S4["<b>4. Run long tasks</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ persist tasks and deps<br/><br/><b>s13 Background Tasks</b><br/>└─ send slow work background<br/><br/><b>s14 Cron Scheduler</b><br/>└─ trigger by time"]:::stage4
+        S4["<b>4. Run long tasks</b><br/>━━━━━━━━━━━━━<br/><b>s10 Task System</b><br/>└─ persist tasks and deps<br/><br/><b>s11 Background Tasks</b><br/>└─ send slow work background<br/><br/><b>s12 Cron Scheduler</b><br/>└─ trigger by time"]:::stage4
 
-        S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ teammates + delivery + protocols<br/>└─ atomic task claims<br/>└─ task-bound worktrees"]:::stage5
+        S5["<b>5. Coordinate many Agents</b><br/>━━━━━━━━━━━━━<br/><b>s13 Agent Teams</b><br/>└─ teammates + delivery + protocols<br/>└─ atomic task claims<br/>└─ task-bound worktrees"]:::stage5
 
-        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s16 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s17 Integrated Harness</b><br/>└─ all mechanisms, one loop"]:::stage6
+        S6["<b>6. Extend and assemble</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ expand skills on demand<br/><br/><b>s14 MCP Plugin</b><br/>└─ external tools, one pool<br/><br/><b>s15 Integrated Harness</b><br/>└─ course mechanisms, one loop"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -288,7 +284,7 @@ flowchart TD
     %% Layer 3: orchestration and goal closure
     subgraph Phase3 ["🎯 Stage 7: Orchestration and goal closure"]
         direction LR
-        S7["<b>7. Orchestrate and finish</b><br/>━━━━━━━━━━━━━<br/><b>s18 Workflow Runtime</b><br/>└─ scripts own fixed orchestration<br/><br/><b>s19 Goal Loop</b><br/>└─ independent evaluation decides when to stop"]:::stage1
+        S7["<b>7. Orchestrate and finish</b><br/>━━━━━━━━━━━━━<br/><b>s16 Workflow Runtime</b><br/>└─ scripts own fixed orchestration<br/><br/><b>s17 Goal Loop</b><br/>└─ independent evaluation decides when to stop"]:::stage1
         S6 ==> S7
     end
 
@@ -310,19 +306,17 @@ flowchart TD
 | [s04](./s04_hooks/) | Hook System | `PreToolUse` / `PostToolUse` / extension points |
 | [s05](./s05_todo_write/) | TodoWrite | `TodoItem` / plan-then-execute |
 | [s06](./s06_subagent/) | Subagent | `fresh messages[]` / context isolation |
-| [s07](./s07_skill_loading/) | Skill Loading | `SkillManifest` / on-demand injection |
+| [s07](./s07_skill_loading/) | Skill Loading | `SkillLoader` / catalog / on-demand injection |
 | [s08](./s08_context_compact/) | Context Compact | tool_result_budget / snip_compact / micro_compact / compact_history |
 | [s09](./s09_memory/) | Memory System | selection / extraction / consolidation |
-| [s10](./s10_system_prompt/) | Context Assembly | runtime state / stable sections / model input |
-| [s11](./s11_error_recovery/) | Error Recovery | token escalation / fallback model / retry strategies |
-| [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / disk persistence |
-| [s13](./s13_background_tasks/) | Background Tasks | threaded execution / notification queue |
-| [s14](./s14_cron_scheduler/) | Cron Scheduler | durable scheduling / session-scoped triggers |
-| [s15](./s15_agent_teams/) | Agent Teams | persistent teammates / atomic task claims / task-bound worktrees / typed protocols |
-| [s16](./s16_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
-| [s17](./s17_integrated_harness/) | Integrated Harness | tools, runtime context, tasks, teams, scheduling, and MCP around one loop |
-| [s18](./s18_workflow_runtime/) | Workflow Runtime | script orchestration / lifecycle events / journal resume |
-| [s19](./s19_goal_loop/) | Goal Loop | goal gate / conversation evaluation / automatic continuation |
+| [s10](./s10_task_system/) | Task System | `TaskRecord` / `blockedBy` / disk persistence |
+| [s11](./s11_background_tasks/) | Background Tasks | threaded execution / notification queue |
+| [s12](./s12_cron_scheduler/) | Cron Scheduler | durable scheduling / session-scoped triggers |
+| [s13](./s13_agent_teams/) | Agent Teams | persistent teammates / atomic task claims / task-bound worktrees / typed protocols |
+| [s14](./s14_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
+| [s15](./s15_integrated_harness/) | Integrated Harness | tools, runtime context, tasks, teams, scheduling, and MCP around one loop |
+| [s16](./s16_workflow_runtime/) | Workflow Runtime | script orchestration / lifecycle events / journal resume |
+| [s17](./s17_goal_loop/) | Goal Loop | goal gate / conversation evaluation / automatic continuation |
 
 ---
 
@@ -341,13 +335,13 @@ s08_context_compact/
 
 Read the `README.md` for the core idea and work through the code. Complex chapters have `<details>` folds for deep dives -- open them when you want to go deeper. Simple chapters have 0-1 diagrams, complex chapters have more.
 
-Read from s01 through s19 in order. Each chapter assumes you've read the previous ones and ends with a hook into the next.
+Read from s01 through s17 in order. Some mechanisms build directly on the previous runtime; independent mechanism chapters state which earlier kernel they use.
 
 ---
 
 ## Quick Start
 
-### Current 19-Lesson Track
+### Current 17-Lesson Track
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -357,7 +351,7 @@ cp .env.example .env   # configure ANTHROPIC_API_KEY
 
 python s01_agent_loop/code.py        # Start here -- one loop + bash
 python s08_context_compact/code.py   # Context compaction (complex)
-python s19_goal_loop/code.py         # Endpoint: close the loop with a durable goal
+python s17_goal_loop/code.py         # Endpoint: continue until a checkable goal is met
 ```
 
 ### Legacy 12-Lesson Track
@@ -370,7 +364,7 @@ python agents/s_full.py
 
 ### Web Platform
 
-The web app extracts the root-level course. Lessons s18 and s19 include reading, source, simulator, and architecture views; only their dedicated hero visualizations remain intentionally minimal.
+The web app extracts the root-level course. Lessons s16 and s17 include reading, source, simulator, and architecture views; only their dedicated hero visualizations remain intentionally minimal.
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -390,10 +384,10 @@ learn-claude-code/
     images/                #   SVG diagrams
   s02_tool_use/
   ...
-  s16_mcp_plugin/
-  s17_integrated_harness/
-  s18_workflow_runtime/
-  s19_goal_loop/           # endpoint chapter
+  s14_mcp_plugin/
+  s15_integrated_harness/
+  s16_workflow_runtime/
+  s17_goal_loop/           # endpoint chapter
   agents/                  # legacy 12 runnable copies + s_full.py
   skills/                  # skill files used by s07
   docs/                    # legacy 12-lesson docs, kept during transition
@@ -405,7 +399,7 @@ learn-claude-code/
 
 ## What's Next
 
-After 19 lessons, you understand harness engineering from the inside out. Two paths to turn that knowledge into product:
+After 17 lessons, you understand harness engineering from the inside out. Two paths to turn that knowledge into product:
 
 ### Kode Agent CLI -- Open-Source Coding Agent CLI
 

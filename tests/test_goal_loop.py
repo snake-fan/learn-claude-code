@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = REPO_ROOT / "s19_goal_loop" / "code.py"
-MODULE_NAME = "s19_goal_loop_under_test"
+MODULE_PATH = REPO_ROOT / "s17_goal_loop" / "code.py"
+MODULE_NAME = "s17_goal_loop_under_test"
 SPEC = importlib.util.spec_from_file_location(MODULE_NAME, MODULE_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"Unable to load {MODULE_PATH}")
@@ -465,3 +465,57 @@ def test_transcript_trimming_keeps_complete_recent_messages() -> None:
 
     assert "recent result" in rendered
     assert "old-" not in rendered
+
+
+def test_transcript_trims_the_middle_of_one_oversized_message() -> None:
+    rendered = goal_loop.transcript_text(
+        [{"role": "user", "content": "START" + "x" * 100 + "END"}],
+        max_characters=40,
+    )
+
+    assert len(rendered) == 40
+    assert rendered.startswith("USER:\nSTART")
+    assert rendered.endswith("END")
+    assert "middle omitted" in rendered
+
+
+def test_goal_loop_keeps_the_s04_base_tools_and_permission_hook(
+    tmp_path: Path,
+) -> None:
+    controller = goal_loop.GoalController(RecordingEvaluator())
+    session = goal_loop.AgentSession(
+        client=FakeClient([]),
+        model="worker-model",
+        goal=controller,
+        workdir=tmp_path,
+    )
+
+    assert {tool["name"] for tool in goal_loop.TOOLS} == {
+        "bash", "read_file", "write_file", "edit_file", "glob"
+    }
+    block = SimpleNamespace(
+        name="write_file",
+        input={"path": "../outside.txt", "content": "blocked"},
+    )
+    assert "outside" in session.trigger_hooks("PreToolUse", block)
+    assert not (tmp_path.parent / "outside.txt").exists()
+
+
+def test_goal_loop_file_tools_use_the_current_repository(tmp_path: Path) -> None:
+    controller = goal_loop.GoalController(RecordingEvaluator())
+    session = goal_loop.AgentSession(
+        client=FakeClient([]),
+        model="worker-model",
+        goal=controller,
+        workdir=tmp_path,
+    )
+
+    assert "Wrote" in session._run_tool(
+        "write_file", {"path": "src/value.txt", "content": "old"}
+    )
+    assert "Edited" in session._run_tool(
+        "edit_file",
+        {"path": "src/value.txt", "old_text": "old", "new_text": "new"},
+    )
+    assert session._run_tool("glob", {"pattern": "src/*.txt"}) == "src/value.txt"
+    assert (tmp_path / "src" / "value.txt").read_text() == "new"

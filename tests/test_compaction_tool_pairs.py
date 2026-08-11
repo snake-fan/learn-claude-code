@@ -10,8 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "s08": REPO_ROOT / "s08_context_compact" / "code.py",
-    "s09": REPO_ROOT / "s09_memory" / "code.py",
-    "s17": REPO_ROOT / "s17_integrated_harness" / "code.py",
+    "s15": REPO_ROOT / "s15_integrated_harness" / "code.py",
 }
 
 
@@ -107,6 +106,11 @@ def assert_no_orphan_tool_results(testcase, messages):
         testcase.assertTrue(message_has_tool_use(messages[idx - 1]), messages)
 
 
+def compaction_api(module):
+    """Return the chapter's compaction implementation."""
+    return getattr(module, "COMPACTOR", module)
+
+
 class CompactionToolPairTests(unittest.TestCase):
     def test_snip_compact_keeps_head_tool_pair(self):
         messages = [
@@ -125,10 +129,9 @@ class CompactionToolPairTests(unittest.TestCase):
         for name, path in MODULES.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 module = load_module(f"{name}_head_under_test", path, Path(tmp))
-                if name == "s09":
-                    compacted = module.snip_compact(list(messages), mx=6)
-                else:
-                    compacted = module.snip_compact(list(messages), max_messages=6)
+                compacted = compaction_api(module).snip_compact(
+                    list(messages), max_messages=6
+                )
                 self.assertEqual(compacted[2], messages[2])
                 self.assertEqual(compacted[3], messages[3])
                 assert_no_orphan_tool_results(self, compacted)
@@ -150,10 +153,9 @@ class CompactionToolPairTests(unittest.TestCase):
         for name, path in MODULES.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 module = load_module(f"{name}_under_test", path, Path(tmp))
-                if name == "s09":
-                    compacted = module.snip_compact(list(messages), mx=6)
-                else:
-                    compacted = module.snip_compact(list(messages), max_messages=6)
+                compacted = compaction_api(module).snip_compact(
+                    list(messages), max_messages=6
+                )
                 assert_no_orphan_tool_results(self, compacted)
 
     def test_reactive_compact_keeps_tail_tool_pair(self):
@@ -172,9 +174,10 @@ class CompactionToolPairTests(unittest.TestCase):
         for name, path in MODULES.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 module = load_module(f"{name}_reactive_under_test", path, Path(tmp))
-                module.write_transcript = lambda _messages: Path("transcript.jsonl")
-                module.summarize_history = lambda _messages: "summary"
-                compacted = module.reactive_compact(list(messages), "continue")
+                api = compaction_api(module)
+                api.write_transcript = lambda _messages: Path("transcript.jsonl")
+                api.summarize_history = lambda _messages: "summary"
+                compacted = api.reactive_compact(list(messages), "continue")
                 self.assertEqual(compacted[1], messages[3])
                 assert_no_orphan_tool_results(self, compacted)
 
@@ -194,15 +197,16 @@ class CompactionToolPairTests(unittest.TestCase):
         for name, path in MODULES.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 module = load_module(f"{name}_reactive_oldhist_under_test", path, Path(tmp))
-                module.write_transcript = lambda _messages: Path("transcript.jsonl")
+                api = compaction_api(module)
+                api.write_transcript = lambda _messages: Path("transcript.jsonl")
                 captured = {}
 
                 def fake_summarize(passed, _store=captured):
                     _store["messages"] = list(passed)
                     return "summary"
 
-                module.summarize_history = fake_summarize
-                compacted = module.reactive_compact(list(messages), "continue")
+                api.summarize_history = fake_summarize
+                compacted = api.reactive_compact(list(messages), "continue")
                 # The summary must cover only the old history, not the kept tail.
                 self.assertEqual(captured["messages"], messages[:4])
                 # The recent tail is appended verbatim after the summary message.
@@ -229,24 +233,25 @@ class CompactionToolPairTests(unittest.TestCase):
         for name, path in MODULES.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 module = load_module(f"{name}_reactive_pairscope_under_test", path, Path(tmp))
-                module.write_transcript = lambda _messages: Path("transcript.jsonl")
+                api = compaction_api(module)
+                api.write_transcript = lambda _messages: Path("transcript.jsonl")
                 captured = {}
 
                 def fake_summarize(passed, _store=captured):
                     _store["messages"] = list(passed)
                     return "summary"
 
-                module.summarize_history = fake_summarize
-                compacted = module.reactive_compact(list(messages), "continue")
+                api.summarize_history = fake_summarize
+                compacted = api.reactive_compact(list(messages), "continue")
                 # tail_start starts at 4, decrements to 3 to keep the pair intact.
                 self.assertEqual(captured["messages"], messages[:3])
                 self.assertEqual(compacted[1], messages[3])
                 self.assertEqual(compacted[1:], messages[3:])
                 assert_no_orphan_tool_results(self, compacted)
 
-    def test_s17_has_tool_use_still_accepts_content_blocks(self):
+    def test_s15_has_tool_use_still_accepts_content_blocks(self):
         with tempfile.TemporaryDirectory() as tmp:
-            module = load_module("s17_has_tool_use_under_test", MODULES["s17"], Path(tmp))
+            module = load_module("s15_has_tool_use_under_test", MODULES["s15"], Path(tmp))
             self.assertTrue(module.has_tool_use([types.SimpleNamespace(type="tool_use")]))
             self.assertFalse(module.has_tool_use([types.SimpleNamespace(type="text")]))
 

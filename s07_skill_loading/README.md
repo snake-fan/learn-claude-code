@@ -1,17 +1,18 @@
-# s07: Skill Loading — Load Only When Needed
+# s07: Skill Loading — Load Skills When Needed
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s18 → s19
-> *"Load when needed, don't stuff the prompt"* — Inject via tool_result, not system prompt.
+s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_compact/) → s09 → ... → s16 → s17
+
+> The system prompt contains the skill catalog; `load_skill` returns the full `SKILL.md`.
 >
-> **Harness Layer**: Knowledge — load on demand, don't fill the context.
+> **Harness Layer**: Knowledge loading — show the model which skills exist, then load one by name.
 
 ---
 
 ## The Problem
 
-Suppose a project has a React component specification, a SQL style guide, and an API design document. We want the Agent to follow these rules during development. The most direct approach is to put all of them into the system prompt:
+Suppose a project has a React component specification, a SQL style guide, and an API design document. We want the Agent to follow these rules during development, so the most direct approach is to put all of them into the system prompt:
 
 ```python
 SYSTEM = (
@@ -22,7 +23,7 @@ SYSTEM = (
 )
 ```
 
-Every LLM call now carries all three documents. Even when a task uses only one of them, the other two still occupy context.
+This approach lets the Agent read every specification, but it fixes all three documents in the system prompt instead of selecting only the one needed for the current task. Every LLM call sends the full text of all three documents to the model. When the task only changes React components, only the React specification is relevant; the SQL style guide and API design document still consume input tokens and context-window space that could hold code, conversation, and tool results.
 
 ---
 
@@ -30,24 +31,20 @@ Every LLM call now carries all three documents. Even when a task uses only one o
 
 ![Skill Overview](images/skill-overview.en.svg)
 
-The minimal hook structure, `todo_write`, and sub-Agent from the previous chapter are preserved. This chapter focuses on the new `load_skill` tool. At startup, inject the skill catalog into the SYSTEM prompt; at runtime, register one more tool to load full content, spending tokens only when used.
+At startup, `SkillLoader` scans `skills/*/SKILL.md`, reads `name` and `description` from YAML frontmatter, and adds that catalog to the system prompt. When the model needs the full instructions, it calls `load_skill(name)`; the returned `SKILL.md` is appended to the message list as a `tool_result`.
 
-Two-level design:
-
-| Level | Location | Timing | Cost |
-|-------|----------|--------|------|
-| 1. Catalog | system prompt | Injected at startup (harness scans skills/) | ~100 tokens/skill, carried every turn |
-| 2. Content | tool_result | When Agent calls load_skill; SKILL.md can guide later read_file/bash access to extra resources | ~2000 tokens/skill, on demand |
-
-The dispatch mechanism is unchanged, `load_skill` auto-dispatches via `TOOL_HANDLERS[block.name]`.
+| Content | Model input | Added |
+|---------|-------------|-------|
+| Skill name and description | system prompt | At startup |
+| Full `SKILL.md` | `tool_result` | When `load_skill` is called |
 
 ---
 
 ## How It Works
 
-**skills/ directory**, one subdirectory per skill, each containing a `SKILL.md` file:
+Each skill is a directory containing `SKILL.md`:
 
-```
+```text
 skills/
   agent-builder/SKILL.md
   code-review/SKILL.md
@@ -55,64 +52,58 @@ skills/
   pdf/SKILL.md
 ```
 
-**Level 1: Inject catalog at startup**: the harness calls `_scan_skills()` at startup to scan the skills/ directory, parsing each SKILL.md's YAML frontmatter (`name`, `description`) into a `SKILL_REGISTRY` dictionary. `list_skills()` generates the catalog from the registry, injected into the SYSTEM prompt. The Agent sees "which skills I have available" every turn, with no extra API calls:
+### Scan Skills
 
 ```python
-SKILL_REGISTRY: dict[str, dict] = {}
+class SkillLoader:
+    def scan(self):
+        self.skills.clear()
+        for manifest in sorted(self.skills_dir.glob("*/SKILL.md")):
+            content = manifest.read_text()
+            metadata, body = self.parse_frontmatter(content)
+            name = str(metadata.get("name") or manifest.parent.name).strip()
+            description = metadata.get("description") or body.splitlines()[0]
+            description = " ".join(str(description).lstrip("# ").split())
+            self.skills[name] = {
+                "name": name,
+                "description": description,
+                "content": content,
+            }
+```
 
-def _scan_skills():
-    if not SKILLS_DIR.exists():
-        return
-    for d in sorted(SKILLS_DIR.iterdir()):
-        if not d.is_dir():
-            continue
-        manifest = d / "SKILL.md"
-        if manifest.exists():
-            raw = manifest.read_text()
-            meta, body = _parse_frontmatter(raw)
-            name = meta.get("name", d.name)
-            desc = meta.get("description", raw.split("\n")[0].lstrip("#").strip())
-            SKILL_REGISTRY[name] = {"name": name, "description": desc, "content": raw}
+`catalog()` returns only names and descriptions:
 
-_scan_skills()  # runs once at startup
+```text
+- code-review: Perform thorough code reviews...
+- pdf: Process PDF files...
+```
 
-def list_skills() -> str:
-    return "\n".join(f"- **{s['name']}**: {s['description']}" for s in SKILL_REGISTRY.values())
+### Build the System Prompt
 
-def build_system() -> str:
-    catalog = list_skills()
+```python
+def build_system_prompt() -> str:
     return (
-        f"You are a coding agent at {WORKDIR}. "
-        f"Skills available:\n{catalog}\n"
-        "Use load_skill to get full details when needed."
+        f"You are a coding agent at {WORKDIR}. Use tools to solve tasks. "
+        "Act, don't explain.\n\n"
+        f"Skills available:\n{SKILL_LOADER.catalog()}\n\n"
+        "Use load_skill to read the full instructions when a skill applies."
     )
-
-SYSTEM = build_system()
 ```
 
-**Level 2: load_skill**: the Agent decides "I need the SQL style guide" and calls `load_skill("sql-style")`. Lookup goes through the registry, not file paths, eliminating path traversal risk. The SKILL.md content is injected via `tool_result`, and can include later access to referenced `references/`, `scripts/`, or `assets/` through the existing file and bash tools.
+This function combines the fixed Agent instructions with the catalog found at startup.
+
+### Load Full Content
 
 ```python
-def load_skill(name: str) -> str:
-    skill = SKILL_REGISTRY.get(name)
-    if not skill:
-        return f"Skill not found: {name}"
-    return skill["content"]
+def load(self, name: str) -> str:
+    skill = self.skills.get(name)
+    if skill:
+        return skill["content"]
+    available = ", ".join(self.skills) or "none"
+    return f"Error: Unknown skill '{name}'. Available: {available}"
 ```
 
-The key distinction: skill content is not part of the system prompt. It enters the current messages as a tool result. Subsequent calls carry it along with the history until context compaction, truncation, or session end. This naturally connects to s08's compact: on-demand loading solves "don't carry what you shouldn't", compact solves "how to drop what you should."
-
----
-
-## Changes from s06
-
-| Component | Before (s06) | After (s07) |
-|-----------|-------------|-------------|
-| Tool count | 7 (bash, read, write, edit, glob, todo_write, task) | 8 (+load_skill) |
-| Knowledge loading | None | Two-level: startup catalog in SYSTEM + runtime load_skill; SKILL.md may guide later resource access |
-| SYSTEM prompt | Static string | Startup scan of skills/ injects catalog |
-| Skill registry | None | SKILL_REGISTRY (populated at startup, prevents path traversal) |
-| Loop | Unchanged | Unchanged (skill tool auto-dispatches) |
+`name` looks up the startup registry; it is not interpreted as a file path. After the tool returns, the existing Agent Loop appends its content as a new `tool_result` message.
 
 ---
 
@@ -127,17 +118,17 @@ Try these prompts:
 
 1. `What skills are available?`
 2. `Load the code-review skill and follow its instructions`
-3. `I need to do a code review -- load the relevant skill first`
+3. `Review README.md and load the relevant skill first`
 
-What to watch for: Does the Agent know available skills from the SYSTEM catalog? Does `[HOOK] load_skill` appear when full instructions are needed? Does the answer use the loaded skill's instructions?
+Check that the system prompt contains only the catalog and that the full `SKILL.md` appears after `load_skill` is called.
 
 ---
 
 ## What's Next
 
-On-demand loading solved "don't carry what you shouldn't." But another problem looms: after the Agent works for 30 minutes, the messages list fills up with intermediate process. Old tool_results, stale file contents, occupying context but adding no value.
+As tool calls accumulate, `messages[]` retains earlier file contents and tool results.
 
-→ s08 Context Compact: A four-layer compaction strategy. Cheap layers run first, expensive layers run last.
+→ s08 Context Compact: shorten earlier messages and keep context available for later calls.
 
 
-<!-- translation-sync: zh@v2, en@v2, ja@v2 -->
+<!-- translation-sync: zh@v6, en@v6, ja@v6 -->

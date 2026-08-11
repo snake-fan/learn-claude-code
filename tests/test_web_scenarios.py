@@ -25,8 +25,8 @@ def load_lesson(name: str, script: Path):
     return module
 
 
-def test_s15_scenario_uses_the_real_plan_protocol() -> None:
-    steps = load_scenario("s15")["steps"]
+def test_s13_scenario_uses_the_real_plan_protocol() -> None:
+    steps = load_scenario("s13")["steps"]
     spawn = next(
         step for step in steps
         if step.get("toolName") == "spawn_teammate"
@@ -34,7 +34,7 @@ def test_s15_scenario_uses_the_real_plan_protocol() -> None:
     )
     claim_index = next(
         index for index, step in enumerate(steps)
-        if "claim_next_task(backend)" in step.get("content", "")
+        if "spawn_teammate(backend" in step.get("content", "")
     )
     request_index = next(
         index for index, step in enumerate(steps)
@@ -50,7 +50,9 @@ def test_s15_scenario_uses_the_real_plan_protocol() -> None:
     )
 
     review = json.loads(steps[review_index]["content"])
-    assert json.loads(spawn["content"])["require_plan"] is True
+    spawn_input = json.loads(spawn["content"])
+    assert spawn_input["require_plan"] is True
+    assert re.fullmatch(r"task_[0-9a-f]{8}", spawn_input["task_id"])
     assert claim_index < request_index < review_index < response_index
     assert review["request_id"] == "req_000007"
     assert re.fullmatch(r"req_\d{6}", review["request_id"])
@@ -58,8 +60,8 @@ def test_s15_scenario_uses_the_real_plan_protocol() -> None:
     assert "approved" not in review
 
 
-def test_s17_scenario_calls_the_discovered_mcp_tool() -> None:
-    steps = load_scenario("s17")["steps"]
+def test_s15_scenario_calls_the_discovered_mcp_tool() -> None:
+    steps = load_scenario("s15")["steps"]
     bash_index = next(
         index for index, step in enumerate(steps)
         if step.get("toolName") == "bash"
@@ -96,13 +98,13 @@ def test_s17_scenario_calls_the_discovered_mcp_tool() -> None:
     assert connect_index < status_index < result_index
 
 
-def test_s17_runtime_discovers_and_dispatches_mcp_tools(
+def test_s15_runtime_discovers_and_dispatches_mcp_tools(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("MODEL_ID", "test-model")
     harness = load_lesson(
         "integrated_mcp_scenario_test",
-        ROOT / "s17_integrated_harness" / "code.py",
+        ROOT / "s15_integrated_harness" / "code.py",
     )
     harness.WORKDIR = tmp_path
 
@@ -117,8 +119,8 @@ def test_s17_runtime_discovers_and_dispatches_mcp_tools(
     )
 
 
-def test_s18_scenario_matches_the_deterministic_runtime(tmp_path: Path) -> None:
-    scenario = load_scenario("s18")
+def test_s16_scenario_matches_the_deterministic_runtime(tmp_path: Path) -> None:
+    scenario = load_scenario("s16")
     workflow_call = next(
         step for step in scenario["steps"]
         if step.get("toolName") == "Workflow" and step["type"] == "tool_call"
@@ -131,7 +133,7 @@ def test_s18_scenario_matches_the_deterministic_runtime(tmp_path: Path) -> None:
     shown_result = json.loads(workflow_result["content"])
 
     workflow = load_lesson(
-        "workflow_scenario_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_scenario_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     workflow.STORE = tmp_path
     workflow.create_run_id = lambda _meta: "wf_review-changes_0000000000001a7b"
@@ -141,26 +143,26 @@ def test_s18_scenario_matches_the_deterministic_runtime(tmp_path: Path) -> None:
     assert shown_result == actual
 
 
-def test_generated_s18_metadata_extends_s17_without_registry_false_positives() -> None:
+def test_generated_s16_metadata_extends_s15_without_registry_false_positives() -> None:
     versions = json.loads(GENERATED_VERSIONS.read_text())
     by_id = {version["id"]: version for version in versions["versions"]}
-    s17 = by_id["s17"]
-    s18 = by_id["s18"]
+    s15 = by_id["s15"]
+    s16 = by_id["s16"]
 
-    assert set(s17["tools"]) < set(s18["tools"])
-    assert s18["newTools"] == ["Workflow"]
-    assert "Workflow" in s18["tools"]
-    assert "review-changes" not in s18["tools"]
+    assert set(s15["tools"]) < set(s16["tools"])
+    assert s16["newTools"] == ["Workflow"]
+    assert "Workflow" in s16["tools"]
+    assert "review-changes" not in s16["tools"]
     chapter_dirs = {
         path.name.split("_", 1)[0]: path
         for path in ROOT.glob("s[0-9][0-9]_*")
     }
-    for lesson_id in ("s13", "s14", "s15", "s16", "s17", "s18"):
+    for lesson_id in ("s11", "s12", "s13", "s14", "s15", "s16"):
         assert by_id[lesson_id]["source"] == (
             chapter_dirs[lesson_id] / "code.py"
         ).read_text()
     signatures = {
         function["name"]: function["signature"]
-        for function in s18["functions"]
+        for function in s16["functions"]
     }
     assert signatures["run_workflow"].startswith("async def run_workflow(")

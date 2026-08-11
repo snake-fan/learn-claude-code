@@ -7,6 +7,7 @@ import multiprocessing
 import shutil
 import subprocess
 import sys
+import threading
 import types
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def run_lesson(script: Path, *args: str) -> str:
 
 def test_workflow_runtime_resumes_from_journal(tmp_path: Path) -> None:
     script = tmp_path / "code.py"
-    shutil.copy2(ROOT / "s18_workflow_runtime" / "code.py", script)
+    shutil.copy2(ROOT / "s16_workflow_runtime" / "code.py", script)
 
     first = run_lesson(script, "demo")
     resumed = run_lesson(script, "resume")
@@ -64,19 +65,26 @@ def test_workflow_runtime_resumes_from_journal(tmp_path: Path) -> None:
 
 def test_workflow_runtime_rejects_unsafe_artifact_names() -> None:
     workflow = load_lesson(
-        "workflow_name_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_name_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
 
     for name in ("../escape", "../../escape", "nested/name"):
         with pytest.raises(workflow.WorkflowInputError):
             workflow.validate_meta({"name": name, "description": "unsafe"})
 
+    severity = workflow.FINDINGS_SCHEMA["properties"]["findings"]["items"][
+        "properties"
+    ]["severity"]
+    validator = workflow.SimpleJsonSchema(severity)
+    assert validator.validate("high") == (True, None)
+    assert validator.validate("warning")[0] is False
+
 
 def test_workflow_runtime_enforces_budget_and_shared_agent_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_limit_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_limit_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     budget = workflow.Budget(total=1)
     with pytest.raises(workflow.WorkflowInputError):
@@ -120,7 +128,7 @@ def test_workflow_runtime_enforces_budget_and_shared_agent_cap(
 
 def test_workflow_runtime_rejects_corrupt_resume_journal(tmp_path: Path) -> None:
     workflow = load_lesson(
-        "workflow_journal_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_journal_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     run_id = "wf_corrupt_0001"
     (tmp_path / f"{run_id}.journal.jsonl").write_text("{not-json}\n")
@@ -133,7 +141,7 @@ def test_workflow_tool_adapter_uses_registry_and_returns_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_adapter_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_adapter_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     monkeypatch.setattr(workflow, "STORE", tmp_path)
 
@@ -147,7 +155,7 @@ def test_workflow_tool_adapter_uses_registry_and_returns_json(
     assert result["launched"]["workflowName"] == "review-changes"
     assert result["task"]["status"] == "completed"
     assert result["task"]["taskType"] == "local_workflow"
-    assert len(result["result"]["confirmed"]) == 6
+    assert len(result["result"]["confirmed"]) == 5
     snapshot = json.loads(
         (tmp_path / f"{result['task']['runId']}.json").read_text()
     )
@@ -162,7 +170,7 @@ def test_fresh_workflow_runs_have_unique_identity_and_resume_validates_args(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_identity_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_identity_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     monkeypatch.setattr(workflow, "STORE", tmp_path)
 
@@ -185,7 +193,7 @@ def test_fresh_workflow_run_refuses_an_existing_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_collision_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_collision_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     monkeypatch.setattr(workflow, "STORE", tmp_path)
     fixed_id = "wf_review-changes_0000000000001a7b"
@@ -207,7 +215,7 @@ def test_invalid_resume_does_not_overwrite_completed_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_resume_guard_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_resume_guard_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     monkeypatch.setattr(workflow, "STORE", tmp_path)
     result = asyncio.run(
@@ -236,7 +244,7 @@ def test_active_workflow_run_rejects_concurrent_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow = load_lesson(
-        "workflow_active_run_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_active_run_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     monkeypatch.setattr(workflow, "STORE", tmp_path)
     run_id = "wf_slow-test_0000000000001a7b"
@@ -274,7 +282,7 @@ def test_active_workflow_run_rejects_concurrent_resume(
 
 def test_workflow_run_lock_is_cross_process(tmp_path: Path) -> None:
     workflow = load_lesson(
-        "workflow_process_lock_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_process_lock_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     workflow.STORE = tmp_path
     run_id = "wf_process-lock_0000000000001a7b"
@@ -284,7 +292,7 @@ def test_workflow_run_lock_is_cross_process(tmp_path: Path) -> None:
     with workflow.workflow_run_lock(run_id):
         child = context.Process(
             target=acquire_workflow_lock_in_child,
-            args=(str(ROOT / "s18_workflow_runtime" / "code.py"),
+            args=(str(ROOT / "s16_workflow_runtime" / "code.py"),
                   str(tmp_path), run_id, results),
         )
         child.start()
@@ -296,7 +304,7 @@ def test_workflow_run_lock_is_cross_process(tmp_path: Path) -> None:
 
 def test_workflow_tool_extends_the_integrated_host_pool() -> None:
     workflow = load_lesson(
-        "workflow_host_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_host_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     host = types.SimpleNamespace(
         assemble_tool_pool=lambda: (
@@ -312,13 +320,152 @@ def test_workflow_tool_extends_the_integrated_host_pool() -> None:
     assert handlers["Workflow"] is workflow.run_workflow_sync
 
 
-def test_workflow_default_entry_extends_the_real_s17_host(
+def test_anthropic_runner_parses_json_and_records_real_usage() -> None:
+    workflow = load_lesson(
+        "workflow_real_runner_test", ROOT / "s16_workflow_runtime" / "code.py"
+    )
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return types.SimpleNamespace(
+            content=[types.SimpleNamespace(
+                type="text", text='```json\n{"ok": true}\n```'
+            )],
+            usage=types.SimpleNamespace(input_tokens=11, output_tokens=7),
+        )
+
+    client = types.SimpleNamespace(
+        messages=types.SimpleNamespace(create=create)
+    )
+    runner = workflow.AnthropicAgentRunner(client, "deepseek-v4-flash")
+
+    result = runner.run(
+        "Check the supplied change.",
+        schema={
+            "type": "object",
+            "required": ["ok"],
+            "properties": {"ok": {"type": "boolean"}},
+        },
+        label="check",
+    )
+
+    assert result.value == {"ok": True}
+    assert result.tokens == 18
+    assert calls[0]["model"] == "deepseek-v4-flash"
+    assert "tools" not in calls[0]
+
+
+def test_real_runner_output_retries_once_after_invalid_json(
+    tmp_path: Path,
+) -> None:
+    workflow = load_lesson(
+        "workflow_real_runner_retry_test",
+        ROOT / "s16_workflow_runtime" / "code.py",
+    )
+    responses = iter([
+        types.SimpleNamespace(
+            content=[types.SimpleNamespace(type="text", text="not json")],
+            usage=types.SimpleNamespace(input_tokens=3, output_tokens=2),
+        ),
+        types.SimpleNamespace(
+            content=[types.SimpleNamespace(
+                type="text", text='Result:\n```json\n{"ok": true}\n```\nDone.'
+            )],
+            usage=types.SimpleNamespace(input_tokens=4, output_tokens=3),
+        ),
+    ])
+    client = types.SimpleNamespace(
+        messages=types.SimpleNamespace(create=lambda **_kwargs: next(responses))
+    )
+    runner = workflow.AnthropicAgentRunner(client, "test-model")
+    journal = workflow.WorkflowJournal(
+        "wf_json-retry_0001", resume=False, store=tmp_path
+    )
+    task = workflow.LocalWorkflowTask("task", "wf_json-retry_0001", {})
+    state = workflow.ExecutionState(
+        task, journal, runner, workflow.Budget(), {}
+    )
+
+    try:
+        result = asyncio.run(state.agent(
+            "Return a result.",
+            schema={
+                "type": "object",
+                "required": ["ok"],
+                "properties": {"ok": {"type": "boolean"}},
+            },
+            label="json-retry",
+        ))
+    finally:
+        journal.close()
+
+    assert result == {"ok": True}
+    assert task.usage == {"agents": 1, "tokens": 12}
+
+
+def test_install_workflow_tool_selects_the_host_api_runner() -> None:
+    workflow = load_lesson(
+        "workflow_runner_factory_test",
+        ROOT / "s16_workflow_runtime" / "code.py",
+    )
+    client = object()
+    host = types.SimpleNamespace(
+        client=client,
+        MODEL="deepseek-v4-flash",
+        assemble_tool_pool=lambda: ([], {}),
+    )
+
+    workflow.install_workflow_tool(host)
+    runner = workflow.RUNNER_FACTORY()
+
+    assert isinstance(runner, workflow.AnthropicAgentRunner)
+    assert runner.client is client
+    assert runner.model == "deepseek-v4-flash"
+
+
+def test_parallel_agent_calls_do_not_block_the_event_loop(tmp_path: Path) -> None:
+    workflow = load_lesson(
+        "workflow_parallel_runner_test",
+        ROOT / "s16_workflow_runtime" / "code.py",
+    )
+    barrier = threading.Barrier(2)
+
+    class BarrierRunner:
+        def run(self, prompt, schema=None, label=None):
+            barrier.wait(timeout=2)
+            return workflow.RunnerOutput({"label": label}, 1)
+
+    journal = workflow.WorkflowJournal(
+        "wf_parallel-test_0001", resume=False, store=tmp_path
+    )
+    task = workflow.LocalWorkflowTask("task", "wf_parallel-test_0001", {})
+    state = workflow.ExecutionState(
+        task, journal, BarrierRunner(), workflow.Budget(), {}
+    )
+
+    async def run():
+        return await state.parallel([
+            lambda: state.agent("first", label="first"),
+            lambda: state.agent("second", label="second"),
+        ])
+
+    try:
+        result = asyncio.run(run())
+    finally:
+        journal.close()
+
+    assert result == [{"label": "first"}, {"label": "second"}]
+    assert task.usage == {"agents": 2, "tokens": 2}
+
+
+def test_workflow_default_entry_extends_the_real_s15_host(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MODEL_ID", "test-model")
     workflow = load_lesson(
-        "workflow_real_host_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_real_host_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     host = workflow.load_integrated_host()
 
@@ -326,7 +473,7 @@ def test_workflow_default_entry_extends_the_real_s17_host(
     tools, handlers = host.assemble_tool_pool()
     names = [tool["name"] for tool in tools]
 
-    assert len(host.BUILTIN_TOOLS) == 24
+    assert len(host.BUILTIN_TOOLS) == 25
     assert names[:-1] == [tool["name"] for tool in host.BUILTIN_TOOLS]
     assert names[-1] == "Workflow"
     assert handlers["Workflow"] is workflow.run_workflow_sync
@@ -337,7 +484,7 @@ def test_workflow_default_entry_extends_the_real_s17_host(
 
 def test_workflow_tool_adapter_rejects_model_supplied_code() -> None:
     workflow = load_lesson(
-        "workflow_schema_test", ROOT / "s18_workflow_runtime" / "code.py"
+        "workflow_schema_test", ROOT / "s16_workflow_runtime" / "code.py"
     )
     properties = workflow.WORKFLOW_TOOL["input_schema"]["properties"]
 

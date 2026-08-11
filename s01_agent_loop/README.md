@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s18 → s19
+`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s16 → s17
 > *"One loop & Bash is all you need"* — One tool + one loop = one Agent.
 >
 > **Harness Layer**: The Loop — the first bridge between the model and the real world.
@@ -107,7 +107,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-Under 30 lines — that's the minimal runnable agent harness kernel. It's not intelligence itself, but the smallest runtime framework that lets the model keep acting. The model decides (whether to call a tool, which one), the harness executes (calls the tool and appends the result as a new message). The next 19 chapters all add mechanisms on top of this loop. The loop itself never changes.
+Under 30 lines — that's the minimal runnable agent harness kernel. It's not intelligence itself, but the smallest runtime framework that lets the model keep acting. The model decides (whether to call a tool, which one), the harness executes (calls the tool and appends the result as a new message). The next 16 chapters all add mechanisms on top of this loop. The loop itself never changes.
 
 ---
 
@@ -146,4 +146,4 @@ Right now the model only has bash — reading files requires `cat`, writing file
 → s02 Tool Use: What happens when we give it 5 proper tools? Will the model call multiple tools at once? Will parallel tool executions step on each other?
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v2, en@v2, ja@v2 -->

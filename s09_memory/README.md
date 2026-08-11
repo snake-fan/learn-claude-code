@@ -1,50 +1,39 @@
-# s09: Memory — Compression Loses Details, Keep a Layer That Doesn't
+# s09: Memory — Keep Useful Knowledge Across Sessions
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → ... → s07 → s08 → `s09` → [s10](../s10_system_prompt/) → s11 → ... → s18 → s19
-> *"Compression loses details, keep a layer that doesn't"* — File store + index + on-demand loading, across compactions, across sessions.
+s01 → ... → s07 → s08 → `s09` → [s10](../s10_task_system/) → s11 → ... → s16 → s17
+> *"Keep information that later tasks will need."* File storage + an index + relevance selection + on-demand recall.
 >
-> **Harness Layer**: Memory — knowledge that survives compaction and sessions.
+> **Harness layer**: Memory stores reusable knowledge outside the conversation and recalls it for related tasks.
 
 ---
 
 ## The Problem
 
-s08's `compact_history` preserves current goals, remaining work, and user constraints in the summary, but details get lost: "use tabs not spaces" might get simplified to "user has code style preferences". And when you start a new session, even the summary is gone.
+An Agent starts a new session without the previous conversation in `messages`. A coding preference, project fact, or debugging clue from an earlier session may still matter. Without persistent storage, the user has to provide it again.
 
-LLMs have no persistent state; all information lives in the context window. When context fills up, it gets compressed, and compression is lossy. What's needed is a storage layer that doesn't participate in compression and persists across sessions.
-
----
-
-## The Solution
+A complete transcript works as an archive, but sending it with every request does not scale. The conversation keeps growing, useful information becomes hard to locate, and old facts may no longer be true. Memory must decide what is worth keeping across sessions and which records belong in the current task.
 
 ![Memory Overview](images/memory-overview.en.svg)
 
-The s08 compression pipeline is preserved, focusing on memory. Storage uses the filesystem: a `.memory/` directory where each memory is a `.md` file with YAML frontmatter (`name` / `description` / `type`). When files accumulate, an index is needed: `MEMORY.md` holds one link per line and gets injected into the SYSTEM.
-
-Key design: the index stays in SYSTEM prompt (cacheable by prompt cache), file content is injected on demand (matched by filename/description to the current conversation, without breaking the cache). Writing has two paths: the user explicitly says "remember", or extraction runs in the background after each turn. When files accumulate, periodic consolidation deduplicates.
-
-> **Boundary with s08:** compaction still owns the current transcript and token budget. Memory does not replace that pipeline; it selectively persists facts outside the transcript and recalls them later.
-
-Four memory types, each answering a different question:
-
-| Type | Answers | Example |
-|------|---------|---------|
-| user | Who you are | "Use tabs not spaces" |
-| feedback | How to work | "Don't mock the database" |
-| project | What's happening | "Auth rewrite is compliance-driven" |
-| reference | Where to find things | "Pipeline bugs are in Linear INGEST" |
-
 ---
 
-## How It Works
+## Why Not Put Everything in the System Prompt?
+
+The direct approach is to write preferences and project facts into one file, then put the entire file in the system prompt. It remembers the information, but every LLM call must resend all of it. As the store grows, more unrelated material consumes input tokens and context space.
+
+s07 showed a better reading pattern: keep a short index available and load full content only when needed. Skills are human-authored and read-only. Memory lets the Agent extract information from conversation and reuse it in later work.
+
+This chapter therefore needs four parts: storage, recall, extraction, and consolidation.
 
 ![Memory Subsystems](images/memory-subsystems.en.svg)
 
-### Storage: Markdown Files + Index
+---
 
-Each memory is a `.md` file with YAML frontmatter for metadata:
+## Storage: One File per Record
+
+Each memory is a Markdown file under `.memory/`. YAML frontmatter stores its `name`, `description`, and `type`:
 
 ```markdown
 ---
@@ -54,115 +43,125 @@ type: user
 ---
 
 User prefers using tabs, not spaces, for indentation.
-**Why:** Consistency with existing codebase conventions.
-**How to apply:** Always use tabs when writing or editing files.
 ```
 
-`MEMORY.md` is the index, one link per line:
+There are four memory types:
 
-```markdown
-- [user-preference-tabs](user-preference-tabs.md) — User prefers tabs for indentation
-```
+| Type | What it stores | Example |
+|------|----------------|---------|
+| user | A durable user preference | "Use tabs for indentation" |
+| feedback | Guidance that remains useful | "Do not mock the database" |
+| project | A stable project fact | "The authentication rewrite is compliance-driven" |
+| reference | An external pointer or lookup clue | "The pipeline issue is tracked in Linear INGEST" |
 
-Writing a new memory automatically rebuilds the index:
+`MEMORY.md` is the index, with one line per memory file. After a write, `rebuild_memory_index()` regenerates it from the files:
 
 ```python
 def write_memory_file(name, mem_type, description, body):
-    slug = name.lower().replace(" ", "-")
-    filepath = MEMORY_DIR / f"{slug}.md"
-    filepath.write_text(
-        f"---\nname: {name}\ndescription: {description}\ntype: {mem_type}\n---\n\n{body}\n"
-    )
-    _rebuild_index()
+    path = MEMORY_DIR / f"{memory_slug(name)}.md"
+    path.write_text(memory_document(name, mem_type, description, body))
+    rebuild_memory_index()
+    return path
 ```
 
-### Loading: Two Paths
-
-**Path 1: Index in SYSTEM.** `build_system()` reads `MEMORY.md` once at the start of each user request and injects the memory catalog into the SYSTEM prompt. Memory extraction and consolidation run only when the turn ends, so SYSTEM does not need to be rebuilt repeatedly within the same user request.
-
-**Path 2: Relevant memories on demand.** At the start of each user request, `load_memories()` sends the recent conversation and the memory catalog (name + description) to the LLM as a lightweight side-query, selects relevant filenames, then reads and injects their contents. Capped at 5 to control cost.
-
-```python
-def select_relevant_memories(messages, max_items=5):
-    files = list_memory_files()
-    if not files:
-        return []
-
-    # Build catalog: "0: user-preference-tabs — User prefers tabs..."
-    catalog = "\n".join(f"{i}: {f['name']} — {f['description']}" for i, f in enumerate(files))
-
-    response = client.messages.create(model=MODEL, messages=[{"role": "user",
-        "content": f"Select relevant memory indices. Return JSON array.\n\n"
-                   f"Recent conversation:\n{recent}\n\nMemory catalog:\n{catalog}"}],
-        max_tokens=200)
-    indices = json.loads(re.search(r'\[.*?\]', response.content[0].text).group())
-    return [files[i]["filename"] for i in indices if 0 <= i < len(files)]
-```
-
-If the side-query fails (API error, JSON parse failure), it falls back to keyword matching on name + description.
-
-### Writing: Extraction After Each Turn
-
-Users don't always say "remember this". Preferences are usually scattered across normal dialogue: "tabs are better than spaces", "let's use single quotes from now on".
-
-`extract_memories()` runs when each turn ends, triggered when the model stops without a tool_use (indicating the conversation has reached a natural break):
-
-```python
-# In agent_loop:
-if response.stop_reason != "tool_use":
-    extract_memories(messages)   # Extract new memories from recent dialogue
-    consolidate_memories()       # Check if consolidation is needed
-    return
-```
-
-Before extraction, existing memories are checked to avoid duplicates. The extraction prompt asks the LLM to return a JSON array of `{name, type, description, body}`, writing files only when genuinely new information is found.
-
-```python
-def extract_memories(messages):
-    dialogue = format_recent_messages(messages[-10:])
-    existing = "\n".join(f"- {m['name']}: {m['description']}" for m in list_memory_files())
-
-    prompt = (
-        "Extract user preferences, constraints, or project facts.\n"
-        "Return JSON array: [{name, type, description, body}].\n"
-        "If nothing new or already covered, return [].\n\n"
-        f"Existing memories:\n{existing}\n\nDialogue:\n{dialogue[:4000]}"
-    )
-    # ... parse response, write files ...
-```
-
-### Consolidation: Low-Frequency Deduplication
-
-Memory files accumulate. `consolidate_memories()` triggers when the file count reaches a threshold (default 10), asking the LLM to deduplicate, merge contradictions, and prune stale memories:
-
-```python
-CONSOLIDATE_THRESHOLD = 10
-
-def consolidate_memories():
-    files = list_memory_files()
-    if len(files) < CONSOLIDATE_THRESHOLD:
-        return  # Too few, not worth consolidating
-    # Send all memories to LLM, get back deduplicated list
-    # Replace all files with consolidated results
-```
-
-### What Memory Stores
-
-Memory stores information that remains useful across sessions: user preferences, recurring feedback, project background, common entry points, and investigation clues. It focuses on "what will be useful later" and brings that information back through an index plus on-demand loading.
-
-Session memory focuses on continuity inside one session: what context should survive after compaction. The two work together: Memory handles long-term knowledge; session memory handles the current session across compaction.
+The index supports selection while full content stays in the individual files.
 
 ---
 
-## Changes From s08
+## Recall: Select First, Then Load Full Records
 
-| Component | Before (s08) | After (s09) |
-|-----------|-------------|-------------|
-| Memory capability | None (preferences degrade with compaction) | Storage + loading + extraction + consolidation |
-| New functions | — | write_memory_file, select_relevant_memories, load_memories, extract_memories, consolidate_memories |
-| Storage | — | .memory/MEMORY.md index + .memory/*.md files |
-| Tools | bash, read, write, edit, glob, todo_write, task, load_skill, compact (9) | bash, read_file, write_file, edit_file, glob, task (6) |
-| Loop | Only compression each turn | Memory injection + compression + post-turn extraction + periodic consolidation |
+At the start of a user request, `select_relevant_memories()` sends the recent user text and memory catalog to a lightweight model call. It selects at most five relevant records:
+
+```python
+prompt = (
+    "Select memory records that are relevant to the current user request. "
+    "Return only a JSON array of catalog indices, such as [0, 2]. "
+    "Return [] when none are relevant."
+)
+```
+
+If the model call or JSON parsing fails, the code falls back to keyword matching. Only after selection does `load_memories()` read the corresponding files, with a limit on the total recalled text.
+
+```python
+relevant_memories = load_memories(messages)
+system = build_system(relevant_memories)
+```
+
+`build_system()` states that recalled content is background knowledge, not a new user command. The current request wins when it conflicts with memory. This lets the Agent use old information without letting old records issue instructions on the user's behalf.
+
+---
+
+## Extraction: Save Reusable Information After the Turn
+
+Users do not always say "remember this." After the Agent finishes the current response, `extract_memories()` inspects the conversation and keeps only information likely to help later:
+
+```python
+if response.stop_reason != "tool_use":
+    force = trigger_hooks("Stop", messages)
+    if force:
+        messages.append({"role": "user", "content": force})
+        continue
+    if extract_memories(messages):
+        consolidate_memories()
+    return
+```
+
+The model returns candidates, not records that are automatically allowed onto disk. Each candidate carries a `scope`: only `persistent` means that the information should survive into later sessions. `current_task` covers one-off commands, temporary paths, and temporary restrictions.
+
+`should_store_memory()` performs the final admission check. It rejects incomplete candidates, phrases that refer to the current session or task, and duplicates of existing records. For example, "do not create files in this session" constrains the current work; it must not remain active in the next session.
+
+---
+
+## Consolidation: Merge Duplicate and Stale Records
+
+As memory files accumulate, some become duplicate, contradictory, or stale. The teaching implementation calls `consolidate_memories()` after the store reaches ten records and asks the model for a cleaned list.
+
+The code parses and validates the new list before replacing old files. It snapshots the current records first; if deletion or writing fails, it restores the originals and rebuilds the index:
+
+```python
+snapshot = {
+    path.name: path.read_text()
+    for path in MEMORY_DIR.glob("*.md")
+    if path.name != MEMORY_INDEX.name
+}
+
+try:
+    for path in MEMORY_DIR.glob("*.md"):
+        if path.name != MEMORY_INDEX.name:
+            path.unlink()
+    for record in consolidated:
+        path = MEMORY_DIR / f"{memory_slug(record['name'])}.md"
+        path.write_text(memory_document(
+            record["name"], record["type"],
+            record["description"], record["body"],
+        ))
+    rebuild_memory_index()
+except Exception:
+    for path in MEMORY_DIR.glob("*.md"):
+        if path.name != MEMORY_INDEX.name:
+            path.unlink()
+    for filename, content in snapshot.items():
+        (MEMORY_DIR / filename).write_text(content)
+    rebuild_memory_index()
+    raise
+```
+
+The course uses a simple count threshold. A real application must also choose a schedule that fits its data volume and prevent concurrent processes from rewriting the same store.
+
+---
+
+## This Lesson's Code
+
+| Part | Implementation |
+|------|----------------|
+| Agent Loop | Keeps messages, tool calls, tool results, and hook trigger points |
+| Base tools | `bash`, `read_file`, `write_file`, `edit_file`, `glob` |
+| Storage | `.memory/MEMORY.md` index + `.memory/*.md` records |
+| Recall | Catalog selection + keyword fallback + a body-size limit |
+| Writing | End-of-turn extraction + persistence checks + duplicate filtering |
+| Consolidation | Merge at the threshold; restore old files after replacement failure |
+
+> **Boundary with s08:** s08 manages the active session's context budget. s09 manages reusable knowledge outside the conversation. Memory is selective storage, not a lossless transcript backup, and it does not replace context compaction.
 
 ---
 
@@ -173,22 +172,19 @@ cd learn-claude-code
 python s09_memory/code.py
 ```
 
-Try these prompts (enter across multiple turns, observe memory accumulation and loading):
+1. Enter `I prefer using tabs for indentation. Remember that.` After the turn, check that `.memory/` contains a new record and `MEMORY.md` contains its index entry.
+2. Enter `q`, restart the program, and ask `What indentation style do I prefer?` Confirm that a new session can recall the preference.
+3. Store another preference unrelated to code formatting, then ask about indentation. Observe that the current request loads only relevant records.
+4. Enter `Do not create files in this session.` Confirm that this temporary requirement does not become a persistent rule for the next session.
 
-1. `I prefer using tabs for indentation, not spaces. Remember that.`
-2. `Create a Python file called test.py` (observe whether the Agent uses tabs)
-3. `What did I tell you about my preferences?` (observe whether the Agent remembers)
-4. `I also prefer single quotes over double quotes for strings.`
-
-What to watch for: Does `[Memory: extracted N new memories]` appear after each turn? Are `.md` files generated in `.memory/`? Is `MEMORY.md` index updated? Does the Agent automatically load previous memories in new conversations?
+Exact wording and extraction counts can vary by model. Check what was written to `.memory/` and whether a later session recalls only relevant information.
 
 ---
 
 ## What's Next
 
-Memory, compression, and tools are all in place. But the system prompt is still a hardcoded string. Adding a new tool means manually adding a description; switching projects means rewriting the whole prompt. Prompts should be assembled at runtime.
+Memory preserves information across sessions, but a complex task also needs durable status and dependency tracking. A TODO kept only in the conversation cannot carry progress across process restarts.
 
-s10 System Prompt → segments + runtime assembly. Different projects, different tools, different prompts.
+s10 Task System → Persist tasks, statuses, and dependencies to disk.
 
-
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v3, en@v3, ja@v3 -->

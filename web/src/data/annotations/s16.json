@@ -2,45 +2,45 @@
   "version": "s16",
   "decisions": [
     {
-      "id": "normalized-mcp-namespace",
-      "title": "MCP Tools Use a Normalized Namespace",
-      "description": "Discovered tools are exposed as mcp__server__tool. The prefix makes the source explicit and avoids collisions with built-in tools or tools from another server.",
-      "alternatives": "Using the raw tool name is shorter, but search from two servers could overwrite each other.",
+      "id": "script-owns-fixed-orchestration",
+      "title": "Code Owns Fixed Orchestration",
+      "description": "When the stages and aggregation rules are known in advance, a workflow script makes the process parallel, reproducible, and inspectable without changing the main agent loop.",
+      "alternatives": "Letting the model choose every next step is more flexible, but slower and harder to resume for a fixed procedure.",
       "zh": {
-        "title": "MCP 工具使用规范化命名空间",
-        "description": "发现到的工具会暴露为 mcp__server__tool。前缀让工具来源明确，也避免和内置工具或其他服务器工具冲突。"
+        "title": "固定编排由代码负责",
+        "description": "当阶段与汇总规则事先确定时，workflow 脚本能让流程并行、可复现、可检查，同时不修改主 Agent 循环。"
       },
       "ja": {
-        "title": "MCP ツールは正規化された名前空間を使う",
-        "description": "発見されたツールは mcp__server__tool として公開されます。接頭辞により出所が明確になり、組み込みツールや別サーバーのツールとの衝突を避けます。"
+        "title": "固定された編成はコードが担う",
+        "description": "段階と集約ルールが事前に決まっているなら、workflow script は main Agent loop を変えずに処理を並列化し、再現可能で検査可能にする。"
       }
     },
     {
-      "id": "dynamic-tool-pool",
-      "title": "Tool Discovery Updates the Active Tool Pool",
-      "description": "After connecting to a server, the runtime assembles a new tool pool for the next LLM call. The model can only use MCP tools after discovery has made them visible.",
-      "alternatives": "Preloading every possible MCP tool would create a huge prompt and expose capabilities the user did not request.",
+      "id": "semantic-journal-keys",
+      "title": "Semantic Keys Make Resume Independent of Completion Order",
+      "description": "Journal entries use stable call content rather than a shared completion counter. Concurrent calls can finish in any order and still map to the correct cached result.",
+      "alternatives": "Indexing by completion order is simpler, but replays the wrong result as soon as concurrent timing changes.",
       "zh": {
-        "title": "工具发现会更新活动工具池",
-        "description": "连接服务器后，运行时会为下一次 LLM 调用组装新的工具池。模型只有在发现阶段让 MCP 工具可见之后，才能调用它们。"
+        "title": "语义键让恢复不依赖完成顺序",
+        "description": "Journal 用稳定的调用内容作为 key，而不是共享完成计数器。并发调用无论以什么顺序结束，都能命中正确缓存。"
       },
       "ja": {
-        "title": "ツール発見がアクティブなツールプールを更新する",
-        "description": "サーバー接続後、ランタイムは次の LLM 呼び出し用に新しいツールプールを組み立てます。MCP ツールは発見で可視化された後にのみモデルが利用できます。"
+        "title": "意味キーで完了順序に依存せず再開する",
+        "description": "Journal は共有完了カウンタではなく安定した call 内容を key にする。並行 call の終了順が変わっても正しい cache result に対応できる。"
       }
     },
     {
-      "id": "external-results-append-like-tools",
-      "title": "External Results Reuse the Tool Result Path",
-      "description": "MCP responses are appended to the conversation like ordinary tool results. This keeps the agent loop unchanged while still letting external systems participate.",
-      "alternatives": "A separate external-response channel would make MCP feel special and require extra loop logic.",
+      "id": "fail-the-workflow",
+      "title": "Orchestration Failures Propagate",
+      "description": "A failed stage, invalid structured result, corrupt journal, or exceeded run-wide limit fails the workflow instead of silently dropping an item and reporting success.",
+      "alternatives": "Best-effort collection can be useful for optional work, but it must be explicit rather than the default.",
       "zh": {
-        "title": "外部结果复用 Tool Result 路径",
-        "description": "MCP 响应会像普通 tool result 一样追加到对话中。这样 agent 循环无需改变，同时外部系统仍然可以参与。"
+        "title": "编排故障必须向上传播",
+        "description": "阶段失败、结构化结果不合法、journal 损坏或超过全局限制时，workflow 直接失败，而不是静默丢项后仍报告成功。"
       },
       "ja": {
-        "title": "外部結果は tool result 経路を再利用する",
-        "description": "MCP の応答は通常の tool result と同じように会話へ追加されます。エージェントループを変えずに外部システムを参加させられます。"
+        "title": "編成の失敗は上位へ伝播させる",
+        "description": "stage failure、無効な structured result、破損 journal、run-wide limit 超過は workflow を失敗させ、項目を黙って落として成功扱いしない。"
       }
     }
   ]

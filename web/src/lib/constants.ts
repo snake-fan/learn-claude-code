@@ -18,8 +18,6 @@ export const VERSION_ORDER = [
   "s15",
   "s16",
   "s17",
-  "s18",
-  "s19",
 ] as const;
 
 export const LEARNING_PATH = VERSION_ORDER;
@@ -107,84 +105,68 @@ export const VERSION_META: Record<string, {
     prevVersion: "s08",
   },
   s10: {
-    title: "Context Assembly",
-    subtitle: "Build Model Input from Runtime State",
-    coreAddition: "Runtime context assembly",
-    keyInsight: "Stable instructions and dynamic state should be assembled deliberately at the model boundary.",
-    layer: "planning",
-    prevVersion: "s09",
-  },
-  s11: {
-    title: "Error Recovery",
-    subtitle: "Errors Are the Start of a Retry",
-    coreAddition: "Retry strategy",
-    keyInsight: "A robust harness classifies failures and decides what kind of retry is worthwhile.",
-    layer: "planning",
-    prevVersion: "s10",
-  },
-  s12: {
     title: "Task System",
     subtitle: "Break Big Goals into Small Tasks",
     coreAddition: "Task board",
     keyInsight: "A task graph turns vague goals into ordered, observable work.",
     layer: "collaboration",
-    prevVersion: "s11",
+    prevVersion: "s09",
   },
-  s13: {
+  s11: {
     title: "Background Tasks",
     subtitle: "Slow Operations Go to the Background",
     coreAddition: "Background execution",
     keyInsight: "The agent can keep reasoning while slow work completes elsewhere.",
     layer: "concurrency",
-    prevVersion: "s12",
+    prevVersion: "s10",
   },
-  s14: {
+  s12: {
     title: "Cron Scheduler",
     subtitle: "Producing Work on a Schedule",
     coreAddition: "Scheduled task creation",
     keyInsight: "Recurring work should be created by the harness, not remembered by the model.",
     layer: "concurrency",
-    prevVersion: "s13",
+    prevVersion: "s11",
   },
-  s15: {
+  s13: {
     title: "Agent Team Runtime",
     subtitle: "Persistent Teammates, Atomic Claims, Task-Bound Worktrees",
     coreAddition: "Team runtime with task-bound worktrees",
     keyInsight: "Persistent teammates can reliably discover and execute parallel work when the runtime owns messaging, atomic claims, and task-bound working directories.",
     layer: "collaboration",
-    prevVersion: "s14",
+    prevVersion: "s12",
   },
-  s16: {
+  s14: {
     title: "MCP Tools",
     subtitle: "External Tools, Standard Protocol",
     coreAddition: "MCP tool bridge",
     keyInsight: "External services can become agent tools through a standard discovery and call protocol.",
     layer: "collaboration",
-    prevVersion: "s15",
+    prevVersion: "s13",
   },
-  s17: {
+  s15: {
     title: "Integrated Harness",
     subtitle: "Many Mechanisms, One Loop",
     coreAddition: "Integrated harness",
     keyInsight: "The integrated harness is still one loop, surrounded by the systems introduced across the course.",
     layer: "collaboration",
-    prevVersion: "s16",
+    prevVersion: "s14",
   },
-  s18: {
+  s16: {
     title: "Workflow Runtime",
     subtitle: "Scripts Own Fixed Orchestration",
     coreAddition: "Resumable workflow runtime",
     keyInsight: "When orchestration has a fixed shape, code can make it parallel, deterministic, and resumable.",
     layer: "concurrency",
-    prevVersion: "s17",
+    prevVersion: "s15",
   },
-  s19: {
+  s17: {
     title: "Goal Loop",
     subtitle: "Independent Evaluation Decides When to Stop",
     coreAddition: "Goal completion gate",
     keyInsight: "A durable goal keeps the loop working until an independent evaluator finds the completion condition satisfied in the conversation.",
     layer: "planning",
-    prevVersion: "s18",
+    prevVersion: "s16",
   },
 };
 
@@ -199,7 +181,7 @@ export const LAYERS = [
     id: "planning" as const,
     label: "Planning & Control",
     color: "#10B981",
-    versions: ["s05", "s06", "s07", "s10", "s11", "s19"],
+    versions: ["s05", "s06", "s07", "s17"],
   },
   {
     id: "memory" as const,
@@ -211,12 +193,12 @@ export const LAYERS = [
     id: "concurrency" as const,
     label: "Concurrency & Scheduling",
     color: "#F59E0B",
-    versions: ["s13", "s14", "s18"],
+    versions: ["s11", "s12", "s16"],
   },
   {
     id: "collaboration" as const,
     label: "Multi-Agent Platform",
     color: "#EF4444",
-    versions: ["s12", "s15", "s16", "s17"],
+    versions: ["s10", "s13", "s14", "s15"],
   },
 ] as const;

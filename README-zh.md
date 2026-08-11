@@ -74,7 +74,7 @@ Harness = Tools + Knowledge + Observation + Action Interfaces + Permissions
 
 - **策划知识。** 给 agent 领域专长。产品文档、架构决策记录、风格指南、合规要求。按需加载（s07），不要前置塞入。Agent 应该知道有什么可用，然后自己拉取所需。
 
-- **管理上下文。** 子 Agent 把明确的工作留在另一份消息列表中；上下文压缩（s08）缩短较早的历史；任务系统（s12）让目标持久化到单次对话之外。
+- **管理上下文。** 子 Agent 把明确的工作留在另一份消息列表中；上下文压缩（s08）缩短较早的历史；任务系统（s10）让目标持久化到单次对话之外。
 
 - **控制权限。** 给 agent 边界。沙箱化文件访问。对破坏性操作要求审批。在 agent 和外部系统之间实施信任边界。这是安全工程与 harness 工程的交汇点。
 
@@ -106,7 +106,7 @@ Claude Code = 一个 agent loop
 
 就这些。这就是全部架构。每一个组件都是 harness 机制 -- 为 agent 构建的栖居世界的一部分。Agent 本身呢？是 Claude。一个模型。由 Anthropic 在人类推理和代码的全部广度上训练而成。Harness 没有让 Claude 变聪明。Claude 本来就聪明。Harness 给了 Claude 双手、双眼和一个工作空间。
 
-这就是 Claude Code 作为教学标本的意义：**它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。** 本仓库的课程（s01-s19）逐步拆解并重组 harness 机制。学完之后，你理解的不只是一个 coding agent 怎么工作，而是适用于不同领域的 harness 工程原则。
+这就是 Claude Code 作为教学标本的意义：**它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。** 本仓库的课程（s01-s17）逐步拆解并重组 harness 机制。学完之后，你理解的不只是一个 coding agent 怎么工作，而是适用于不同领域的 harness 工程原则。
 
 启示不是 "复制 Claude Code"。启示是：**最好的 agent 产品，出自那些明白自己的工作是 harness 而非 intelligence 的工程师之手。**
 
@@ -159,7 +159,7 @@ Claude Code = 一个 agent loop
     让 agent 在特定领域高效工作的 harness。
 ```
 
-**19 个递进式课程, 从简单循环到目标闭环。**
+**17 个递进式课程, 从简单循环到目标闭环。**
 **每个课程添加一个 harness 机制。每个机制有一句格言。**
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 一个工具 + 一个循环 = 一个 Agent
@@ -176,29 +176,25 @@ Claude Code = 一个 agent loop
 >
 > **s07** &nbsp; *"用到时再加载, 别全塞 prompt 里"* &mdash; 技能先列目录，用到时再展开
 >
-> **s08** &nbsp; *"上下文总会满, 要有办法腾地方"* &mdash; 四层压缩策略, 便宜的先跑贵的后跑
+> **s08** &nbsp; *"上下文总会满, 要有办法腾地方"* &mdash; 四步压缩，先整理工具结果，仍然超限时再生成历史摘要
 >
 > **s09** &nbsp; *"记住该记的, 忘掉该忘的"* &mdash; 三个子系统: 筛选、提取、整理
 >
-> **s10** &nbsp; *"prompt 是组装出来的, 不是写死的"* &mdash; 分段 + 按需拼接
+> **s10** &nbsp; *"大目标拆成小任务, 排好序, 持久化"* &mdash; 文件持久化的任务图, 多 agent 协作的基础
 >
-> **s11** &nbsp; *"错误不是终点, 是重试的起点"* &mdash; 出错时会重试、腾空间、换路子
+> **s11** &nbsp; *"慢操作丢后台, agent 继续思考"* &mdash; 后台线程跑命令, 完成后注入通知
 >
-> **s12** &nbsp; *"大目标拆成小任务, 排好序, 持久化"* &mdash; 文件持久化的任务图, 多 agent 协作的基础
+> **s12** &nbsp; *"定时触发, 不需要人推"* &mdash; 按时间自动触发任务
 >
-> **s13** &nbsp; *"慢操作丢后台, agent 继续思考"* &mdash; 后台线程跑命令, 完成后注入通知
+> **s13** &nbsp; *"一个 Agent 顾不过来，就让队友分工协作"* &mdash; 持久队友协作、认领就绪任务，并使用任务绑定的工作目录
 >
-> **s14** &nbsp; *"定时触发, 不需要人推"* &mdash; 按时间自动触发任务
+> **s14** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
 >
-> **s15** &nbsp; *"一个 Agent 顾不过来，就让队友分工协作"* &mdash; 持久队友协作、认领就绪任务，并使用任务绑定的工作目录
+> **s15** &nbsp; *"机制很多，循环一个"* &mdash; 集成示例用到的机制归到同一个 harness
 >
-> **s16** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
+> **s16** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 保存好的 workflow 使用 journal 续跑
 >
-> **s17** &nbsp; *"机制很多，循环一个"* &mdash; 集成示例用到的机制归到同一个 harness
->
-> **s18** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 可恢复 journal 支撑确定性 workflow
->
-> **s19** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 每次准备停止时都由独立判断器审查；目标不可能、执行失败或超过续跑上限时把控制权交还用户
+> **s17** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 每次准备停止时都由独立判断器审查；目标不可能、执行失败或超过续跑上限时把控制权交还用户
 
 ---
 
@@ -229,22 +225,22 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-每个课程围绕这个循环单独展开一个 harness 机制。s17 把累积的运行时接回一起；s18 和 s19 再分别聚焦 workflow 编排与目标收口。循环属于 agent，机制属于 harness。
+每个课程围绕这个循环单独展开一个 harness 机制。s15 把累积的运行时接回一起；s16 和 s17 再分别聚焦 workflow 编排与目标收口。循环属于 agent，机制属于 harness。
 
 ## 版本说明
 
 本仓库现在同时保留两条教程线：
 
-- **新版主线：根目录 `s01-s19`**
-  根目录下的 `s01_*` 到 `s19_*` 是新的主版本，也是当前推荐阅读路径。每章包含默认英文 README、中文/日文译本、可运行的 `code.py`，以及必要的图示。
+- **新版主线：根目录 `s01-s17`**
+  根目录下的 `s01_*` 到 `s17_*` 是新的主版本，也是当前推荐阅读路径。每章包含默认英文 README、中文/日文译本、可运行的 `code.py`，以及必要的图示。
 - **旧版过渡：`docs/`、`agents/`**
   这些仍保留旧 12 章体系，暂时用于已有读者和旧链接过渡。
 
-新读者请从根目录 `s01_agent_loop/` 读到 `s19_goal_loop/`。旧版章节号和新版不完全一致，不要混用章节号。
+新读者请从根目录 `s01_agent_loop/` 读到 `s17_goal_loop/`。旧版章节号和新版不完全一致，不要混用章节号。
 
 ### 旧版到新版的对应关系
 
-| 旧 12 章版本 | 新 19 章版本 | 主题 |
+| 旧 12 章版本 | 新 17 章版本 | 主题 |
 |---|---|---|
 | 旧 s01 | 新 s01 | Agent Loop |
 | 旧 s02 | 新 s02 | Tool Use |
@@ -252,21 +248,21 @@ def agent_loop(messages):
 | 旧 s04 | 新 s06 | Subagent |
 | 旧 s05 | 新 s07 | Skill Loading |
 | 旧 s06 | 新 s08 | Context Compact |
-| 旧 s07 | 新 s12 | Task System |
-| 旧 s08 | 新 s13 | Background Tasks |
-| 旧 s09 | 新 s15 | Agent Teams |
-| 旧 s10 | 新 s15 | Team Protocols |
-| 旧 s11 | 新 s15 | 自主认领任务 |
-| 旧 s12 | 新 s15 | 任务绑定的 Worktree |
-| 新版新增 | s03、s04、s09、s10、s11、s14、s16、s17、s18、s19 | Permission、Hooks、Memory、Context Assembly、Error Recovery、Cron、MCP、Agent Harness 集成、Workflow Runtime、Goal Loop |
+| 旧 s07 | 新 s10 | Task System |
+| 旧 s08 | 新 s11 | Background Tasks |
+| 旧 s09 | 新 s13 | Agent Teams |
+| 旧 s10 | 新 s13 | Team Protocols |
+| 旧 s11 | 新 s13 | 自主认领任务 |
+| 旧 s12 | 新 s13 | 任务绑定的 Worktree |
+| 新版新增 | s03、s04、s09、s12、s14、s15、s16、s17 | Permission、Hooks、Memory、Cron、MCP、Agent Harness 集成、Workflow Runtime、Goal Loop |
 
 ## 课程边界
 
-这是一个从 0 到 1 的 harness 工程课程。每章先单独展开一个机制，s17 再把累积的运行时接回完整的 Agent 循环。s18 在这个循环上加入 workflow 编排；s19 用更小的工具池单独讲目标控制的续跑，不是又一个累积式运行时。
+这是一个从 0 到 1 的 harness 工程课程。每章先单独展开一个机制，s15 再把累积的运行时接回完整的 Agent 循环。s16 在这个循环上加入 workflow 编排；s17 用更小的工具池单独讲目标控制的续跑，不是又一个累积式运行时。
 
 ## 快速开始
 
-### 新版 19 章主线
+### 新版 17 章主线
 
 ```sh
 git clone https://github.com/shareAI-lab/learn-claude-code
@@ -276,7 +272,7 @@ cp .env.example .env   # 编辑 .env 填入你的 ANTHROPIC_API_KEY
 
 python s01_agent_loop/code.py        # 起点 — 一个循环 + bash
 python s08_context_compact/code.py    # 上下文压缩（复杂章）
-python s19_goal_loop/code.py          # 终点章：用目标闭合循环
+python s17_goal_loop/code.py          # 终点章：用目标闭合循环
 ```
 
 ### 旧版 12 章过渡线
@@ -289,7 +285,7 @@ python agents/s_full.py
 
 ### Web 平台
 
-Web 平台从根目录课程生成内容。s18、s19 提供阅读、源码、模拟和架构视图；仅专用首屏可视化保持精简。
+Web 平台从根目录课程生成内容。s16、s17 提供阅读、源码、模拟和架构视图；仅专用首屏可视化保持精简。
 
 ```sh
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -319,7 +315,7 @@ flowchart TD
 
         S2["<b>第二阶段：做复杂任务</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ 先列计划，再执行<br/><br/><b>s06 Subagent</b><br/>└─ 全新消息，返回最终文本<br/><br/><b>s08 Context Compact</b><br/>└─ 长下文腾空间"]:::stage2
 
-        S3["<b>第三阶段：记住和恢复</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ 跨会话持久化与召回<br/><br/><b>s10 Context Assembly</b><br/>└─ 从运行时状态组装模型输入<br/><br/><b>s11 Error Recovery</b><br/>└─ 重试换路子"]:::stage3
+        S3["<b>第三阶段：跨会话记忆</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ 保存并召回可复用知识"]:::stage3
 
         S1 ==> S2 ==> S3
     end
@@ -327,11 +323,11 @@ flowchart TD
     %% 第二层：4-6阶段
     subgraph Phase2 ["🚀 阶段 4-6：高阶能力进化（长期、协作与融合）"]
         direction LR
-        S4["<b>第四阶段：让任务长期运行</b><br/>━━━━━━━━━━━━━<br/><b>s12 Task System</b><br/>└─ 任务落盘记依赖<br/><br/><b>s13 Background Tasks</b><br/>└─ 慢操作丢后台<br/><br/><b>s14 Cron Scheduler</b><br/>└─ 按时自动触发"]:::stage4
+        S4["<b>第四阶段：让任务长期运行</b><br/>━━━━━━━━━━━━━<br/><b>s10 Task System</b><br/>└─ 任务落盘记依赖<br/><br/><b>s11 Background Tasks</b><br/>└─ 慢操作丢后台<br/><br/><b>s12 Cron Scheduler</b><br/>└─ 按时自动触发"]:::stage4
 
-        S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>s15 Agent Teams</b><br/>└─ 队友 + 消息投递 + 协作协议<br/>└─ 原子认领就绪任务<br/>└─ 任务绑定的 Worktree"]:::stage5
+        S5["<b>第五阶段：让多个 Agent 协作</b><br/>━━━━━━━━━━━━━<br/><b>s13 Agent Teams</b><br/>└─ 队友 + 消息投递 + 协作协议<br/>└─ 原子认领就绪任务<br/>└─ 任务绑定的 Worktree"]:::stage5
 
-        S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s16 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s17 Agent Harness 集成</b><br/>└─ 全机制回单循环"]:::stage6
+        S6["<b>第六阶段：接外部能力合体</b><br/>━━━━━━━━━━━━━<br/><b>s07 Skill Loading</b><br/>└─ 技能按需展开<br/><br/><b>s14 MCP Plugin</b><br/>└─ 外部接进工具池<br/><br/><b>s15 Agent Harness 集成</b><br/>└─ 课程机制回到同一循环"]:::stage6
 
         S4 ==> S5 ==> S6
     end
@@ -339,7 +335,7 @@ flowchart TD
     %% 第三层：编排与目标闭环
     subgraph Phase3 ["🎯 第七阶段：编排与目标闭环"]
         direction LR
-        S7["<b>第七阶段：编排并完成</b><br/>━━━━━━━━━━━━━<br/><b>s18 Workflow Runtime</b><br/>└─ 脚本拥有固定编排<br/><br/><b>s19 Goal Loop</b><br/>└─ 独立判断决定何时停止"]:::stage1
+        S7["<b>第七阶段：编排并完成</b><br/>━━━━━━━━━━━━━<br/><b>s16 Workflow Runtime</b><br/>└─ 脚本拥有固定编排<br/><br/><b>s17 Goal Loop</b><br/>└─ 独立判断决定何时停止"]:::stage1
         S6 ==> S7
     end
 
@@ -360,19 +356,17 @@ flowchart TD
 | [s04](./s04_hooks/) | Hooks | `PreToolUse` / `PostToolUse` / 扩展点 |
 | [s05](./s05_todo_write/) | TodoWrite | `TodoItem` / 先计划后执行 |
 | [s06](./s06_subagent/) | Subagent | `fresh messages[]` / 上下文隔离 |
-| [s07](./s07_skill_loading/) | Skill Loading | `SkillManifest` / 按需注入 |
+| [s07](./s07_skill_loading/) | Skill Loading | `SkillLoader` / 技能目录 / 按需注入 |
 | [s08](./s08_context_compact/) | Context Compact | budget / snip / micro / summary 四步压缩 |
 | [s09](./s09_memory/) | Memory | selection / extraction / consolidation |
-| [s10](./s10_system_prompt/) | Context Assembly | 运行时状态 / 稳定分段 / 模型输入 |
-| [s11](./s11_error_recovery/) | Error Recovery | token 升级 / fallback 模型 / 重试策略 |
-| [s12](./s12_task_system/) | Task System | `TaskRecord` / `blockedBy` / 磁盘持久化 |
-| [s13](./s13_background_tasks/) | Background Tasks | 线程执行 / 通知队列 |
-| [s14](./s14_cron_scheduler/) | Cron Scheduler | 持久化调度 / 会话级触发 |
-| [s15](./s15_agent_teams/) | Agent Teams | 持久队友 / 原子认领 / 任务绑定的 Worktree / 类型协议 |
-| [s16](./s16_mcp_plugin/) | MCP Plugin | 工具发现 / 命名空间 / 工具池组装 |
-| [s17](./s17_integrated_harness/) | Agent Harness 集成 | 工具、运行时上下文、任务、团队、调度和 MCP 归到一个循环 |
-| [s18](./s18_workflow_runtime/) | Workflow Runtime | 脚本编排 / 生命周期事件 / journal 续跑 |
-| [s19](./s19_goal_loop/) | Goal Loop | 目标闸门 / 对话判断 / 自动续轮 |
+| [s10](./s10_task_system/) | Task System | `TaskRecord` / `blockedBy` / 磁盘持久化 |
+| [s11](./s11_background_tasks/) | Background Tasks | 线程执行 / 通知队列 |
+| [s12](./s12_cron_scheduler/) | Cron Scheduler | 持久化调度 / 会话级触发 |
+| [s13](./s13_agent_teams/) | Agent Teams | 持久队友 / 原子认领 / 任务绑定的 Worktree / 类型协议 |
+| [s14](./s14_mcp_plugin/) | MCP Plugin | 工具发现 / 命名空间 / 工具池组装 |
+| [s15](./s15_integrated_harness/) | Agent Harness 集成 | 工具、运行时上下文、任务、团队、调度和 MCP 归到一个循环 |
+| [s16](./s16_workflow_runtime/) | Workflow Runtime | 脚本编排 / 生命周期事件 / journal 续跑 |
+| [s17](./s17_goal_loop/) | Goal Loop | 目标闸门 / 对话判断 / 自动续轮 |
 
 ## 项目结构
 
@@ -386,10 +380,10 @@ learn-claude-code/
     images/                #   SVG 流程图
   s02_tool_use/
   ...
-  s16_mcp_plugin/
-  s17_integrated_harness/
-  s18_workflow_runtime/
-  s19_goal_loop/           # 终点章
+  s14_mcp_plugin/
+  s15_integrated_harness/
+  s16_workflow_runtime/
+  s17_goal_loop/           # 终点章
   agents/                  # 旧 12 章可运行副本 + s_full.py
   skills/                  # s07 使用的 skill 文件
   docs/                    # 旧 12 章文档，过渡期保留
@@ -399,7 +393,7 @@ learn-claude-code/
 
 ## 学完之后 -- 从理解到落地
 
-19 个课程走完, 你已经从内到外理解了 harness 工程的运作原理。两种方式把知识变成产品:
+17 个课程走完, 你已经从内到外理解了 harness 工程的运作原理。两种方式把知识变成产品:
 
 ### Kode Agent CLI -- 开源 Coding Agent CLI
 

@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s18 → s19
+`s01` → [s02](../s02_tool_use/) → s03 → s04 → ... → s16 → s17
 > *"One loop & Bash is all you need"* — 一个工具 + 一个循环 = 一个 Agent。
 >
 > **Harness 层**: 循环 — 模型与真实世界的第一道连接。
@@ -107,7 +107,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-不到 30 行，这就是最小可运行的 agent harness 内核。它为模型提供持续行动的最小运行框架：模型负责决策（要不要调工具、调哪个），harness 负责执行（调用工具，把结果作为新消息追加）。后面 19 个章节都在这个循环上叠加机制，循环本身始终不变。
+不到 30 行，这就是最小可运行的 agent harness 内核。它为模型提供持续行动的最小运行框架：模型负责决策（要不要调工具、调哪个），harness 负责执行（调用工具，把结果作为新消息追加）。后面 16 个章节都在这个循环上叠加机制，循环本身始终不变。
 
 ---
 

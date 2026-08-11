@@ -14,22 +14,27 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LESSON = ROOT / "s15_agent_teams" / "code.py"
+LESSON = ROOT / "s13_agent_teams" / "code.py"
 DOWNSTREAM_LESSONS = (
-    ROOT / "s16_mcp_plugin" / "code.py",
-    ROOT / "s17_integrated_harness" / "code.py",
+    ROOT / "s15_integrated_harness" / "code.py",
 )
 RUNTIME_LESSONS = (LESSON, *DOWNSTREAM_LESSONS)
+MCP_LESSONS = (
+    ROOT / "s14_mcp_plugin" / "code.py",
+    ROOT / "s15_integrated_harness" / "code.py",
+)
 BACKGROUND_LESSONS = tuple(
     ROOT / name / "code.py" for name in (
-        "s13_background_tasks",
-        "s14_cron_scheduler",
-        "s15_agent_teams",
-        "s16_mcp_plugin",
-        "s17_integrated_harness",
+        "s11_background_tasks",
+        "s15_integrated_harness",
     )
 )
-CRON_LESSONS = BACKGROUND_LESSONS[1:]
+CRON_LESSONS = tuple(
+    ROOT / name / "code.py" for name in (
+        "s12_cron_scheduler",
+        "s15_integrated_harness",
+    )
+)
 
 
 def load_lesson(temp_cwd: Path, lesson_path: Path = LESSON):
@@ -162,6 +167,80 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             self.assertIn("[result] alice: done",
                           lesson.format_team_events(events))
 
+    def test_spawn_claims_the_initial_task_before_starting_the_thread(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(Path(tmp))
+            task = lesson.create_task("Review authentication")
+            schema = next(
+                tool["input_schema"] for tool in lesson.TOOLS
+                if tool["name"] == "spawn_teammate"
+            )
+            self.assertIn("task_id", schema["properties"])
+
+            with patch.object(
+                lesson.threading.Thread, "start", lambda _thread: None
+            ):
+                result = lesson.spawn_teammate_thread(
+                    "alice", "reviewer", "Review the assigned Task.", task.id
+                )
+
+            self.assertIn(task.id, result)
+            claimed = lesson.load_task(task.id)
+            self.assertEqual(claimed.status, "in_progress")
+            self.assertEqual(claimed.owner, "alice")
+            self.assertEqual(
+                lesson.teammate_assignments["alice"]["task_id"], task.id
+            )
+
+    def test_spawn_allows_an_idle_teammate_without_an_initial_task(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    tool_defs = getattr(lesson, "TOOLS", None)
+                    if tool_defs is None:
+                        tool_defs = lesson.BUILTIN_TOOLS
+                    schema = next(
+                        tool["input_schema"] for tool in tool_defs
+                        if tool["name"] == "spawn_teammate"
+                    )
+                    self.assertNotIn("task_id", schema["required"])
+
+                    with patch.object(
+                        lesson.threading.Thread, "start", lambda _thread: None
+                    ):
+                        result = lesson.run_spawn_teammate(
+                            "alice", "reviewer", "Wait for a ready Task."
+                        )
+
+                    self.assertIn("without an initial Task", result)
+                    self.assertNotIn("alice", lesson.teammate_assignments)
+
+    def test_teammate_workspace_tools_require_a_claimed_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lesson = load_lesson(root)
+            runtime = lesson.TeammateRuntime(
+                "alice", "reviewer", "Inspect the project.", None, False
+            )
+
+            result = runtime.write("unassigned.txt", "must not be written")
+
+            self.assertIn("Claim a Task", result)
+            self.assertFalse((root / "unassigned.txt").exists())
+
+    def test_plain_message_does_not_change_assignment_or_plan_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(Path(tmp))
+            lesson.active_teammates["alice"] = "working"
+            lesson.plan_gates["alice"] = "approved"
+            lesson.assignment_versions["alice"] = 3
+
+            self.assertIn("Sent", lesson.run_send_message("alice", "Continue."))
+
+            self.assertEqual(lesson.plan_gates["alice"], "approved")
+            self.assertEqual(lesson.assignment_versions["alice"], 3)
+
     def test_worktree_removal_is_host_only(self):
         for lesson_path in RUNTIME_LESSONS:
             with self.subTest(lesson=lesson_path.parent.name):
@@ -177,35 +256,83 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     self.assertTrue(callable(lesson.remove_worktree))
                     self.assertFalse(hasattr(lesson, "run_remove_worktree"))
 
-    def test_mcp_lesson_retains_s15_cron_and_background_tools(self):
-        required = {
-            "bash", "schedule_cron", "list_crons", "cancel_cron",
-            "spawn_teammate", "create_worktree",
-        }
-        for lesson_path in RUNTIME_LESSONS:
-            with self.subTest(lesson=lesson_path.parent.name):
-                with tempfile.TemporaryDirectory() as tmp:
-                    lesson = load_lesson(Path(tmp), lesson_path)
-                    tool_defs = getattr(lesson, "TOOLS", None)
-                    if tool_defs is None:
-                        tool_defs = lesson.BUILTIN_TOOLS
-                    tool_names = {tool["name"] for tool in tool_defs}
-                    bash_schema = next(
-                        tool["input_schema"] for tool in tool_defs
-                        if tool["name"] == "bash"
-                    )
+    def test_agent_teams_builds_on_tasks_not_background_or_cron(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lesson = load_lesson(root)
+            tool_names = {tool["name"] for tool in lesson.TOOLS}
 
-                    self.assertTrue(required.issubset(tool_names))
-                    self.assertIn(
-                        "run_in_background", bash_schema["properties"]
-                    )
-                    self.assertTrue(
-                        lesson.should_run_background(
-                            "bash", {"run_in_background": True}
-                        )
-                    )
-                    self.assertTrue(callable(lesson.consume_cron_queue))
-                    self.assertTrue(callable(lesson.collect_background_results))
+            self.assertTrue({
+                "bash", "read_file", "write_file", "edit_file", "glob",
+                "create_task", "list_tasks", "get_task", "claim_task",
+                "complete_task", "spawn_teammate", "list_teammates",
+                "send_message", "request_shutdown", "request_plan",
+                "review_plan", "create_worktree",
+            }.issubset(tool_names))
+            self.assertTrue({
+                "schedule_cron", "list_crons", "cancel_cron",
+            }.isdisjoint(tool_names))
+            self.assertNotIn("run_in_background", next(
+                tool["input_schema"] for tool in lesson.TOOLS
+                if tool["name"] == "bash"
+            )["properties"])
+            self.assertFalse((root / ".tasks").exists())
+            self.assertFalse((root / ".mailboxes").exists())
+            self.assertFalse((root / ".worktrees").exists())
+
+    def test_integrated_harness_reuses_memory_recall_and_extraction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(Path(tmp), DOWNSTREAM_LESSONS[0])
+            calls = []
+            lesson.MEMORY_RUNTIME = types.SimpleNamespace(
+                read_memory_index=lambda: "- [Style](style.md) - Project style",
+                load_memories=lambda messages: (
+                    calls.append(("recall", list(messages)))
+                    or '[{"source":"style.md","content":"Use black."}]'
+                ),
+                extract_memories=lambda messages: (
+                    calls.append(("extract", list(messages))) or 1
+                ),
+                consolidate_memories=lambda: calls.append(("consolidate", None)),
+            )
+            messages = [{"role": "user", "content": "Format this file."}]
+
+            context = lesson.update_context({}, messages)
+            system = lesson.assemble_system_prompt(context)
+            lesson.remember_after_turn(messages)
+
+            self.assertIn("Memory catalog", system)
+            self.assertIn("Relevant memory records", system)
+            self.assertEqual(
+                [name for name, _payload in calls],
+                ["recall", "extract", "consolidate"],
+            )
+
+    def test_mcp_lesson_builds_on_the_base_kernel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s14_mcp_plugin" / "code.py"
+            )
+            tools_before, handlers_before = lesson.assemble_tool_pool()
+            self.assertEqual(
+                {tool["name"] for tool in tools_before},
+                {"bash", "read_file", "write_file", "edit_file", "glob",
+                 "connect_mcp"},
+            )
+            self.assertNotIn("mcp__docs__search", handlers_before)
+
+            self.assertIn(
+                "Connected to MCP server 'docs'", lesson.connect_mcp("docs")
+            )
+            tools_after, handlers_after = lesson.assemble_tool_pool()
+            self.assertIn(
+                "mcp__docs__search",
+                {tool["name"] for tool in tools_after},
+            )
+            self.assertEqual(
+                handlers_after["mcp__docs__search"](query="hooks"),
+                "[docs] Found 3 results for 'hooks'",
+            )
 
     def test_background_dispatch_is_bash_only_and_reports_failures(self):
         for lesson_path in BACKGROUND_LESSONS:
@@ -223,7 +350,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                         input={"command": "exit 7", "run_in_background": True},
                     )
                     if lesson_path.parent.name in {
-                        "s16_mcp_plugin", "s17_integrated_harness"
+                        "s14_mcp_plugin", "s15_integrated_harness"
                     }:
                         bg_id = lesson.start_background_task(block, {})
                     else:
@@ -331,7 +458,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                         content=[], stop_reason="end_turn"
                     )
                     messages = []
-                    if lesson_path.parent.name == "s17_integrated_harness":
+                    if lesson_path.parent.name == "s15_integrated_harness":
                         lesson.agent_loop(messages, {}, "scheduled delivery")
                     else:
                         lesson.agent_loop(messages, {})
@@ -364,7 +491,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     )
 
                     messages = []
-                    if lesson_path.parent.name == "s17_integrated_harness":
+                    if lesson_path.parent.name == "s15_integrated_harness":
                         lesson.agent_loop(messages, {}, "scheduled retry")
                     else:
                         lesson.agent_loop(messages, {})
@@ -434,41 +561,42 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     self.assertIn("Cancelled", lesson.cancel_job(job.id))
                     self.assertEqual(lesson.consume_cron_queue(), [])
 
-    def test_integrated_permission_uses_host_mcp_policy(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            lesson = load_lesson(
-                Path(tmp), ROOT / "s17_integrated_harness" / "code.py"
-            )
-            lesson.connect_mcp("deploy")
-            status = types.SimpleNamespace(
-                name="mcp__deploy__status", input={"service": "web"}
-            )
-            trigger = types.SimpleNamespace(
-                name="mcp__deploy__trigger", input={"service": "web"}
-            )
+    def test_mcp_permission_uses_host_policy(self):
+        for lesson_path in MCP_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    lesson.connect_mcp("deploy")
+                    lesson.assemble_tool_pool()
+                    status = types.SimpleNamespace(
+                        name="mcp__deploy__status", input={"service": "web"}
+                    )
+                    trigger = types.SimpleNamespace(
+                        name="mcp__deploy__trigger", input={"service": "web"}
+                    )
 
-            self.assertIsNone(lesson.permission_hook(status))
-            with patch("builtins.input", return_value="no"):
-                self.assertEqual(
-                    lesson.permission_hook(trigger),
-                    "Permission denied by user",
-                )
+                    self.assertIsNone(lesson.permission_hook(status))
+                    with patch("builtins.input", return_value="no"):
+                        self.assertEqual(
+                            lesson.permission_hook(trigger),
+                            "Permission denied by user",
+                        )
 
-            spoofed = types.SimpleNamespace(
-                name="mcp__third_party__erase",
-                input={"description": "Erase records. (readOnly)"},
-            )
-            with patch("builtins.input", return_value="no"):
-                self.assertEqual(
-                    lesson.permission_hook(spoofed),
-                    "Permission denied by user",
-                )
+                    spoofed = types.SimpleNamespace(
+                        name="mcp__third_party__erase",
+                        input={"description": "Erase records. (readOnly)"},
+                    )
+                    with patch("builtins.input", return_value="no"):
+                        self.assertEqual(
+                            lesson.permission_hook(spoofed),
+                            "Permission denied by user",
+                        )
 
     def test_integrated_permission_requires_approval_for_every_shell_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             lesson = load_lesson(
-                root, ROOT / "s17_integrated_harness" / "code.py"
+                root, ROOT / "s15_integrated_harness" / "code.py"
             )
             outside = root.parent / f"outside-{time.time_ns()}.txt"
             block = types.SimpleNamespace(
@@ -544,29 +672,95 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
     def test_plan_gate_blocks_mutating_tools_until_approval(self):
         with tempfile.TemporaryDirectory() as tmp:
             lesson = load_lesson(Path(tmp))
-            calls = []
-            block = types.SimpleNamespace(
-                name="write_file",
-                input={"path": "config.py", "content": "VALUE = 1"},
-            )
-            handlers = {
-                "write_file": lambda **kwargs: calls.append(kwargs) or "wrote"
+            cases = {
+                "write_file": {"path": "config.py", "content": "VALUE = 1"},
+                "edit_file": {
+                    "path": "config.py", "old_text": "0", "new_text": "1"
+                },
             }
+            for tool_name, tool_input in cases.items():
+                with self.subTest(tool=tool_name):
+                    calls = []
+                    block = types.SimpleNamespace(
+                        name=tool_name, input=tool_input
+                    )
+                    handlers = {
+                        tool_name: lambda **kwargs: calls.append(kwargs) or "done"
+                    }
 
-            lesson.plan_gates["alice"] = "pending"
-            blocked = lesson._run_teammate_tool("alice", block, handlers)
-            self.assertIn("Blocked", blocked)
-            self.assertEqual(calls, [])
+                    lesson.plan_gates["alice"] = "pending"
+                    blocked = lesson._run_teammate_tool(
+                        "alice", block, handlers
+                    )
+                    self.assertIn("Blocked", blocked)
+                    self.assertEqual(calls, [])
 
-            lesson.plan_gates["alice"] = "approved"
-            allowed = lesson._run_teammate_tool("alice", block, handlers)
-            self.assertEqual(allowed, "wrote")
-            self.assertEqual(len(calls), 1)
+                    lesson.plan_gates["alice"] = "approved"
+                    allowed = lesson._run_teammate_tool(
+                        "alice", block, handlers
+                    )
+                    self.assertEqual(allowed, "done")
+                    self.assertEqual(len(calls), 1)
 
-    def test_s17_teammate_dispatch_runs_permission_and_post_hooks(self):
+    def test_teammate_tool_errors_become_tool_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(Path(tmp))
+            lesson.plan_gates["alice"] = "not_required"
+            block = types.SimpleNamespace(
+                name="write_file", input={"path": "config.py"}
+            )
+
+            result = lesson._run_teammate_tool(
+                "alice", block,
+                {"write_file": lambda path, content: "wrote"},
+            )
+
+            self.assertIn("TypeError", result)
+
+    def test_teammate_keeps_complete_tool_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(Path(tmp))
+            lesson.IDLE_SCAN_INTERVAL = 5.0
+            calls = 0
+
+            def respond(**kwargs):
+                nonlocal calls
+                calls += 1
+                self.assertEqual(
+                    kwargs["messages"][0]["content"], "Inspect the project."
+                )
+                if calls <= 11:
+                    return types.SimpleNamespace(
+                        stop_reason="tool_use",
+                        content=[types.SimpleNamespace(
+                            type="tool_use", name="list_tasks",
+                            id=f"list-{calls}", input={},
+                        )],
+                    )
+                return types.SimpleNamespace(
+                    stop_reason="end_turn",
+                    content=[types.SimpleNamespace(
+                        type="text", text="Inspection complete."
+                    )],
+                )
+
+            lesson.client.messages.create = respond
+            lesson.spawn_teammate_thread(
+                "alice", "reviewer", "Inspect the project."
+            )
+            self.assertTrue(wait_until(
+                lambda: lesson.BUS.peek("lead"), timeout=3.0
+            ))
+            self.assertEqual(calls, 12)
+            lesson.run_request_shutdown("alice")
+            self.assertTrue(wait_until(
+                lambda: "alice" not in lesson.active_teammates
+            ))
+
+    def test_s15_teammate_dispatch_runs_permission_and_post_hooks(self):
         with tempfile.TemporaryDirectory() as tmp:
             lesson = load_lesson(
-                Path(tmp), ROOT / "s17_integrated_harness" / "code.py"
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
             )
             block = types.SimpleNamespace(
                 name="write_file",
@@ -608,10 +802,10 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                 ],
             )
 
-    def test_s17_teammate_reads_shutdown_between_tool_rounds(self):
+    def test_s15_teammate_reads_shutdown_between_tool_rounds(self):
         with tempfile.TemporaryDirectory() as tmp:
             lesson = load_lesson(
-                Path(tmp), ROOT / "s17_integrated_harness" / "code.py"
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
             )
             entered = threading.Event()
             release = threading.Event()
@@ -640,7 +834,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             self.assertEqual(calls, ["llm"])
 
     def test_normalized_mcp_tool_name_collisions_are_rejected(self):
-        for lesson_path in DOWNSTREAM_LESSONS:
+        for lesson_path in MCP_LESSONS:
             with self.subTest(lesson=lesson_path.parent.name):
                 with tempfile.TemporaryDirectory() as tmp:
                     lesson = load_lesson(Path(tmp), lesson_path)
@@ -931,10 +1125,10 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     self.assertEqual([event["type"] for event in events], ["error"])
                     self.assertIn("simulated dispatch failure", events[0]["content"])
 
-    def test_s17_completed_background_task_wakes_the_agent_once(self):
+    def test_s15_completed_background_task_wakes_the_agent_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             lesson = load_lesson(
-                Path(tmp), ROOT / "s17_integrated_harness" / "code.py"
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
             )
             seen_messages = []
 
@@ -1028,7 +1222,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                 wait_until(lambda: "alice" not in lesson.active_teammates)
             )
 
-    def test_autonomous_claim_is_atomic_across_teammates(self):
+    def test_idle_claim_is_atomic_across_teammates(self):
         with tempfile.TemporaryDirectory() as tmp:
             lesson = load_lesson(Path(tmp))
             task = lesson.create_task("Refactor auth")

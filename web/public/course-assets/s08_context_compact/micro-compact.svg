@@ -38,11 +38,11 @@
   <text x="535" y="114" fill="#ca8a04" font-size="12" font-weight="600" text-anchor="middle">压缩后（只保留最近 3 条完整）</text>
   <rect x="390" y="122" width="310" height="95" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
   <rect x="400" y="130" width="290" height="10" rx="2" fill="#fef3c7"/>
-  <text x="408" y="138" fill="#92400e" font-size="8" font-family="monospace">[Earlier tool result compacted. Re-run if needed.]</text>
+  <text x="408" y="138" fill="#92400e" font-size="8" font-family="monospace">[Earlier tool result saved at .task_outputs/...]</text>
   <rect x="400" y="145" width="290" height="10" rx="2" fill="#fef3c7"/>
-  <text x="408" y="153" fill="#92400e" font-size="8" font-family="monospace">[Earlier tool result compacted. Re-run if needed.]</text>
+  <text x="408" y="153" fill="#92400e" font-size="8" font-family="monospace">[Earlier tool result omitted.]</text>
   <rect x="400" y="160" width="290" height="10" rx="2" fill="#fef3c7"/>
-  <text x="408" y="168" fill="#92400e" font-size="8" font-family="monospace">[Earlier tool result compacted. Re-run if needed.]</text>
+  <text x="408" y="168" fill="#92400e" font-size="8" font-family="monospace">[Earlier tool result omitted.]</text>
   <rect x="400" y="175" width="290" height="10" rx="2" fill="#fef3c7"/>
   <text x="408" y="183" fill="#92400e" font-size="8" font-family="monospace">Read file J: (完整内容, 2800 字符)</text>
   <text x="545" y="212" fill="#ca8a04" font-size="9" font-weight="600">只保留最近 3 条，前 7 条变占位</text>
@@ -52,6 +52,6 @@
   <text x="35" y="248" fill="#1e3a5f" font-size="11" font-weight="600">处理规则</text>
   <text x="95" y="248" fill="#475569" font-size="10">最近 3 条保持完整，更早且超过 120 字符的结果替换为占位符。</text>
   <text x="35" y="264" fill="#1e3a5f" font-size="11" font-weight="600">占位内容</text>
-  <text x="95" y="264" fill="#475569" font-size="10">说明原结果已压缩，并提示需要时重新运行对应工具。</text>
+  <text x="95" y="264" fill="#475569" font-size="10">有落盘路径时保留路径，否则标记该结果已省略。</text>
   <text x="95" y="280" fill="#94a3b8" font-size="9">消息结构保持不变，后续循环仍可继续处理。</text>
 </svg>

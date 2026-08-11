@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
-s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s18 → s19
+s01 → s02 → s03 → `s04` → [s05](../s05_todo_write/) → s06 → ... → s16 → s17
 
 > *"挂在循环上, 不写进循环里"* — hook 在工具执行前后注入扩展逻辑。
 >
