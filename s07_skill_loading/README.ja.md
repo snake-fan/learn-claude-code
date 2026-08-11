@@ -11,18 +11,18 @@ s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_c
 
 ## 課題
 
-プロジェクトには React コンポーネント仕様、SQL スタイルガイド、API 設計ドキュメントがある。Agent にこれらの仕様を自動的に守らせたい。最も直接的な方法 — すべて system prompt に詰め込む：
+あるプロジェクトに React コンポーネント仕様、SQL スタイルガイド、API 設計ドキュメントがあるとする。開発中、Agent にこれらの規約を守らせたい。最も直接的な方法は、すべてを system prompt に入れることだ：
 
 ```python
 SYSTEM = (
     f"You are a coding agent. "
-    + open("docs/react-style.md").read()       # 2000 行
-    + open("docs/sql-style.md").read()         # 1500 行
-    + open("docs/api-design.md").read()        # 3000 行
+    + open("docs/react-style.md").read()
+    + open("docs/sql-style.md").read()
+    + open("docs/api-design.md").read()
 )
 ```
 
-6500 行の system prompt。Agent は LLM を呼び出すたびにこれらのドキュメントを運ぶ — CSS の色を変えるときも SQL クエリを修正するときも。99% の内容が現在のタスクと無関係で、トークンを無駄に消費する。
+これで LLM を呼び出すたびに 3 つの文書すべてが渡される。現在のタスクで使うのが 1 つだけでも、残りの 2 つがコンテキストを占める。
 
 ---
 

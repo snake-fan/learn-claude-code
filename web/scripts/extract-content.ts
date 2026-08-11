@@ -93,14 +93,14 @@ function extractFunctions(
   lines: string[]
 ): { name: string; signature: string; startLine: number }[] {
   const functions: { name: string; signature: string; startLine: number }[] = [];
-  const funcPattern = /^def\s+(\w+)\((.*?)\)/;
+  const funcPattern = /^(async\s+)?def\s+(\w+)\((.*?)\)/;
 
   for (let i = 0; i < lines.length; i++) {
     const match = lines[i].match(funcPattern);
     if (!match) continue;
     functions.push({
-      name: match[1],
-      signature: `def ${match[1]}(${match[2]})`,
+      name: match[2],
+      signature: `${match[1] ?? ""}def ${match[2]}(${match[3]})`,
       startLine: i + 1,
     });
   }
@@ -108,12 +108,71 @@ function extractFunctions(
   return functions;
 }
 
+function assignmentBody(source: string, openIndex: number): string {
+  const open = source[openIndex];
+  const close = open === "[" ? "]" : "}";
+  let depth = 0;
+  let quote = "";
+  let triple = false;
+  let escaped = false;
+  let comment = false;
+
+  for (let index = openIndex; index < source.length; index++) {
+    const char = source[index];
+    const nextThree = source.slice(index, index + 3);
+    if (comment) {
+      if (char === "\n") comment = false;
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (triple && nextThree === quote.repeat(3)) {
+        quote = "";
+        triple = false;
+        index += 2;
+      } else if (!triple && char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === "#") {
+      comment = true;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      triple = nextThree === char.repeat(3);
+      if (triple) index += 2;
+      continue;
+    }
+    if (char === open) depth += 1;
+    if (char === close) {
+      depth -= 1;
+      if (depth === 0) return source.slice(openIndex, index + 1);
+    }
+  }
+  return "";
+}
+
 function extractTools(source: string): string[] {
+  const assignmentPattern = /^(?:TOOLS|BASE_TOOLS|BUILTIN_TOOLS|SUB_TOOLS|TASK_TOOL|WORKFLOW_TOOL)\s*=\s*([\[{])/gm;
   const toolPattern = /"name"\s*:\s*"([\w-]+)"/g;
   const tools = new Set<string>();
-  let match;
-  while ((match = toolPattern.exec(source)) !== null) {
-    tools.add(match[1]);
+  let assignment;
+  while ((assignment = assignmentPattern.exec(source)) !== null) {
+    const openIndex = assignment.index + assignment[0].lastIndexOf(assignment[1]);
+    const body = assignmentBody(source, openIndex);
+    let tool;
+    while ((tool = toolPattern.exec(body)) !== null) {
+      tools.add(tool[1]);
+    }
   }
   return Array.from(tools);
 }
@@ -207,18 +266,24 @@ function rewriteChapterMarkdown(
 }
 
 function buildRootVersions(chapters: ChapterSource[]): AgentVersion[] {
-  return chapters.map((chapter) => {
+  const versions: AgentVersion[] = [];
+  for (const chapter of chapters) {
     const source = fs.readFileSync(chapter.codePath, "utf-8");
     const lines = source.split("\n");
     const meta = VERSION_META[chapter.id];
+    const localTools = extractTools(source);
+    const inheritedId = source.match(/^INHERITS_TOOLS_FROM\s*=\s*"(s\d{2})"/m)?.[1];
+    const inheritedTools = inheritedId
+      ? versions.find((version) => version.id === inheritedId)?.tools ?? []
+      : [];
 
-    return {
+    versions.push({
       id: chapter.id,
       filename: `${chapter.dirName}/code.py`,
       title: meta?.title ?? chapter.id,
       subtitle: meta?.subtitle ?? "",
       loc: countLoc(lines),
-      tools: extractTools(source),
+      tools: Array.from(new Set([...inheritedTools, ...localTools])),
       newTools: [] as string[],
       coreAddition: meta?.coreAddition ?? "",
       keyInsight: meta?.keyInsight ?? "",
@@ -227,8 +292,9 @@ function buildRootVersions(chapters: ChapterSource[]): AgentVersion[] {
       layer: meta?.layer ?? "tools",
       source,
       images: copyChapterAssets(chapter),
-    };
-  });
+    });
+  }
+  return versions;
 }
 
 function buildLegacyVersions(): AgentVersion[] {

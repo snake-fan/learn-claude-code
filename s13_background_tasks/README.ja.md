@@ -33,7 +33,7 @@ Agent の bash ツールも同じ。`pip install torch` は 10 分、`npm run bu
 | 遅い操作 | Agent が待機 | バックグラウンドスレッドで実行 |
 | Agent アイドル | はい | いいえ、処理を継続 |
 | 結果 | 即時返却 | 次ターンで通知を注入 |
-| 判断基準 | — | `run_in_background` パラメータ（モデル明示的リクエスト）、ヒューリスティックフォールバック |
+| 判断基準 | — | bash の `run_in_background` パラメータ、ヒューリスティックフォールバック |
 
 ---
 
@@ -41,7 +41,7 @@ Agent の bash ツールも同じ。`pip install torch` は 10 分、`npm run bu
 
 ### should_run_background: 明示的リクエスト優先、ヒューリスティックフォールバック
 
-モデルは bash ツールの `run_in_background` パラメータで明示的にバックグラウンド実行をリクエストする。指定がない場合は、キーワードヒューリスティックで判断する：
+モデルは bash ツールの `run_in_background` パラメータで明示的にバックグラウンド実行をリクエストする。指定がない場合は、キーワードヒューリスティックで判断する。この経路に入るのは bash だけであり、他のツールは従来どおり引数を検証して実行する：
 
 ```python
 def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
@@ -56,7 +56,9 @@ def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
 
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
     """Model explicit request takes priority; fallback to heuristic."""
-    if tool_input.get("run_in_background"):
+    if tool_name != "bash":
+        return False
+    if tool_input.get("run_in_background") is True:
         return True
     return is_slow_operation(tool_name, tool_input)
 ```
@@ -78,9 +80,14 @@ def start_background_task(block) -> str:
     bg_id = f"bg_{_bg_counter:04d}"
 
     def worker():
-        result = execute_tool(block)
+        try:
+            output, exit_code = _run_bash_process(block.input["command"])
+            status = "completed" if exit_code == 0 else "failed"
+            result = _format_bash_result(output, exit_code)
+        except Exception as exc:
+            status, result = "failed", f"Error: {exc}"
         with background_lock:
-            background_tasks[bg_id]["status"] = "completed"
+            background_tasks[bg_id]["status"] = status
             background_results[bg_id] = result
 
     with background_lock:
@@ -94,7 +101,7 @@ def start_background_task(block) -> str:
     return bg_id
 ```
 
-`start_background_task()` は `bg_id` を返す。`daemon=True` により、Agent プロセスの終了時にスレッドも終了する。
+`start_background_task()` は `bg_id` を返す。command が非ゼロで終了した場合や worker で例外が起きた場合は `failed` となり、成功として扱わない。Shell は独立した process group で起動し、command の完了、timeout、または Agent が通常経路や `SIGTERM` で終了する時に元の group を停止する。これは lifecycle cleanup であって sandbox ではなく、別の session を作った process は group から離れられる。
 
 ### collect_background_results: 通知収集
 
@@ -102,10 +109,10 @@ def start_background_task(block) -> str:
 
 ```python
 def collect_background_results() -> list[str]:
-    """Collect completed results as task_notification messages."""
+    """Collect terminal results as task_notification messages."""
     with background_lock:
         ready_ids = [bid for bid, task in background_tasks.items()
-                     if task["status"] == "completed"]
+                     if task["status"] in ("completed", "failed")]
     notifications = []
     for bg_id in ready_ids:
         with background_lock:
@@ -114,7 +121,7 @@ def collect_background_results() -> list[str]:
         notifications.append(
             f"<task_notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>completed</status>\n"
+            f"  <status>{task['status']}</status>\n"
             f"  <command>{task['command']}</command>\n"
             f"  <summary>{output[:200]}</summary>\n"
             f"</task_notification>")
@@ -213,4 +220,4 @@ python s13_background_tasks/code.py
 s14 Cron Scheduler → Agent にアラームクロックを付ける。
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v4, en@v4, ja@v4 -->

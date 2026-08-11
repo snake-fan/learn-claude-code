@@ -24,30 +24,42 @@ The longer the conversation, the worse it gets: tool results keep filling the co
 
 ![Todo Overview](images/todo-overview.en.svg)
 
-The minimal hook structure from the previous chapter is preserved, focusing on the new `todo_write` tool and reminder mechanism. `todo_write` does no actual work, can't read files or run commands, it simply lets the Agent organize its thoughts before diving in.
+S05 keeps the tool dispatch, permissions, and hooks from S04, then adds `todo_write` and a reminder counter. `todo_write` only updates planning state; the existing tools still perform the work.
 
-The dispatch mechanism is unchanged; the new tool is still routed through `TOOL_HANDLERS[block.name]`. However, to demonstrate the todo reminder, a counter was added to the loop: after 3 consecutive rounds without calling `todo_write`, a reminder is injected.
+The new tool uses the same `TOOL_HANDLERS[block.name]` dispatch path. After three consecutive tool-use rounds without `todo_write`, the harness adds a reminder to that round's tool results.
 
 ---
 
 ## How It Works
 
-**The todo_write tool** accepts a list with statuses, keeps it in the current process memory, and displays progress in the terminal:
+**TodoManager** owns the in-memory list, validates updates, and renders the state returned to the model. `run_todo_write` also prints that state in the terminal:
 
 ```python
-CURRENT_TODOS: list[dict] = []
+class TodoManager:
+    def __init__(self):
+        self.items = []
 
-def run_todo_write(todos: list) -> str:
-    global CURRENT_TODOS
-    CURRENT_TODOS = todos
+    def update(self, todos: list | str) -> str:
+        # Parse and validate before replacing the current list.
+        validated = []
+        ...
+        self.items = validated
+        return self.render()
 
-    lines = ["\n## Current Tasks"]
-    for t in CURRENT_TODOS:
-        icon = {"pending": " ", "in_progress": "▸", "completed": "✓"}[t["status"]]
-        lines.append(f"  [{icon}] {t['content']}")
-    print("\n".join(lines))
-    return f"Updated {len(CURRENT_TODOS)} tasks"
+    def render(self) -> str:
+        # [ ] pending, [>] in progress, [x] completed
+        ...
+
+
+TODO = TodoManager()
+
+def run_todo_write(todos: list | str) -> str:
+    output = TODO.update(todos)
+    print(output)
+    return output
 ```
+
+An update may contain at most 20 items, each item needs non-empty `content`, and only one item may be `in_progress`. The string input path accepts JSON or a Python list representation without using `eval`.
 
 The tool definition joins the other 5 in the dispatch map:
 
@@ -81,18 +93,19 @@ TOOLS = [
 TOOL_HANDLERS["todo_write"] = run_todo_write
 ```
 
-**Nag reminder**: when the model has not called `todo_write` for 3 consecutive rounds, a reminder is automatically injected:
+**Reminder**: after three tool-use rounds without `todo_write`, the reminder is appended to the third round's results and the counter resets:
 
 ```python
-if rounds_since_todo >= 3 and messages:
-    messages.append({
-        "role": "user",
-        "content": "<reminder>Update your todos.</reminder>",
+rounds_since_todo = 0 if used_todo else rounds_since_todo + 1
+if rounds_since_todo >= 3:
+    results.append({
+        "type": "text",
+        "text": "<reminder>Update your todos.</reminder>",
     })
     rounds_since_todo = 0
 ```
 
-Typical flow when the Agent receives a task: first call `todo_write` to list all steps (all `pending`) → pick one step, set it to `in_progress` → complete it, set to `completed` → look at the next `pending` → continue. After 3 rounds without `todo_write`, the loop appends a reminder before the next LLM call.
+Typical flow when the Agent receives a task: first call `todo_write` to list all steps (all `pending`) → pick one step, set it to `in_progress` → complete it, set to `completed` → look at the next `pending` → continue.
 
 **Key insight**: todo_write doesn't give the Agent any additional **execution capability**. What it adds is **planning capability**.
 
@@ -103,9 +116,9 @@ Typical flow when the Agent receives a task: first call `todo_write` to list all
 | Component | Before (s04) | After (s05) |
 |-----------|-------------|-------------|
 | Tool count | 5 (bash, read, write, edit, glob) | 6 (+todo_write) |
-| Planning | None | Stateful TODO list + nag reminder |
+| Planning | None | Stateful TODO list + reminder |
 | SYSTEM prompt | Generic prompt | Added "plan before executing" guidance |
-| Loop | Unchanged | Dispatch unchanged, added rounds_since_todo counter and reminder injection |
+| Loop | Tool dispatch and hooks | Same dispatch path, plus rounds_since_todo and reminder injection |
 
 ---
 

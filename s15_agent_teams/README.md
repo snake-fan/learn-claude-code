@@ -198,11 +198,11 @@ def scan_unclaimed_tasks() -> list[Task]:
     ]
 ```
 
-The list is a snapshot. Another teammate may see the same task, so ownership changes happen inside `claim_task()` under `task_lock`:
+The list is a snapshot. Another teammate, or another harness process using the same task directory, may see the same task. Ownership changes therefore happen inside `claim_task()` under `task_store_lock()`, which combines the in-process lock with a file lock:
 
 ```python
 def claim_task(task_id: str, owner: str) -> str:
-    with task_lock:
+    with task_store_lock():
         task = load_task(task_id)
         if task.status != "pending" or task.owner is not None:
             return "Task is no longer available"
@@ -220,7 +220,7 @@ def claim_task(task_id: str, owner: str) -> str:
         return f"Claimed {task.id}"
 ```
 
-Many teammates may discover the same candidate, but only one claim can move it to `in_progress`. A teammate must also finish its current task before claiming another, and a broken worktree binding fails closed rather than falling back to the repository directory.
+Many teammates may discover the same candidate, but only one claim can move it to `in_progress`. Task files are written through a temporary file and atomically replaced while the same store lock is held. A teammate must also finish its current task before claiming another, and a broken worktree binding fails closed rather than falling back to the repository directory.
 
 ### 8. Claimed work reuses the same WORK loop
 
@@ -274,23 +274,27 @@ if not error:
     }
 ```
 
-`complete_task(task_id, owner)` checks that the caller owns the in-progress task. It clears the assignment only after completion succeeds. A failed completion leaves the task directory selected so the teammate can fix the task and try again. The task keeps its `worktree` binding until that checkout is removed.
+`complete_task(task_id, owner)` checks that the caller owns the in-progress task. Successful completion records the result but keeps the assignment directory selected until that model turn ends. This lets later tool calls in the same response stay in the task's worktree. The runtime releases the assignment when the teammate returns to IDLE; a failed completion keeps it so the teammate can fix the task and try again.
+
+After a restart, `assignment_cwd()` can rebuild an in-progress assignment from the durable task owner and worktree binding. It also replaces a stale local lease when the same owner has moved to another task. A missing or invalid binding fails closed instead of silently routing work to the repository directory.
 
 > A worktree separates Git working directories and branches. It is not a sandbox: Shell commands can still access paths and resources allowed to the parent process.
 
-### 10. Worktree cleanup preserves work by default
+### 10. Worktree removal belongs to the host
 
-The model-facing `remove_worktree(name)` tool refuses to remove a worktree while its bound task is `pending` or `in_progress`. After the task is completed, it still treats tracked, untracked, and ignored files as uncommitted data, then asks Git to remove only a clean checkout without `--force`.
+The model can create a task-bound worktree, but it cannot remove one. Cleanup remains a host helper so the user or host can first inspect task ownership, the assignment lease, background work, and Git status. The helper refuses pending or in-progress task bindings, current-turn leases, and background commands using the directory. Without an explicit destructive choice, tracked, untracked, and ignored files all block removal.
 
-The lower-level Python helper retains `discard_changes=True` for host code that has already obtained explicit user confirmation, but that parameter is not present in the model's tool schema. A dirty worktree is left for the user to inspect. Either removal path retains the `wt/<name>` branch, including clean local commits with no upstream. A successful removal clears the task's worktree binding because the checkout no longer exists.
+`remove_worktree(name, discard_changes=True)` is reserved for host code that has already obtained explicit user confirmation. Either removal path retains the `wt/<name>` branch, including clean local commits with no upstream. A successful removal clears the task binding because the checkout no longer exists.
+
+Process-group cleanup is best effort. A command can create another session and leave its original group, so a worktree is not a process sandbox and automatic model-driven deletion would make a false safety promise.
 
 ```text
-clean worktree   → remove directory, retain wt/<name> branch
-changed worktree → model tool refuses; user decides how to preserve or discard it
+clean worktree   → host may remove directory and retain wt/<name> branch
+changed worktree → user decides how to preserve or discard it
 pending/running task → refuse removal
 ```
 
-Task completion also stays separate from worktree cleanup. `complete_task` records the task result; Lead can inspect, merge, keep, or remove the worktree afterward.
+Task completion also stays separate from worktree cleanup. `complete_task` records the task result; after the teammate reaches IDLE, the user or host can inspect, merge, keep, or remove the worktree.
 
 ### 11. Control messages use types and request IDs
 
@@ -307,6 +311,8 @@ class ProtocolState:
     target: str
     status: str
     payload: str
+    work_version: int | None = None
+    task_id: str | None = None
 
 
 pending_requests: dict[str, ProtocolState] = {}
@@ -335,6 +341,8 @@ teammate → plan_approval_request(request_id, plan)
 Lead → plan_approval_response(request_id, approve, feedback)
 ```
 
+When Lead already knows that a teammate must plan first, `spawn_teammate(..., require_plan=True)` activates the gate before the teammate thread starts. `request_plan` can also require a plan from a teammate that is already running.
+
 Tool dispatch enforces the gate:
 
 ```python
@@ -347,7 +355,7 @@ def _run_teammate_tool(name, block, handlers):
     return handlers[block.name](**block.input)
 ```
 
-While the state is `required`, `pending`, or `rejected`, the teammate can read files and submit or revise a plan, but it cannot run Shell commands or write files. The tools are released after an approval response changes the state to `approved`.
+While the state is `required`, `pending`, or `rejected`, the teammate can read files and submit or revise a plan, but it cannot run Shell commands or write files. A submitted plan records the teammate's current task and work version. The approval applies only if both still match; a new task or direct assignment invalidates the old approval while keeping the plan requirement active.
 
 ---
 
@@ -432,4 +440,4 @@ The next lesson connects external tools through a standard discovery and invocat
 
 Next: [s16 MCP Tools](../s16_mcp_plugin/).
 
-<!-- translation-sync: zh@v3, en@v3, ja@v3 -->
+<!-- translation-sync: zh@v6, en@v6, ja@v6 -->

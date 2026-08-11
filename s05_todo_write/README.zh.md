@@ -24,30 +24,42 @@ Agent 开始干活，改了 3 个文件，跑了个测试，发现 2 个失败�
 
 ![Todo Overview](images/todo-overview.svg)
 
-保留上一章的最小 hook 结构，重点看新增的 `todo_write` 工具和 reminder 机制。`todo_write` 本身不做任何实际工作，不能读文件、不能跑命令，只是让 Agent 在动手之前先理清思路。
+S05 保留 S04 的工具分发、权限检查和 Hooks，再加入 `todo_write` 与 reminder 计数器。`todo_write` 只更新计划状态，实际工作仍由原有工具完成。
 
-dispatch 机制不变，新工具仍然走 `TOOL_HANDLERS[block.name]` 分发。但为了演示 todo reminder，循环里加了一个计数器：连续 3 轮没调 `todo_write` 就注入一条提醒。
+新工具仍通过 `TOOL_HANDLERS[block.name]` 分发。连续三个工具调用轮次没有使用 `todo_write` 时，Harness 会把 reminder 追加到第三轮的工具结果中。
 
 ---
 
 ## 工作原理
 
-**todo_write 工具**，接收一个带状态的列表，保存在当前进程内存中，同时在终端显示进度：
+**TodoManager** 持有内存中的任务列表，负责校验更新，并把渲染结果返回给模型。`run_todo_write` 同时把这份状态打印到终端：
 
 ```python
-CURRENT_TODOS: list[dict] = []
+class TodoManager:
+    def __init__(self):
+        self.items = []
 
-def run_todo_write(todos: list) -> str:
-    global CURRENT_TODOS
-    CURRENT_TODOS = todos
+    def update(self, todos: list | str) -> str:
+        # Parse and validate before replacing the current list.
+        validated = []
+        ...
+        self.items = validated
+        return self.render()
 
-    lines = ["\n## Current Tasks"]
-    for t in CURRENT_TODOS:
-        icon = {"pending": " ", "in_progress": "▸", "completed": "✓"}[t["status"]]
-        lines.append(f"  [{icon}] {t['content']}")
-    print("\n".join(lines))
-    return f"Updated {len(CURRENT_TODOS)} tasks"
+    def render(self) -> str:
+        # [ ] pending, [>] in progress, [x] completed
+        ...
+
+
+TODO = TodoManager()
+
+def run_todo_write(todos: list | str) -> str:
+    output = TODO.update(todos)
+    print(output)
+    return output
 ```
+
+一次更新最多包含 20 项；每项都必须有非空的 `content`；同一时间只能有一个 `in_progress`。字符串输入可以是 JSON，也可以是 Python 列表表示，解析过程不使用 `eval`。
 
 工具定义和其他 5 个工具一起加入 dispatch map：
 
@@ -81,18 +93,19 @@ TOOLS = [
 TOOL_HANDLERS["todo_write"] = run_todo_write
 ```
 
-**Nag reminder**：模型连续 3 轮未调用 `todo_write` 时，自动注入提醒：
+**Reminder**：连续三个工具调用轮次没有使用 `todo_write` 时，reminder 会追加到第三轮的结果中，随后计数器清零：
 
 ```python
-if rounds_since_todo >= 3 and messages:
-    messages.append({
-        "role": "user",
-        "content": "<reminder>Update your todos.</reminder>",
+rounds_since_todo = 0 if used_todo else rounds_since_todo + 1
+if rounds_since_todo >= 3:
+    results.append({
+        "type": "text",
+        "text": "<reminder>Update your todos.</reminder>",
     })
     rounds_since_todo = 0
 ```
 
-Agent 收到任务后的典型流程：先调 `todo_write` 列出所有步骤（全 `pending`）→ 做一个步骤，改成 `in_progress` → 做完改成 `completed` → 看下一个 `pending` → 继续。连续 3 轮没有调用 `todo_write` 时，循环会在下一次 LLM 调用前追加一条 reminder。
+Agent 收到任务后的典型流程：先调 `todo_write` 列出所有步骤（全 `pending`）→ 做一个步骤，改成 `in_progress` → 做完改成 `completed` → 看下一个 `pending` → 继续。
 
 **关键洞察**：todo_write 不给 Agent 增加任何**执行能力**。它增加的是**规划能力**。
 
@@ -103,9 +116,9 @@ Agent 收到任务后的典型流程：先调 `todo_write` 列出所有步骤（
 | 组件 | 之前 (s04) | 之后 (s05) |
 |------|-----------|-----------|
 | 工具数量 | 5 (bash, read, write, edit, glob) | 6 (+todo_write) |
-| 规划能力 | 无 | 带状态的 TODO 列表 + nag reminder |
+| 规划能力 | 无 | 带状态的 TODO 列表 + reminder |
 | SYSTEM 提示 | 通用提示 | 加入 "先计划再执行" 引导 |
-| 循环 | 不变 | dispatch 不变，新增 rounds_since_todo 计数器和 reminder 注入 |
+| 循环 | 工具分发与 Hooks | 保留分发路径，加入 rounds_since_todo 和 reminder 注入 |
 
 ---
 

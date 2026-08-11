@@ -57,6 +57,7 @@ class CronJob:
     prompt: str      # 触发时注入给 Agent 的消息
     recurring: bool  # True=周期性，False=一次性
     durable: bool    # True=写磁盘，跨会话保留
+    pending_delivery: bool = False
 ```
 
 Cron 表达式，五段式，Unix 用了 50 年：
@@ -108,6 +109,17 @@ def cron_matches(cron_expr: str, dt: datetime) -> bool:
 调度器跑在独立的 daemon 线程里，不依赖 agent_loop 是否在执行。单个 job 异常不会杀掉整个线程：
 
 ```python
+def _enqueue_due_job(job):
+    if not job.recurring:
+        job.pending_delivery = True
+        try:
+            if job.durable:
+                save_durable_jobs()
+        except Exception:
+            job.pending_delivery = False
+            raise
+    cron_queue.append(job)
+
 def cron_scheduler_loop():
     while True:
         time.sleep(1)
@@ -116,14 +128,12 @@ def cron_scheduler_loop():
         with cron_lock:
             for job in list(scheduled_jobs.values()):
                 try:
-                    if cron_matches(job.cron, now):
-                        if _last_fired.get(job.id) != minute_marker:
-                            cron_queue.append(job)
-                            _last_fired[job.id] = minute_marker
-                        if not job.recurring:
-                            scheduled_jobs.pop(job.id, None)
-                            if job.durable:
-                                save_durable_jobs()
+                    if job.pending_delivery:
+                        continue
+                    if (cron_matches(job.cron, now)
+                            and _last_fired.get(job.id) != minute_marker):
+                        _enqueue_due_job(job)
+                        _last_fired[job.id] = minute_marker
                 except Exception as e:
                     print(f"[cron error] {job.id}: {e}")
 ```
@@ -132,7 +142,7 @@ def cron_scheduler_loop():
 - **独立于 agent_loop**：即使 agent_loop 没在跑，调度器也在后台检查时间
 - **date-aware minute_marker**：用 `"YYYY-MM-DD HH:MM"` 防止同一分钟重复触发，同时不会在第二天跳过
 - **单 job try/except**：一个坏 job 不会拖垮整个调度线程
-- **一次性任务**：触发后自动从 scheduled_jobs 里删除
+- **一次性任务**：以 `pending_delivery` 状态保留，直到模型成功接收包含该 prompt 的调用
 
 ### Queue Processor + agent_loop: 交付端
 
@@ -160,6 +170,12 @@ fired = consume_cron_queue()
 for job in fired:
     messages.append({"role": "user",
                      "content": f"[Scheduled] {job.prompt}"})
+try:
+    response = client.messages.create(...)
+except Exception:
+    restore_cron_jobs(fired)
+    raise
+acknowledge_cron_jobs(fired)  # 仅在模型调用成功后确认
 ```
 
 生产者（调度线程）、交付者（queue processor）和消费者（agent_loop）通过 `cron_queue`、`cron_lock`、`agent_lock` 解耦。
@@ -182,6 +198,8 @@ def schedule_job(cron, prompt, recurring=True, durable=True):
 
 - **Durable**：任务定义写进 `.scheduled_tasks.json`。Agent 重启后加载文件，恢复任务。
 - **Session-only**：只在内存里。Agent 关闭就没了。
+
+durable 的一次性任务会先以 `pending_delivery=true` 持久化，调度器再把它放入内存队列。持久化失败时，内存中的 pending 状态会回滚，下一次调度再重试。把 prompt 追加进 `messages` 时也不会删除它；模型调用成功后，`acknowledge_cron_jobs()` 才会删除。模型调用失败会把任务放回队列。若进程在确认前崩溃，任务可能再次交付，因此这里保证的是至少一次，而不是恰好一次。
 
 > **重要前提**：cron 调度器必须在 Agent 进程内跑。进程关闭，调度也停。Durable 只意味着任务定义跨重启保留，下次 Agent 启动时调度器才会发现"该触发了"并触发。如果需要"即使应用关闭也能定时跑"，请用系统 crontab 或 systemd timer。
 
@@ -252,4 +270,4 @@ python s14_cron_scheduler/code.py
 s15 Agent Teams → 一个 Agent 不够，组队吧。持久队友 + 异步收件箱。
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v5, en@v5, ja@v5 -->

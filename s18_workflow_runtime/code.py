@@ -10,6 +10,7 @@ Idea:
 
 Run:
   python s18_workflow_runtime/code.py
+  python s18_workflow_runtime/code.py demo
   python s18_workflow_runtime/code.py resume
 
 Implementation choices:
@@ -20,10 +21,16 @@ Implementation choices:
 """
 
 import asyncio
+import fcntl
 import hashlib
+import importlib.util
 import json
+import os
 import re
+import secrets
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 # ---- runtime guards ----
@@ -32,7 +39,7 @@ CONCURRENCY = 8                        # parallelism cap (semaphore)
 STORE = Path(__file__).parent / ".runtime"   # snapshots + journals live here
 MISS = object()                        # journal cache miss sentinel
 WORKFLOW_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-RUN_ID_RE = re.compile(r"^wf_[A-Za-z0-9][A-Za-z0-9._-]{0,63}_[0-9]{4}$")
+RUN_ID_RE = re.compile(r"^wf_[A-Za-z0-9][A-Za-z0-9._-]{0,63}_[0-9a-f]{16}$")
 
 
 def _stable_hash(s: str) -> int:
@@ -42,8 +49,22 @@ def _stable_hash(s: str) -> int:
 
 
 def create_run_id(meta) -> str:
-    # Keep the ID deterministic so `resume` lands on the same journal file.
-    return f"wf_{meta['name']}_{_stable_hash(meta['name']) % 10000:04d}"
+    return f"wf_{meta['name']}_{secrets.token_hex(8)}"
+
+
+def reserve_run_id(meta) -> str:
+    """Reserve a fresh run identity before any journal can be truncated."""
+    STORE.mkdir(parents=True, exist_ok=True)
+    for _ in range(32):
+        run_id = validate_run_id(create_run_id(meta))
+        snapshot_path = STORE / f"{run_id}.json"
+        try:
+            fd = os.open(snapshot_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return run_id
+    raise WorkflowInputError("could not allocate a unique workflow runId")
 
 
 def create_task_id(run_id) -> str:
@@ -61,6 +82,41 @@ def validate_run_id(run_id):
 # ============================================================
 class WorkflowInputError(Exception):
     """Bad workflow, metadata, or schema input."""
+
+
+_run_locks_guard = threading.Lock()
+_run_locks: dict[str, threading.Lock] = {}
+
+
+@contextmanager
+def workflow_run_lock(run_id: str):
+    """Hold one run across threads and host processes for its full lifecycle."""
+    with _run_locks_guard:
+        local_lock = _run_locks.setdefault(run_id, threading.Lock())
+    if not local_lock.acquire(blocking=False):
+        raise WorkflowInputError(f"workflow run {run_id} is already active")
+
+    handle = None
+    try:
+        STORE.mkdir(parents=True, exist_ok=True)
+        handle = (STORE / f"{run_id}.lock").open("a+")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise WorkflowInputError(
+                f"workflow run {run_id} is already active"
+            ) from exc
+        yield
+    finally:
+        if handle is not None:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
+        local_lock.release()
+        with _run_locks_guard:
+            if not local_lock.locked() and _run_locks.get(run_id) is local_lock:
+                _run_locks.pop(run_id, None)
 
 
 # ============================================================
@@ -190,7 +246,8 @@ class WorkflowJournal:
     """Append-only <runId>.journal.jsonl. On resume, agent() calls whose
     semantic key is already present are replayed from cache instead of re-run."""
 
-    def __init__(self, run_id, resume, store=STORE):
+    def __init__(self, run_id, resume, store=None):
+        store = STORE if store is None else store
         store.mkdir(parents=True, exist_ok=True)
         self.path = store / f"{run_id}.journal.jsonl"
         self.resume = resume
@@ -409,13 +466,31 @@ class WorkflowTool:
     async def call(self, meta, script_fn, args=None, resume_from_run_id=None):
         validate_meta(meta)
         check_permission(meta)
-        args = args or {}
-        run_id = resume_from_run_id or create_run_id(meta)
-        validate_run_id(run_id)
-        if resume_from_run_id is not None and run_id != create_run_id(meta):
-            raise WorkflowInputError("resume runId does not match workflow meta")
-        task_id = create_task_id(run_id)
         resuming = resume_from_run_id is not None
+        if resuming:
+            run_id = validate_run_id(resume_from_run_id)
+        else:
+            run_id = reserve_run_id(meta)
+        with workflow_run_lock(run_id):
+            return await self._call_locked(
+                meta, script_fn, args, run_id, resuming
+            )
+
+    async def _call_locked(self, meta, script_fn, args, run_id, resuming):
+        if resuming:
+            snapshot = _read_snapshot(run_id)
+            if snapshot.get("workflowName") != meta["name"]:
+                raise WorkflowInputError("resume runId does not match workflow meta")
+            saved_args = snapshot.get("args", {})
+            if args is None:
+                args = saved_args
+            elif args != saved_args:
+                raise WorkflowInputError("resume args do not match the original run")
+            journal = WorkflowJournal(run_id, resume=True)
+        else:
+            args = args or {}
+            journal = WorkflowJournal(run_id, resume=False)
+        task_id = create_task_id(run_id)
 
         task = LocalWorkflowTask(task_id, run_id, meta)
         # Record the launch envelope before workflow execution starts.
@@ -426,10 +501,14 @@ class WorkflowTool:
         task.event("task_started", workflow=meta["name"],
                    phases=",".join(meta.get("phases", [])) or "-",
                    resume=resuming)
+        _write_json(STORE / f"{run_id}.json", {
+            "runId": run_id,
+            "workflowName": meta["name"],
+            "args": args,
+            "task": serialize_task(task),
+        })
 
-        journal = None
         try:
-            journal = WorkflowJournal(run_id, resume=resuming)
             ctx = ExecutionState(
                 task, journal, MockAgentRunner(), Budget(args.get("budget")), args
             )
@@ -439,10 +518,15 @@ class WorkflowTool:
             task.status = "failed"
             result = {"error": str(e)}
         finally:
-            if journal is not None:
-                journal.close()
+            journal.close()
 
         _write_json(STORE / f"{run_id}.output.json", result)
+        _write_json(STORE / f"{run_id}.json", {
+            "runId": run_id,
+            "workflowName": meta["name"],
+            "args": args,
+            "task": serialize_task(task),
+        })
         _save_last_run(run_id)
         task.event("task_notification", status=task.status,
                    agents=task.usage["agents"], tokens=task.usage["tokens"],
@@ -452,7 +536,22 @@ class WorkflowTool:
 
 def _write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, default=str))
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2, default=str))
+    os.replace(temporary, path)
+
+
+def _read_snapshot(run_id):
+    path = STORE / f"{run_id}.json"
+    if not path.exists():
+        raise WorkflowInputError(f"resume snapshot not found for {run_id}")
+    try:
+        snapshot = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise WorkflowInputError(f"invalid resume snapshot for {run_id}") from exc
+    if not isinstance(snapshot, dict):
+        raise WorkflowInputError(f"invalid resume snapshot for {run_id}")
+    return snapshot
 
 
 def _save_last_run(run_id):
@@ -521,32 +620,162 @@ async def sample_workflow(ctx, args):
 # Saved workflow registry
 WORKFLOWS = {SAMPLE_META["name"]: (SAMPLE_META, sample_workflow)}
 
+WORKFLOW_TOOL = {
+    "name": "Workflow",
+    "description": "Run a saved deterministic workflow by name.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "args": {"type": "object"},
+            "resume_from_run_id": {"type": "string"},
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+}
+
+
+def serialize_task(task):
+    return {
+        "taskId": task.task_id,
+        "taskType": "local_workflow",
+        "runId": task.run_id,
+        "workflowName": task.meta["name"],
+        "status": task.status,
+        "usage": dict(task.usage),
+        "progress": list(task.progress),
+    }
+
+
+async def run_workflow(name, args=None, resume_from_run_id=None):
+    """Model-facing adapter: resolve trusted code from the host registry."""
+    if not isinstance(name, str):
+        raise WorkflowInputError("workflow name must be a string")
+    if name not in WORKFLOWS:
+        raise WorkflowInputError(f"unknown workflow '{name}'")
+    if args is not None and not isinstance(args, dict):
+        raise WorkflowInputError("workflow args must be an object")
+    meta, script_fn = WORKFLOWS[name]
+    out = await WorkflowTool().call(
+        meta,
+        script_fn,
+        args=args,
+        resume_from_run_id=resume_from_run_id,
+    )
+    return {
+        "launched": out["launched"],
+        "result": out["result"],
+        "task": serialize_task(out["task"]),
+    }
+
+
+WORKFLOW_HANDLERS = {"Workflow": run_workflow}
+INHERITS_TOOLS_FROM = "s17"
+
+
+def run_workflow_sync(**tool_input):
+    """Bridge the synchronous host dispatcher to the async workflow runtime."""
+    try:
+        return json.dumps(asyncio.run(run_workflow(**tool_input)), default=str)
+    except WorkflowInputError as exc:
+        return f"Error: {exc}"
+
+
+def install_workflow_tool(host):
+    """Extend the s17 host tool pool without changing its dispatch loop."""
+    if getattr(host, "_workflow_tool_installed", False):
+        return
+    base_assemble = host.assemble_tool_pool
+
+    def assemble_with_workflow():
+        tools, handlers = base_assemble()
+        if not any(tool.get("name") == "Workflow" for tool in tools):
+            tools.append(WORKFLOW_TOOL)
+        handlers["Workflow"] = run_workflow_sync
+        return tools, handlers
+
+    host.assemble_tool_pool = assemble_with_workflow
+    host._workflow_tool_installed = True
+
+
+def load_integrated_host():
+    """Load s17 lazily so deterministic workflow tests need no API key."""
+    path = Path(__file__).resolve().parents[1] / "s17_integrated_harness" / "code.py"
+    spec = importlib.util.spec_from_file_location("s18_integrated_host", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"unable to load integrated host from {path}")
+    host = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = host
+    spec.loader.exec_module(host)
+    return host
+
 
 # ============================================================
 # Demo
 # ============================================================
-async def main(argv):
+async def run_demo(argv):
     resume_id = None
     if argv and argv[0] == "resume":
         resume_id = _read_last_run()
         if not resume_id:
-            print("nothing to resume — run `python code.py` first.")
+            print("nothing to resume — run `python code.py demo` first.")
             return
         print(f"resuming {resume_id} — unchanged agent() calls hit the journal cache\n")
     else:
         print("launching workflow `review-changes`\n")
 
-    tool = WorkflowTool()
-    out = await tool.call(SAMPLE_META, sample_workflow,
-                          args={"budget": None}, resume_from_run_id=resume_id)
+    out = await WORKFLOW_HANDLERS["Workflow"](
+        name="review-changes",
+        args={"budget": None},
+        resume_from_run_id=resume_id,
+    )
 
     print("\nresult:")
     for f in out["result"].get("confirmed", []):
         print(f"  [{f['severity']:<6}] {f['dimension']}: {f['title']}")
-    t = out["task"]
-    print(f"\nstatus={t.status}  agents={t.usage['agents']}  tokens={t.usage['tokens']}"
-          f"  journal=.runtime/{t.run_id}.journal.jsonl")
+    task = out["task"]
+    usage = task["usage"]
+    print(f"\nstatus={task['status']}  agents={usage['agents']}  "
+          f"tokens={usage['tokens']}  journal=.runtime/{task['runId']}.journal.jsonl")
+
+
+def run_cli():
+    """Run the cumulative s17 host with Workflow added to its tool pool."""
+    host = load_integrated_host()
+    install_workflow_tool(host)
+    host.CLI_ACTIVE = True
+    host.start_runtime_services()
+    print("s18: workflow runtime")
+    print("Enter a question, press Enter to send. Type q to quit.\n")
+    history = []
+    context = host.update_context({}, history)
+    session_state = {"active_user_request": "(no active user request)"}
+    threading.Thread(
+        target=host.async_event_loop,
+        args=(history, context, session_state),
+        daemon=True,
+    ).start()
+    while True:
+        try:
+            query = host.CONSOLE.ask("\033[36ms18 >> \033[0m")
+        except (EOFError, KeyboardInterrupt):
+            break
+        if query.strip().lower() in ("q", "exit", ""):
+            break
+        with host.agent_lock:
+            host.trigger_hooks("UserPromptSubmit", query)
+            turn_start = len(history)
+            session_state["active_user_request"] = query
+            history.append({"role": "user", "content": query})
+            host.agent_loop(history, context, query)
+            context = host.update_context(context, history)
+            host.print_turn_assistants(history, turn_start)
+        print()
 
 
 if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1:]))
+    if sys.argv[1:] and sys.argv[1] in {"demo", "resume"}:
+        asyncio.run(run_demo(sys.argv[1:]))
+    else:
+        run_cli()

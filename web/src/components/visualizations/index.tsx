@@ -12,7 +12,7 @@ const visualizations: Record<
   s03: lazy(() => import("./s03-permission")),
   s04: lazy(() => import("./s04-hooks")),
   s05: lazy(() => import("./s03-todo-write")),
-  s06: lazy(() => import("./s04-subagent")),
+  s06: lazy(() => import("./s06-subagent")),
   s07: lazy(() => import("./s05-skill-loading")),
   s08: lazy(() => import("./s06-context-compact")),
   s09: lazy(() => import("./s09-memory")),

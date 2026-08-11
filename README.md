@@ -72,7 +72,7 @@ If you are reading this repository, you are most likely a harness engineer. Here
 
 - **Curate knowledge.** Give the agent domain expertise. Product documentation, architecture decision records, style guides, compliance requirements. Load on demand, not upfront.
 
-- **Manage context.** Give the agent clean memory. Subagent isolation prevents noise leakage. Context compaction prevents history from drowning the present. Task systems let goals persist beyond a single conversation.
+- **Manage context.** Subagents keep focused work in a separate message list. Context compaction shortens older history. Task systems let goals persist beyond a single conversation.
 
 - **Control permissions.** Give the agent boundaries. Sandbox file access. Require approval for destructive operations. Enforce trust boundaries between the agent and external systems.
 
@@ -157,7 +157,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-Every lesson layers one harness mechanism on top of this loop -- the loop itself never changes. The loop belongs to the agent. The mechanisms belong to the harness.
+Each lesson isolates one harness mechanism around this loop. s17 reconnects the cumulative runtime; s18 and s19 then study workflow orchestration and goal closure as focused examples. The loop belongs to the agent. The mechanisms belong to the harness.
 
 The loop is constant. Tools, knowledge, and permissions change. Agent = Model (LLM) + a generalized operational environment (Harness).
 
@@ -196,7 +196,7 @@ If you are starting now, read the root-level `s01_agent_loop/` through `s19_goal
 
 ## Course Boundary
 
-This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s17 reconnects them in a complete agent loop. The team runtime uses a JSONL mailbox, and later chapters add workflow orchestration and a goal-controlled continuation loop.
+This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism, then s17 reconnects the cumulative runtime in a complete agent loop. s18 extends that loop with workflow orchestration. s19 uses a smaller tool pool to focus on goal-controlled continuation; it is a mechanism example, not another cumulative runtime.
 
 ---
 
@@ -214,7 +214,7 @@ This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism
 >
 > **s05** &nbsp; *"An agent without a plan drifts"* &mdash; list the steps before starting; completion rate doubles
 >
-> **s06** &nbsp; *"Big tasks split small, each subtask gets clean context"* &mdash; subagents do the side work and bring back only the result
+> **s06** &nbsp; Give a subtask fresh `messages[]`; its final text returns as one tool result
 >
 > **s07** &nbsp; *"Load knowledge on demand, not upfront"* &mdash; list skills first, expand them only when needed
 >
@@ -236,11 +236,11 @@ This is a 0-to-1 harness engineering course. Each chapter isolates one mechanism
 >
 > **s16** &nbsp; *"Not enough capability? Plug in more via MCP"* &mdash; connect external tools into the same tool pool
 >
-> **s17** &nbsp; *"Many mechanisms, one loop"* &mdash; all previous mechanisms return to one integrated harness
+> **s17** &nbsp; *"Many mechanisms, one loop"* &mdash; the mechanisms used by the integrated example share one harness
 >
 > **s18** &nbsp; *"When the orchestration shape is fixed, put it in code"* &mdash; deterministic workflows with resumable journals
 >
-> **s19** &nbsp; *"A goal decides when the loop may stop"* &mdash; continue until an independent evaluator finds the goal satisfied in the conversation
+> **s19** &nbsp; *"A goal decides when the loop may stop"* &mdash; an independent evaluator reviews each proposed stop; impossible, failed, or over-limit goals return control to the user
 
 ---
 
@@ -266,7 +266,7 @@ flowchart TD
         direction LR
         S1["<b>1. Let the Agent act</b><br/>━━━━━━━━━━━━━<br/><b>s01 Agent Loop</b><br/>└─ one loop + bash<br/><br/><b>s02 Tool Use</b><br/>└─ one tool to many tools<br/><br/><b>s03 Permission</b><br/>└─ decide what can run<br/><br/><b>s04 Hooks</b><br/>└─ extension points around tools"]:::stage1
 
-        S2["<b>2. Handle complex work</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ plan first, then execute<br/><br/><b>s06 Subagent</b><br/>└─ side work, result back<br/><br/><b>s08 Context Compact</b><br/>└─ make room in long context"]:::stage2
+        S2["<b>2. Handle complex work</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ plan first, then execute<br/><br/><b>s06 Subagent</b><br/>└─ fresh messages, final text back<br/><br/><b>s08 Context Compact</b><br/>└─ make room in long context"]:::stage2
 
         S3["<b>3. Remember and recover</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ persist and recall across sessions<br/><br/><b>s10 Context Assembly</b><br/>└─ build model input from runtime state<br/><br/><b>s11 Error Recovery</b><br/>└─ retry or change path"]:::stage3
 
@@ -320,8 +320,8 @@ flowchart TD
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | durable scheduling / session-scoped triggers |
 | [s15](./s15_agent_teams/) | Agent Teams | persistent teammates / atomic task claims / task-bound worktrees / typed protocols |
 | [s16](./s16_mcp_plugin/) | MCP Plugin | tool discovery / namespaced tools / tool pool assembly |
-| [s17](./s17_integrated_harness/) | Integrated Harness | all mechanisms around one loop |
-| [s18](./s18_workflow_runtime/) | Workflow Runtime | script orchestration / background execution / journal resume |
+| [s17](./s17_integrated_harness/) | Integrated Harness | tools, runtime context, tasks, teams, scheduling, and MCP around one loop |
+| [s18](./s18_workflow_runtime/) | Workflow Runtime | script orchestration / lifecycle events / journal resume |
 | [s19](./s19_goal_loop/) | Goal Loop | goal gate / conversation evaluation / automatic continuation |
 
 ---

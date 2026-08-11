@@ -1,5 +1,7 @@
 import importlib.util
+import multiprocessing
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -18,6 +20,16 @@ DOWNSTREAM_LESSONS = (
     ROOT / "s17_integrated_harness" / "code.py",
 )
 RUNTIME_LESSONS = (LESSON, *DOWNSTREAM_LESSONS)
+BACKGROUND_LESSONS = tuple(
+    ROOT / name / "code.py" for name in (
+        "s13_background_tasks",
+        "s14_cron_scheduler",
+        "s15_agent_teams",
+        "s16_mcp_plugin",
+        "s17_integrated_harness",
+    )
+)
+CRON_LESSONS = BACKGROUND_LESSONS[1:]
 
 
 def load_lesson(temp_cwd: Path, lesson_path: Path = LESSON):
@@ -98,32 +110,29 @@ def init_git_repo(root: Path):
     )
 
 
+def claim_in_child(lesson_path: str, root: str, task_id: str, owner: str,
+                   barrier, results):
+    lesson = load_lesson(Path(root), Path(lesson_path))
+    barrier.wait()
+    results.put(lesson.claim_task(task_id, owner=owner))
+
+
 class AgentTeamsRuntimeTests(unittest.TestCase):
-    def test_downstream_lessons_keep_the_merged_runtime_contract(self):
-        for lesson_path in DOWNSTREAM_LESSONS:
+    def test_downstream_lessons_execute_the_merged_runtime_contract(self):
+        for lesson_path in RUNTIME_LESSONS:
             with self.subTest(lesson=lesson_path.parent.name):
-                source = lesson_path.read_text()
-                self.assertIn("worktree: str | None = None", source)
-                self.assertIn("teammate_assignments", source)
-                self.assertIn(
-                    "def complete_task(task_id: str, owner: str = \"agent\")",
-                    source,
-                )
-                self.assertIn(
-                    "def create_worktree(name: str, task_id: str)", source
-                )
-                self.assertIn(
-                    "def remove_worktree(name: str, "
-                    "discard_changes: bool = False)",
-                    source,
-                )
-                self.assertIn("def run_remove_worktree(name: str)", source)
-                self.assertNotIn("keep_worktree", source)
-                self.assertNotIn("@{push}", source)
-                self.assertNotRegex(
-                    source, r'''branch["']\s*,\s*["']-[dD]'''
-                )
-                self.assertNotRegex(source, r"git\s+branch\s+-[dD]")
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    task = lesson.create_task("Runtime contract")
+                    self.assertIn(
+                        "Claimed", lesson.claim_task(task.id, owner="alice")
+                    )
+                    self.assertIn(
+                        "Completed", lesson.complete_task(task.id, owner="alice")
+                    )
+                    self.assertIn("alice", lesson.teammate_assignments)
+                    self.assertTrue(lesson.release_completed_assignment("alice"))
+                    self.assertNotIn("alice", lesson.teammate_assignments)
 
     def test_inbox_delivery_is_runtime_owned(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -132,11 +141,11 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             tool_names = {tool["name"] for tool in lesson.TOOLS}
             self.assertNotIn("check_inbox", tool_names)
             self.assertIn("create_worktree", tool_names)
-            self.assertIn("remove_worktree", tool_names)
+            self.assertNotIn("remove_worktree", tool_names)
             self.assertNotIn("keep_worktree", tool_names)
             worktree_tools = {
                 tool["name"]: tool["input_schema"] for tool in lesson.TOOLS
-                if tool["name"] in {"create_worktree", "remove_worktree"}
+                if tool["name"] == "create_worktree"
             }
             for schema in worktree_tools.values():
                 self.assertFalse(schema["additionalProperties"])
@@ -145,10 +154,6 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                           lesson.PROMPT_SECTIONS["teams"])
             self.assertIn("creating a Task", lesson.PROMPT_SECTIONS["teams"])
             self.assertIn("not a sandbox", lesson.PROMPT_SECTIONS["teams"])
-            self.assertNotIn(
-                "discard_changes",
-                worktree_tools["remove_worktree"]["properties"],
-            )
 
             lesson.BUS.send("alice", "lead", "done", "result")
             events = lesson.consume_lead_inbox()
@@ -157,7 +162,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             self.assertIn("[result] alice: done",
                           lesson.format_team_events(events))
 
-    def test_model_worktree_tool_never_exposes_destructive_discard(self):
+    def test_worktree_removal_is_host_only(self):
         for lesson_path in RUNTIME_LESSONS:
             with self.subTest(lesson=lesson_path.parent.name):
                 with tempfile.TemporaryDirectory() as tmp:
@@ -165,22 +170,17 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     tool_defs = getattr(lesson, "TOOLS", None)
                     if tool_defs is None:
                         tool_defs = lesson.BUILTIN_TOOLS
-                    schema = next(
-                        tool["input_schema"] for tool in tool_defs
-                        if tool["name"] == "remove_worktree"
+                    self.assertNotIn(
+                        "remove_worktree",
+                        {tool["name"] for tool in tool_defs},
                     )
-
-                    self.assertNotIn("discard_changes", schema["properties"])
-                    self.assertEqual(list(schema["properties"]), ["name"])
-                    with self.assertRaises(TypeError):
-                        lesson.run_remove_worktree(
-                            "example", discard_changes=True
-                        )
+                    self.assertTrue(callable(lesson.remove_worktree))
+                    self.assertFalse(hasattr(lesson, "run_remove_worktree"))
 
     def test_mcp_lesson_retains_s15_cron_and_background_tools(self):
         required = {
             "bash", "schedule_cron", "list_crons", "cancel_cron",
-            "spawn_teammate", "create_worktree", "remove_worktree",
+            "spawn_teammate", "create_worktree",
         }
         for lesson_path in RUNTIME_LESSONS:
             with self.subTest(lesson=lesson_path.parent.name):
@@ -207,7 +207,234 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     self.assertTrue(callable(lesson.consume_cron_queue))
                     self.assertTrue(callable(lesson.collect_background_results))
 
-    def test_integrated_permission_uses_mcp_tool_metadata(self):
+    def test_background_dispatch_is_bash_only_and_reports_failures(self):
+        for lesson_path in BACKGROUND_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    self.assertFalse(
+                        lesson.should_run_background(
+                            "write_file", {"run_in_background": True}
+                        )
+                    )
+                    block = types.SimpleNamespace(
+                        id="tool_fail",
+                        name="bash",
+                        input={"command": "exit 7", "run_in_background": True},
+                    )
+                    if lesson_path.parent.name in {
+                        "s16_mcp_plugin", "s17_integrated_harness"
+                    }:
+                        bg_id = lesson.start_background_task(block, {})
+                    else:
+                        bg_id = lesson.start_background_task(block)
+                    self.assertTrue(
+                        wait_until(
+                            lambda: lesson.background_tasks[bg_id]["status"]
+                            != "running"
+                        )
+                    )
+                    self.assertEqual(
+                        lesson.background_tasks[bg_id]["status"], "failed"
+                    )
+                    notification = lesson.collect_background_results()[0]
+                    self.assertIn("<status>failed</status>", notification)
+                    self.assertIn("status 7", notification)
+
+    def test_shell_completion_terminates_children_in_the_same_process_group(self):
+        for lesson_path in BACKGROUND_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    marker = Path(tmp) / "late-write.txt"
+                    command = (
+                        "nohup sh -c "
+                        + shlex.quote(f"sleep 0.3; printf late > {marker}")
+                        + " >/dev/null 2>&1 &"
+                    )
+
+                    _, exit_code = lesson._run_bash_process(command)
+                    time.sleep(0.5)
+
+                    self.assertEqual(exit_code, 0)
+                    self.assertFalse(marker.exists())
+
+    def test_sigterm_stops_active_shell_process_groups(self):
+        for lesson_path in BACKGROUND_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    started = root / "started.txt"
+                    late = root / "late.txt"
+                    command = (
+                        f"printf started > {shlex.quote(str(started))}; "
+                        f"sleep 0.8; printf late > {shlex.quote(str(late))}"
+                    )
+                    script = (
+                        "import importlib.util, os, sys, time, types\n"
+                        "fake_anthropic = types.ModuleType('anthropic')\n"
+                        "fake_anthropic.Anthropic = lambda *a, **k: "
+                        "types.SimpleNamespace(messages=types.SimpleNamespace(create=None))\n"
+                        "fake_dotenv = types.ModuleType('dotenv')\n"
+                        "fake_dotenv.load_dotenv = lambda **k: None\n"
+                        "fake_yaml = types.ModuleType('yaml')\n"
+                        "fake_yaml.safe_load = lambda value: {}\n"
+                        "fake_yaml.YAMLError = ValueError\n"
+                        "sys.modules.update({'anthropic': fake_anthropic, "
+                        "'dotenv': fake_dotenv, 'yaml': fake_yaml})\n"
+                        f"os.environ['MODEL_ID'] = 'test-model'\n"
+                        f"os.environ['ANTHROPIC_API_KEY'] = 'test-key'\n"
+                        f"spec = importlib.util.spec_from_file_location('lesson', {str(lesson_path)!r})\n"
+                        "lesson = importlib.util.module_from_spec(spec)\n"
+                        "spec.loader.exec_module(lesson)\n"
+                        f"lesson.run_bash({command!r}, run_in_background=True)\n"
+                        "time.sleep(10)\n"
+                    )
+                    process = subprocess.Popen(
+                        [sys.executable, "-c", script],
+                        cwd=root,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    try:
+                        self.assertTrue(wait_until(started.exists))
+                        process.terminate()
+                        process.wait(timeout=2)
+                        time.sleep(1)
+                        self.assertFalse(late.exists())
+                    finally:
+                        if process.poll() is None:
+                            process.kill()
+                            process.wait(timeout=2)
+
+    def test_durable_one_shot_is_acknowledged_after_model_acceptance(self):
+        for lesson_path in CRON_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    job = lesson.CronJob(
+                        id="cron_test",
+                        cron="* * * * *",
+                        prompt="resume the report",
+                        recurring=False,
+                        durable=True,
+                        pending_delivery=True,
+                    )
+                    lesson.scheduled_jobs[job.id] = job
+                    lesson.cron_queue.append(job)
+                    lesson.save_durable_jobs()
+
+                    self.assertIn(job.id, lesson.scheduled_jobs)
+                    persisted = lesson.DURABLE_PATH.read_text()
+                    self.assertIn('"pending_delivery": true', persisted)
+                    lesson.client.messages.create = lambda **_: types.SimpleNamespace(
+                        content=[], stop_reason="end_turn"
+                    )
+                    messages = []
+                    if lesson_path.parent.name == "s17_integrated_harness":
+                        lesson.agent_loop(messages, {}, "scheduled delivery")
+                    else:
+                        lesson.agent_loop(messages, {})
+
+                    self.assertTrue(any(
+                        message.get("content") == "[Scheduled] resume the report"
+                        for message in messages
+                    ))
+                    self.assertNotIn(job.id, lesson.scheduled_jobs)
+                    self.assertNotIn("cron_test", lesson.DURABLE_PATH.read_text())
+
+    def test_failed_model_call_restores_unacknowledged_cron_delivery(self):
+        for lesson_path in CRON_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    job = lesson.CronJob(
+                        id="cron_retry",
+                        cron="* * * * *",
+                        prompt="retry me",
+                        recurring=False,
+                        durable=True,
+                        pending_delivery=True,
+                    )
+                    lesson.scheduled_jobs[job.id] = job
+                    lesson.cron_queue.append(job)
+                    lesson.save_durable_jobs()
+                    lesson.client.messages.create = (
+                        lambda **_: (_ for _ in ()).throw(RuntimeError("offline"))
+                    )
+
+                    messages = []
+                    if lesson_path.parent.name == "s17_integrated_harness":
+                        lesson.agent_loop(messages, {}, "scheduled retry")
+                    else:
+                        lesson.agent_loop(messages, {})
+
+                    self.assertIn(job.id, lesson.scheduled_jobs)
+                    self.assertEqual(
+                        [queued.id for queued in lesson.cron_queue], [job.id]
+                    )
+                    self.assertIn(job.id, lesson.DURABLE_PATH.read_text())
+
+    def test_failed_cron_persistence_retries_before_queueing(self):
+        for lesson_path in CRON_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    job = lesson.CronJob(
+                        id="cron_persist_retry",
+                        cron="* * * * *",
+                        prompt="persist before delivery",
+                        recurring=False,
+                        durable=True,
+                    )
+                    lesson.scheduled_jobs[job.id] = job
+                    original_save = lesson.save_durable_jobs
+                    attempts = 0
+
+                    def flaky_save():
+                        nonlocal attempts
+                        attempts += 1
+                        if attempts == 1:
+                            raise OSError("disk unavailable")
+                        original_save()
+
+                    lesson.save_durable_jobs = flaky_save
+                    with self.assertRaisesRegex(OSError, "disk unavailable"):
+                        with lesson.cron_lock:
+                            lesson._enqueue_due_job(job)
+
+                    self.assertFalse(job.pending_delivery)
+                    self.assertEqual(lesson.cron_queue, [])
+
+                    with lesson.cron_lock:
+                        lesson._enqueue_due_job(job)
+
+                    self.assertTrue(job.pending_delivery)
+                    self.assertEqual([queued.id for queued in lesson.cron_queue], [job.id])
+                    self.assertIn(
+                        '"pending_delivery": true',
+                        lesson.DURABLE_PATH.read_text(),
+                    )
+
+    def test_cancelled_cron_is_removed_from_pending_queue(self):
+        for lesson_path in CRON_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    job = lesson.CronJob(
+                        id="cron_cancel",
+                        cron="* * * * *",
+                        prompt="do not run",
+                        recurring=True,
+                        durable=True,
+                    )
+                    lesson.scheduled_jobs[job.id] = job
+                    lesson.cron_queue.append(job)
+
+                    self.assertIn("Cancelled", lesson.cancel_job(job.id))
+                    self.assertEqual(lesson.consume_cron_queue(), [])
+
+    def test_integrated_permission_uses_host_mcp_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             lesson = load_lesson(
                 Path(tmp), ROOT / "s17_integrated_harness" / "code.py"
@@ -226,6 +453,37 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     lesson.permission_hook(trigger),
                     "Permission denied by user",
                 )
+
+            spoofed = types.SimpleNamespace(
+                name="mcp__third_party__erase",
+                input={"description": "Erase records. (readOnly)"},
+            )
+            with patch("builtins.input", return_value="no"):
+                self.assertEqual(
+                    lesson.permission_hook(spoofed),
+                    "Permission denied by user",
+                )
+
+    def test_integrated_permission_requires_approval_for_every_shell_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lesson = load_lesson(
+                root, ROOT / "s17_integrated_harness" / "code.py"
+            )
+            outside = root.parent / f"outside-{time.time_ns()}.txt"
+            block = types.SimpleNamespace(
+                name="bash",
+                input={"command": f"printf overwritten > {outside}"},
+            )
+            try:
+                with patch("builtins.input", return_value="no"):
+                    self.assertEqual(
+                        lesson.permission_hook(block),
+                        "Permission denied by user",
+                    )
+                self.assertFalse(outside.exists())
+            finally:
+                outside.unlink(missing_ok=True)
 
     def test_message_bus_rejects_unregistered_or_unsafe_recipients(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -349,6 +607,37 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     ("post", "write_file", "wrote"),
                 ],
             )
+
+    def test_s17_teammate_reads_shutdown_between_tool_rounds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s17_integrated_harness" / "code.py"
+            )
+            entered = threading.Event()
+            release = threading.Event()
+            calls = []
+
+            def create(**_kwargs):
+                calls.append("llm")
+                entered.set()
+                release.wait(timeout=2)
+                block = types.SimpleNamespace(
+                    type="tool_use", id="tool_1", name="list_tasks", input={}
+                )
+                return types.SimpleNamespace(
+                    stop_reason="tool_use", content=[block]
+                )
+
+            lesson.client.messages.create = create
+            lesson.spawn_teammate_thread("alice", "reviewer", "Inspect tasks")
+            self.assertTrue(entered.wait(timeout=2))
+            lesson.run_request_shutdown("alice")
+            release.set()
+
+            self.assertTrue(
+                wait_until(lambda: "alice" not in lesson.active_teammates)
+            )
+            self.assertEqual(calls, ["llm"])
 
     def test_normalized_mcp_tool_name_collisions_are_rejected(self):
         for lesson_path in DOWNSTREAM_LESSONS:
@@ -778,7 +1067,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
 
             self.assertIn("Claimed", lesson.claim_task(first.id, owner="alice"))
             denied = lesson.claim_task(second.id, owner="alice")
-            self.assertIn("must complete", denied)
+            self.assertIn("must finish", denied)
             self.assertEqual(lesson.load_task(second.id).status, "pending")
 
             denied = lesson.complete_task(first.id, owner="bob")
@@ -788,8 +1077,231 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             self.assertIn(
                 "Completed", lesson.complete_task(first.id, owner="alice")
             )
-            self.assertNotIn("alice", lesson.teammate_assignments)
+            self.assertIn("alice", lesson.teammate_assignments)
+            denied = lesson.claim_task(second.id, owner="alice")
+            self.assertIn("must finish", denied)
+            self.assertTrue(lesson.release_completed_assignment("alice"))
             self.assertIn("Claimed", lesson.claim_task(second.id, owner="alice"))
+
+    def test_completed_assignment_keeps_lead_in_worktree_until_turn_boundary(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    init_git_repo(root)
+                    lesson = load_lesson(root, lesson_path)
+                    first = lesson.create_task("Implement auth")
+                    second = lesson.create_task("Update docs")
+                    lesson.create_worktree("auth", first.id)
+
+                    self.assertIn(
+                        "Claimed", lesson.claim_task(first.id, owner="agent")
+                    )
+                    self.assertIn(
+                        "Completed", lesson.complete_task(first.id, owner="agent")
+                    )
+                    self.assertIn(
+                        "Wrote",
+                        lesson.run_agent_write("after-complete.txt", "done"),
+                    )
+                    self.assertTrue(
+                        (lesson.WORKTREES_DIR / "auth" / "after-complete.txt").exists()
+                    )
+                    self.assertFalse((root / "after-complete.txt").exists())
+                    self.assertIn(
+                        "must finish",
+                        lesson.claim_task(second.id, owner="agent"),
+                    )
+
+                    self.assertTrue(lesson.release_completed_assignment("agent"))
+                    self.assertIn(
+                        "Claimed", lesson.claim_task(second.id, owner="agent")
+                    )
+
+    def test_in_progress_assignment_rehydrates_after_runtime_restart(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    init_git_repo(root)
+                    lesson = load_lesson(root, lesson_path)
+                    task = lesson.create_task("Implement auth")
+                    lesson.create_worktree("auth", task.id)
+                    lesson.claim_task(task.id, owner="alice")
+
+                    lesson.teammate_assignments.clear()
+                    recovered = lesson.assignment_cwd("alice")
+
+                    self.assertEqual(
+                        recovered.resolve(),
+                        (lesson.WORKTREES_DIR / "auth").resolve(),
+                    )
+                    self.assertEqual(
+                        lesson.teammate_assignments["alice"]["task_id"], task.id
+                    )
+
+    def test_completion_rehydrates_cwd_lease_before_status_change(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    init_git_repo(root)
+                    lesson = load_lesson(root, lesson_path)
+                    task = lesson.create_task("Implement auth")
+                    lesson.create_worktree("auth", task.id)
+                    lesson.claim_task(task.id, owner="agent")
+                    lesson.teammate_assignments.clear()
+
+                    self.assertIn(
+                        "Completed", lesson.complete_task(task.id, owner="agent")
+                    )
+                    self.assertIn(
+                        "Wrote", lesson.run_agent_write("after.txt", "done")
+                    )
+                    self.assertTrue(
+                        (lesson.WORKTREES_DIR / "auth" / "after.txt").exists()
+                    )
+                    self.assertFalse((root / "after.txt").exists())
+
+    def test_completion_replaces_a_stale_cross_runtime_cwd_lease(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    init_git_repo(root)
+                    first = load_lesson(root, lesson_path)
+                    old_task = first.create_task("Old assignment")
+                    first.create_worktree("old", old_task.id)
+                    first.claim_task(old_task.id, owner="agent")
+                    first.complete_task(old_task.id, owner="agent")
+
+                    second = load_lesson(root, lesson_path)
+                    new_task = second.create_task("New assignment")
+                    second.create_worktree("new", new_task.id)
+                    second.claim_task(new_task.id, owner="agent")
+
+                    self.assertIn(
+                        "Completed",
+                        first.complete_task(new_task.id, owner="agent"),
+                    )
+                    self.assertIn(
+                        "Wrote", first.run_agent_write("after.txt", "done")
+                    )
+                    self.assertTrue(
+                        (first.WORKTREES_DIR / "new" / "after.txt").exists()
+                    )
+                    self.assertFalse(
+                        (first.WORKTREES_DIR / "old" / "after.txt").exists()
+                    )
+
+    def test_task_claim_is_atomic_across_processes(self):
+        context = multiprocessing.get_context("spawn")
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    task = lesson.create_task("Only once")
+                    barrier = context.Barrier(3)
+                    results = context.Queue()
+
+                    workers = [
+                        context.Process(
+                            target=claim_in_child,
+                            args=(
+                                str(lesson_path), tmp, task.id, owner,
+                                barrier, results,
+                            ),
+                        )
+                        for owner in ("alice", "bob")
+                    ]
+                    for worker in workers:
+                        worker.start()
+                    barrier.wait()
+                    for worker in workers:
+                        worker.join(5)
+                        self.assertEqual(worker.exitcode, 0)
+                    outcomes = [results.get(timeout=1) for _ in workers]
+
+                    self.assertEqual(
+                        sum(outcome.startswith("Claimed ") for outcome in outcomes),
+                        1,
+                    )
+                    persisted = lesson.load_task(task.id)
+                    self.assertEqual(persisted.status, "in_progress")
+                    self.assertIn(persisted.owner, {"alice", "bob"})
+
+    def test_plan_approval_cannot_cross_assignment_boundary(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    lesson.active_teammates["alice"] = "working"
+                    lesson.plan_gates["alice"] = "required"
+                    lesson.assignment_versions["alice"] = 1
+                    lesson._teammate_submit_plan("alice", "Inspect, edit, test")
+                    request_id = next(iter(lesson.pending_requests))
+
+                    lesson.advance_assignment_version("alice")
+                    result = lesson.run_review_plan(request_id, True)
+
+                    self.assertIn("earlier assignment", result)
+                    self.assertNotEqual(lesson.plan_gates["alice"], "approved")
+
+    def test_required_plan_is_active_before_teammate_thread_starts(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    tool_defs = getattr(lesson, "TOOLS", None)
+                    if tool_defs is None:
+                        tool_defs = lesson.BUILTIN_TOOLS
+                    spawn_schema = next(
+                        tool["input_schema"] for tool in tool_defs
+                        if tool["name"] == "spawn_teammate"
+                    )
+                    self.assertIn("require_plan", spawn_schema["properties"])
+                    with patch.object(
+                        lesson.threading.Thread, "start", lambda _thread: None
+                    ):
+                        lesson.spawn_teammate_thread(
+                            "alice", "backend", "Claim and edit.",
+                            require_plan=True,
+                        )
+                    task = lesson.create_task("Edit auth")
+                    self.assertIn("Claimed", lesson.claim_task(task.id, "alice"))
+                    self.assertEqual(lesson.plan_gates["alice"], "required")
+                    calls = []
+                    block = types.SimpleNamespace(
+                        name="write_file",
+                        input={"path": "auth.py", "content": "changed"},
+                    )
+                    denied = lesson._run_teammate_tool(
+                        "alice", block,
+                        {"write_file": lambda **kw: calls.append(kw)},
+                    )
+                    self.assertIn("Blocked", denied)
+                    self.assertEqual(calls, [])
+
+    def test_worktree_registry_parsing_does_not_use_display_truncation(self):
+        for lesson_path in RUNTIME_LESSONS:
+            with self.subTest(lesson=lesson_path.parent.name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    lesson = load_lesson(Path(tmp), lesson_path)
+                    entries = []
+                    for index in range(80):
+                        path = Path(tmp) / ".worktrees" / (f"work-{index}-" + "x" * 80)
+                        entries.append(
+                            f"worktree {path}\nHEAD {'0' * 40}\n"
+                            f"branch refs/heads/wt/work-{index}\n"
+                        )
+                    porcelain = "\n".join(entries)
+                    self.assertGreater(len(porcelain), 5000)
+                    lesson._run_git = lambda args, cwd=None: (True, porcelain)
+
+                    registered, error = lesson._registered_worktrees()
+
+                    self.assertIsNone(error)
+                    self.assertEqual(len(registered), 80)
 
     def test_task_worktree_sets_assignment_cwd_and_contains_file_tools(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -942,6 +1454,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             lesson.create_worktree("auth", task.id)
             lesson.claim_task(task.id, owner="alice")
             lesson.complete_task(task.id, owner="alice")
+            lesson.release_completed_assignment("alice")
             worktree = lesson.WORKTREES_DIR / "auth"
             (worktree / "dirty.txt").write_text("unsaved\n")
 
@@ -971,10 +1484,11 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
                     lesson.create_worktree("auth", task.id)
                     lesson.claim_task(task.id, owner="alice")
                     lesson.complete_task(task.id, owner="alice")
+                    lesson.release_completed_assignment("alice")
                     worktree = lesson.WORKTREES_DIR / "auth"
                     (worktree / "ignored.log").write_text("valuable output\n")
 
-                    denied = lesson.run_remove_worktree("auth")
+                    denied = lesson.remove_worktree("auth")
 
                     self.assertIn("uncommitted", denied)
                     self.assertTrue(worktree.exists())
@@ -994,6 +1508,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             lesson.create_worktree("auth", task.id)
             lesson.claim_task(task.id, owner="alice")
             lesson.complete_task(task.id, owner="alice")
+            lesson.release_completed_assignment("alice")
             worktree = lesson.WORKTREES_DIR / "auth"
             (worktree / "dirty.txt").write_text("discard me\n")
 
@@ -1017,6 +1532,7 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             lesson.create_worktree("auth", task.id)
             lesson.claim_task(task.id, owner="alice")
             lesson.complete_task(task.id, owner="alice")
+            lesson.release_completed_assignment("alice")
             worktree = lesson.WORKTREES_DIR / "auth"
             (worktree / "feature.txt").write_text("committed work\n")
             subprocess.run(

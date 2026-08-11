@@ -197,11 +197,11 @@ def scan_unclaimed_tasks() -> list[Task]:
     ]
 ```
 
-候选列表只是某一时刻的快照。另一个队友也可能看到同一任务，因此所有权变更必须放进 `claim_task()`，并由 `task_lock` 包住：
+候选列表只是某一时刻的快照。其他队友，甚至另一个使用同一任务目录的 Harness 进程，也可能看到同一任务。因此所有权变更必须放进 `claim_task()`，并由 `task_store_lock()` 同时取得进程内锁和文件锁：
 
 ```python
 def claim_task(task_id: str, owner: str) -> str:
-    with task_lock:
+    with task_store_lock():
         task = load_task(task_id)
         if task.status != "pending" or task.owner is not None:
             return "Task is no longer available"
@@ -219,7 +219,7 @@ def claim_task(task_id: str, owner: str) -> str:
         return f"Claimed {task.id}"
 ```
 
-多个队友可以同时发现同一候选，但只有一个 claim 能把它推进到 `in_progress`。队友完成当前任务后才能再认领下一项；worktree 绑定损坏时，认领会直接失败，不会回退到仓库目录。
+多个队友可以同时发现同一候选，但只有一个 claim 能把它推进到 `in_progress`。持有同一存储锁时，任务内容会先写入临时文件，再原子替换正式文件。队友完成当前任务后才能再认领下一项；worktree 绑定损坏时，认领会直接失败，不会回退到仓库目录。
 
 ### 8. 认领后的工作复用同一个 WORK 循环
 
@@ -273,23 +273,27 @@ if not error:
     }
 ```
 
-`complete_task(task_id, owner)` 会检查调用者是否拥有这个进行中的任务。只有任务成功完成后，运行时才会清除 assignment；完成失败时仍保留任务目录，队友可以修正问题后再次提交。任务上的 `worktree` 绑定会一直保留到 checkout 被移除。
+`complete_task(task_id, owner)` 会检查调用者是否拥有这个进行中的任务。成功完成只记录结果，不会马上清除 assignment；直到当前模型轮次结束，后续工具调用仍使用这个任务目录。队友回到 IDLE 时，运行时才释放 assignment。完成失败时也会保留目录，方便修正后重试。
+
+进程重启后，`assignment_cwd()` 可以根据持久化任务中的 owner 和 worktree 绑定恢复进行中的 assignment。同一 owner 已转到新任务时，它也会替换本地的旧 lease。若绑定丢失或无效，它会直接失败，不会把操作悄悄切回仓库目录。
 
 > Worktree 只分开 Git 工作目录和分支，不是安全沙箱。Shell 命令仍能访问父进程有权访问的路径和资源。
 
-### 10. Worktree 清理默认保留工作
+### 10. Worktree 移除由宿主负责
 
-模型可调用的 `remove_worktree(name)` 工具会拒绝移除仍绑定 `pending` 或 `in_progress` 任务的 worktree。任务完成后，它仍把已跟踪、未跟踪和已忽略文件都视为未提交数据，只会不带 `--force` 移除干净的 checkout。
+模型可以创建任务绑定的 worktree，但不能移除它。清理保留为宿主函数，让用户或宿主先检查任务所有权、assignment lease、后台工作和 Git 状态。这个函数会拒绝 pending 或 in-progress 绑定、当前轮次的 lease，以及正在使用该目录的后台命令。未明确选择破坏性移除时，已跟踪、未跟踪和已忽略文件都会阻止清理。
 
-底层 Python 函数保留 `discard_changes=True`，供已经另行取得用户明确确认的宿主调用，但模型的工具 schema 不包含这个参数。遇到有改动的 worktree，模型只能停下来交给用户检查。两种移除路径都会保留仓库里的 `wt/<name>` 分支，包括没有 upstream 的干净本地提交。移除成功后，任务的 worktree 绑定会被清空，因为对应 checkout 已不存在。
+`remove_worktree(name, discard_changes=True)` 只供已经另行取得用户明确确认的宿主调用。两种移除路径都会保留仓库里的 `wt/<name>` 分支，包括没有 upstream 的干净本地提交。移除成功后，任务绑定会被清空。
+
+进程组清理只能尽力而为。命令可以新建 session 后离开原进程组，所以 worktree 不是进程沙箱，也不应让模型自动删除。
 
 ```text
-干净 worktree   → 移除目录，保留 wt/<name> 分支
-有改动 worktree → 模型工具拒绝；由用户决定保留还是丢弃
+干净 worktree   → 宿主可移除目录，保留 wt/<name> 分支
+有改动 worktree → 由用户决定保留还是丢弃
 待办/进行中任务 → 拒绝移除
 ```
 
-任务完成与 worktree 清理也互相独立。`complete_task` 记录任务结果，Lead 随后可以检查、合并、保留或移除 worktree。
+任务完成与 worktree 清理也互相独立。`complete_task` 记录任务结果；队友回到 IDLE 后，用户或宿主才检查、合并、保留或移除 worktree。
 
 ### 11. 控制消息使用类型和 request_id
 
@@ -306,6 +310,8 @@ class ProtocolState:
     target: str
     status: str
     payload: str
+    work_version: int | None = None
+    task_id: str | None = None
 
 
 pending_requests: dict[str, ProtocolState] = {}
@@ -334,6 +340,8 @@ Lead → plan_request
 Lead → plan_approval_response(request_id, approve, feedback)
 ```
 
+如果 Lead 在启动队友前就知道必须先看计划，可以调用 `spawn_teammate(..., require_plan=True)`；运行时会在线程启动前打开闸门。对于已经运行的队友，也可以再用 `request_plan` 要求其提交计划。
+
 工具分发层负责执行闸门：
 
 ```python
@@ -346,7 +354,7 @@ def _run_teammate_tool(name, block, handlers):
     return handlers[block.name](**block.input)
 ```
 
-状态是 `required`、`pending` 或 `rejected` 时，队友可以读取文件、提交或修改计划，但不能运行 Shell 命令或写文件。审批回复把状态改成 `approved` 后，这些工具才会放开。
+状态是 `required`、`pending` 或 `rejected` 时，队友可以读取文件、提交或修改计划，但不能运行 Shell 命令或写文件。提交计划时会记录队友当前的 task 和 work version；审批返回时两者仍然一致才会生效。新任务或新的直接派发会让旧审批失效，但不会关闭计划要求。
 
 ---
 
@@ -427,4 +435,4 @@ Lead 提出团队方案后回复：
 
 下一章：[s16 MCP Tools](../s16_mcp_plugin/)。
 
-<!-- translation-sync: zh@v3, en@v3, ja@v3 -->
+<!-- translation-sync: zh@v6, en@v6, ja@v6 -->

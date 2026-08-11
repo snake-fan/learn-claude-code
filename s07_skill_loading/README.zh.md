@@ -11,18 +11,18 @@ s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_c
 
 ## 问题
 
-你的项目有一套 React 组件规范、一份 SQL 风格指南、一份 API 设计文档。你希望 Agent 自动遵守这些规范。最直接的想法，全塞进 system prompt：
+假设某个项目有一套 React 组件规范、一份 SQL 风格指南和一份 API 设计文档。我们希望 Agent 在开发过程中遵守这些规范。最直接的做法，是把它们全部放进 system prompt：
 
 ```python
 SYSTEM = (
     f"You are a coding agent. "
-    + open("docs/react-style.md").read()       # 2000 行
-    + open("docs/sql-style.md").read()         # 1500 行
-    + open("docs/api-design.md").read()        # 3000 行
+    + open("docs/react-style.md").read()
+    + open("docs/sql-style.md").read()
+    + open("docs/api-design.md").read()
 )
 ```
 
-6500 行 system prompt。Agent 每次调用 LLM 都带着这些文档，无论是在改 CSS 颜色还是修 SQL 查询。99% 的内容和当前任务无关，白白消耗 token。
+这样，每次调用 LLM 都会携带三份完整文档。即使当前任务只涉及其中一份，另外两份仍会占用上下文。
 
 ---
 

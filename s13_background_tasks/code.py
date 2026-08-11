@@ -20,7 +20,7 @@ This chapter keeps the agent loop focused on background tasks. Error recovery
 remains the independent layer introduced in s11.
 """
 
-import os, subprocess, json, time, random, threading
+import atexit, os, signal, subprocess, json, time, random, threading
 from pathlib import Path
 from dataclasses import dataclass, asdict
 
@@ -180,15 +180,77 @@ def safe_path(p: str) -> Path:
     return path
 
 
+_shell_processes: set[subprocess.Popen] = set()
+_shell_process_lock = threading.RLock()
+
+
+def _stop_process_group(process: subprocess.Popen):
+    """Stop processes that remain in the command's original process group."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
+def _stop_all_shell_processes():
+    with _shell_process_lock:
+        processes = list(_shell_processes)
+    for process in processes:
+        _stop_process_group(process)
+
+
+def _handle_termination_signal(signum, _frame):
+    _stop_all_shell_processes()
+    raise SystemExit(128 + signum)
+
+
+atexit.register(_stop_all_shell_processes)
+signal.signal(signal.SIGTERM, _handle_termination_signal)
+
+
+def _run_bash_process(command: str, cwd: Path | None = None) -> tuple[str, int | None]:
+    process = None
+    try:
+        process = subprocess.Popen(
+            command, shell=True, cwd=cwd or WORKDIR,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True,
+        )
+        with _shell_process_lock:
+            _shell_processes.add(process)
+        stdout, stderr = process.communicate(timeout=120)
+        out = (stdout + stderr).strip()
+        return (out[:50000] if out else "(no output)"), process.returncode
+    except subprocess.TimeoutExpired:
+        return "Error: Timeout (120s)", None
+    except OSError as exc:
+        return f"Error: {type(exc).__name__}: {exc}", None
+    finally:
+        if process is not None:
+            _stop_process_group(process)
+            try:
+                process.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                pass
+            with _shell_process_lock:
+                _shell_processes.discard(process)
+
+
+def _format_bash_result(output: str, exit_code: int | None) -> str:
+    if exit_code == 0:
+        return output
+    if exit_code is None:
+        return output
+    return f"Error: command exited with status {exit_code}\n{output}"
+
+
 def run_bash(command: str, run_in_background: bool = False) -> str:
     # run_in_background is handled by agent_loop dispatch, not here
-    try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=120)
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
+    return _format_bash_result(*_run_bash_process(command))
 
 
 def run_read(path: str, limit: int | None = None) -> str:
@@ -327,30 +389,42 @@ def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
 
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
     """Model explicit request takes priority; fallback to heuristic."""
-    if tool_input.get("run_in_background"):
-        return True
-    return is_slow_operation(tool_name, tool_input)
+    return tool_name == "bash" and (
+        tool_input.get("run_in_background") is True
+        or is_slow_operation(tool_name, tool_input)
+    )
 
 
 def execute_tool(block) -> str:
     """Execute a tool call block, return output."""
     handler = TOOL_HANDLERS.get(block.name)
-    if handler:
-        return handler(**block.input)
-    return f"Unknown tool: {block.name}"
+    if not handler:
+        return f"Unknown tool: {block.name}"
+    try:
+        return str(handler(**block.input))
+    except (TypeError, ValueError) as exc:
+        return f"Error: {exc}"
 
 
 def start_background_task(block) -> str:
-    """Run tool in a daemon thread. Returns background task ID."""
+    """Run one bash call in a daemon thread. Returns background task ID."""
     global _bg_counter
     _bg_counter += 1
     bg_id = f"bg_{_bg_counter:04d}"
     cmd = block.input.get("command", block.name)
 
     def worker():
-        result = execute_tool(block)
+        try:
+            if block.name != "bash":
+                raise ValueError("only bash can run in the background")
+            output, exit_code = _run_bash_process(str(block.input["command"]))
+            result = _format_bash_result(output, exit_code)
+            status = "completed" if exit_code == 0 else "failed"
+        except Exception as exc:
+            result = f"Error: {type(exc).__name__}: {exc}"
+            status = "failed"
         with background_lock:
-            background_tasks[bg_id]["status"] = "completed"
+            background_tasks[bg_id]["status"] = status
             background_results[bg_id] = result
 
     with background_lock:
@@ -366,10 +440,10 @@ def start_background_task(block) -> str:
 
 
 def collect_background_results() -> list[str]:
-    """Collect completed background results as task_notification messages."""
+    """Collect terminal background results as task_notification messages."""
     with background_lock:
         ready_ids = [bid for bid, task in background_tasks.items()
-                     if task["status"] == "completed"]
+                     if task["status"] in {"completed", "failed"}]
     notifications = []
     for bg_id in ready_ids:
         with background_lock:
@@ -379,7 +453,7 @@ def collect_background_results() -> list[str]:
         notifications.append(
             f"<task_notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>completed</status>\n"
+            f"  <status>{task['status']}</status>\n"
             f"  <command>{task['command']}</command>\n"
             f"  <summary>{summary}</summary>\n"
             f"</task_notification>")

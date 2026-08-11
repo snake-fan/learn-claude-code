@@ -19,22 +19,17 @@ const STEPS = [
   {
     title: "Confirm a Small Team",
     desc: "The Lead proposes focused roles and waits for the user before starting persistent teammates.",
-    event: "user confirmed: backend + tests",
+    event: "lead proposes: backend + tests",
   },
   {
-    title: "Deliver a Typed Assignment",
-    desc: "The runtime writes the assignment to a mailbox and correlates plan approval with a request id.",
-    event: "plan_response(req_7, approved=true)",
+    title: "Claim Atomically",
+    desc: "A ready task moves to one owner while the task-store file lock protects the persisted transition.",
+    event: "task_store_lock: task_...0042 -> backend",
   },
   {
-    title: "Idle Teammates Scan the Board",
-    desc: "A teammate with no direct message looks only for pending, unowned work whose dependencies are complete.",
-    event: "scan_ready_tasks(backend) -> task_auth",
-  },
-  {
-    title: "Claim Under One Lock",
-    desc: "Ownership and status change atomically, so another teammate cannot take the same task.",
-    event: "task_lock: task_auth -> backend",
+    title: "Require and Review a Plan",
+    desc: "The gate is active before the teammate starts; the Lead reviews the typed request for this task and work version.",
+    event: "review_plan(req_000007, approve=true)",
   },
   {
     title: "Route Tools to the Task Directory",
@@ -42,9 +37,14 @@ const STEPS = [
     event: "cwd -> .worktrees/auth-refactor",
   },
   {
+    title: "Execute the Approved Work",
+    desc: "Mutating tools run only after the current assignment's plan is approved.",
+    event: "bash / write: allowed",
+  },
+  {
     title: "Return the Result, Keep the Teammate",
-    desc: "The runtime delivers the result to the Lead and moves the teammate back to IDLE for newly ready work.",
-    event: "result(auth complete) -> idle_notification",
+    desc: "Completion keeps the task cwd through the turn; IDLE releases the assignment and keeps the teammate available.",
+    event: "complete -> result -> IDLE",
   },
 ] as const;
 
@@ -98,7 +98,7 @@ function RuntimePanel({ step }: { step: number }) {
         </span>
         <span className="text-zinc-500 dark:text-zinc-400">Protocol</span>
         <span className="break-all font-mono text-zinc-700 dark:text-zinc-300">
-          {step < 1 ? "-" : "request_id=req_7"}
+          {step < 2 ? "-" : "request_id=req_000007"}
         </span>
       </div>
 
@@ -107,10 +107,10 @@ function RuntimePanel({ step }: { step: number }) {
         <span className="break-words leading-relaxed">
           {step === 0
             ? "No mailbox is created before confirmation."
-            : step === 1
-              ? "Assignment and plan approval travel through typed messages."
+            : step === 2
+              ? "The approval is tied to the claimed task and work version."
               : step === 5
-                ? "The result wakes the Lead; IDLE is a reusable state."
+                ? "The result wakes the Lead; IDLE releases the cwd lease."
                 : "The runtime owns delivery while the teammate works."}
         </span>
       </div>
@@ -119,8 +119,8 @@ function RuntimePanel({ step }: { step: number }) {
 }
 
 function TaskPanel({ step }: { step: number }) {
-  const status = step < 3 ? "pending" : step < 5 ? "in_progress" : "completed";
-  const owner = step < 3 ? "-" : "backend";
+  const status = step < 1 ? "pending" : step < 5 ? "in_progress" : "completed";
+  const owner = step < 1 ? "-" : "backend";
   const tone = status === "pending" ? "zinc" : status === "in_progress" ? "amber" : "emerald";
 
   return (
@@ -135,7 +135,7 @@ function TaskPanel({ step }: { step: number }) {
 
       <div className="mt-4 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
         <div className="font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
-          task_auth
+          task_1712345678_0042
         </div>
         <div className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
           Refactor authentication
@@ -151,18 +151,18 @@ function TaskPanel({ step }: { step: number }) {
       <div
         className={cn(
           "mt-3 flex min-h-[56px] items-center gap-2 rounded-md border px-3 py-2 text-xs",
-          step === 2 || step === 3
+          step === 1
             ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
             : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
         )}
       >
-        {step < 3 ? <Search size={15} className="shrink-0" /> : <LockKeyhole size={15} className="shrink-0" />}
+        {step < 1 ? <Search size={15} className="shrink-0" /> : <LockKeyhole size={15} className="shrink-0" />}
         <span className="break-words">
-          {step < 2
+          {step < 1
             ? "Waiting for the teammate loop."
-            : step === 2
-              ? "Ready filter: pending + unowned + dependencies complete."
-              : "The claim check and update share one lock."}
+            : step === 1
+              ? "The claim check and update share one lock."
+              : "The claimed task remains owned through the work turn."}
         </span>
       </div>
     </div>
@@ -170,7 +170,8 @@ function TaskPanel({ step }: { step: number }) {
 }
 
 function WorkspacePanel({ step }: { step: number }) {
-  const bound = step >= 4;
+  const routed = step >= 3 && step < 5;
+  const retained = step >= 5;
 
   return (
     <div className="min-h-[250px] rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
@@ -179,14 +180,17 @@ function WorkspacePanel({ step }: { step: number }) {
           <GitBranch size={16} className="shrink-0 text-emerald-500" />
           <span>Task directory</span>
         </div>
-        <StateBadge label={bound ? "bound" : "reserved"} tone={bound ? "emerald" : "zinc"} />
+        <StateBadge
+          label={routed ? "active cwd" : retained ? "binding retained" : "reserved"}
+          tone={routed ? "emerald" : "zinc"}
+        />
       </div>
 
       <div className="mt-4 space-y-2">
         <div
           className={cn(
             "rounded-md border p-3 transition-colors",
-            !bound
+            !routed
               ? "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30"
               : "border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800"
           )}
@@ -199,11 +203,11 @@ function WorkspacePanel({ step }: { step: number }) {
           </div>
         </div>
         <motion.div
-          animate={bound ? { y: [0, -2, 0] } : { y: 0 }}
-          transition={{ duration: 0.8, repeat: bound ? Infinity : 0 }}
+          animate={routed ? { y: [0, -2, 0] } : { y: 0 }}
+          transition={{ duration: 0.8, repeat: routed ? Infinity : 0 }}
           className={cn(
             "rounded-md border p-3 transition-colors",
-            bound
+            routed
               ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
               : "border-dashed border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
           )}
@@ -212,14 +216,24 @@ function WorkspacePanel({ step }: { step: number }) {
             .worktrees/auth-refactor
           </div>
           <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-            {bound ? "bash / read / write cwd" : "task.worktree binding"}
+            {routed
+              ? "bash / read / write cwd"
+              : retained
+                ? "task binding remains after IDLE"
+                : "task.worktree binding"}
           </div>
         </motion.div>
       </div>
 
       <div className="mt-3 flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-        {bound ? <Terminal size={15} /> : <GitBranch size={15} />}
-        <span>{bound ? "Tools follow the claimed task." : "No implicit directory switching."}</span>
+        {routed ? <Terminal size={15} /> : <GitBranch size={15} />}
+        <span>
+          {routed
+            ? "Tools follow the claimed task."
+            : retained
+              ? "IDLE released active tool routing."
+              : "No implicit directory switching."}
+        </span>
       </div>
     </div>
   );

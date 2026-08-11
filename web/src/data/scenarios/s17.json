@@ -62,8 +62,13 @@
     {
       "type": "tool_call",
       "toolName": "bash",
-      "content": "{\"command\":\"npm run lint && npm run test\",\"run_in_background\":true}",
+      "content": "{\"command\":\"python -m unittest tests.test_agent_teams_runtime\",\"run_in_background\":true}",
       "annotation": "Long-running validation goes through the background task path."
+    },
+    {
+      "type": "system_event",
+      "content": "permission: user approved the exact test command",
+      "annotation": "Team confirmation does not authorize shell execution; the foreground turn asks separately before dispatch."
     },
     {
       "type": "tool_call",
@@ -85,7 +90,7 @@
     },
     {
       "type": "system_event",
-      "content": "recover: background task done, teammate replied, deploy status result appended",
+      "content": "task_notification(status=completed): tests passed; teammate result and deploy status appended",
       "annotation": "The integrated runtime folds asynchronous results back into the loop."
     },
     {

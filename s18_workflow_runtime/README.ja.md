@@ -4,7 +4,7 @@
 
 s01 → ... → s16 → [s17](../s17_integrated_harness/) → `s18` → [s19](../s19_goal_loop/)
 
-> *「1 回の tool_use で、一式の orchestration を実行する」* — `Workflow` ツールが決定的で復元可能な script runtime を起動し、多数の subagent をまとめて送り出します。
+> *「1 回の tool_use で、一式の orchestration を実行する」* — `Workflow` ツールが決定的で復元可能な script runtime を起動し、多数の agent call を協調させます。
 >
 > **Harness 層**: Orchestration — single-agent loop の上に、決定的な multi-agent script runtime を追加します。
 
@@ -22,7 +22,7 @@ s01 から s17 まで、loop は常にモデル駆動で 1 step ずつ進みま�
 
 ## 計画は chat のラウンドを重ねず、コードに書く
 
-harness の tool pool に `Workflow` ツールを追加します。ユーザーまたはモデルが渡す script は、`agent() / parallel() / pipeline() / phase()` という少数の primitive を使い、orchestration を決定的なコードとして表します。
+harness の tool pool に `Workflow` ツールを追加します。host は `agent() / parallel() / pipeline() / phase()` で構成した trusted script を登録します。model が渡すのは saved workflow name、argument、任意の resume run ID だけで、実行可能 code や metadata は渡しません。
 
 main loop から見えるのは 1 回の `tool_use` だけです。script の実行中、runtime は lifecycle event と progress event を出し、各 step をディスク上の journal へ記録します。script が終わると、この call は launch 情報、result、task state を返します。script の中間結果は変数に保存され、会話履歴の場所を取りません。`resume_from_run_id` で再開すると、変更されていない `agent()` は journal cache に当たり、以前の結果を直接使って checkpoint から続行します。
 
@@ -41,29 +41,41 @@ async def sample_workflow(ctx, args):
 
 ## Workflow ツール: 1 回の call で run 全体を実行する
 
-`Workflow` は main Agent の tool pool にあります。ユーザーが保存済み workflow の実行を求めるか、タスクが既知の orchestration に一致したときにモデルがこのツールを選びます。どちらも 1 回の `Workflow(...)` tool call になります。
+`Workflow` は s17 host の既存 tool pool に追加されます。ユーザーが保存済み workflow の実行を求めるか、タスクが既知の orchestration に一致したときにモデルがこのツールを選びます。adapter は name を host-owned `WORKFLOWS` registry で解決し、trusted metadata と function を runtime へ渡します。s17 の他の tools も同じ loop で利用できます。
 
-ツールは argument を parse し、meta 情報を検証し、permission check を通し、local workflow task を登録して、script の実行前に `async_launched` を出します。その後に progress event と最後の `task_notification` が続き、call は launch 情報、result、task state を返します。
+model-facing schema が受け取るのは `name`、`args`、`resume_from_run_id` です。unknown name や不正 argument は error tool result として返し、host loop を終了させません。その後 runtime が登録済み metadata を検証し、permission check を通し、local workflow task を登録して、script の実行前に `async_launched` を出します。progress event と最後の `task_notification` が続き、call は JSON-safe な launch 情報、result、task state を返します。
 
 ```python
-class WorkflowTool:
-    async def call(self, meta, script_fn, args=None, resume_from_run_id=None):
-        validate_meta(meta)
-        check_permission(meta)
-        run_id = resume_from_run_id or create_run_id(meta)
-        task = LocalWorkflowTask(create_task_id(run_id), run_id, meta)
-        task.event("async_launched", runId=run_id, taskId=task.task_id)
-        ...
-        result = await script_fn(ctx, args)
-        task.event("task_notification", status=task.status)
-        return {"launched": launched, "result": result, "task": task}
+WORKFLOW_TOOL = {
+    "name": "Workflow",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "args": {"type": "object"},
+            "resume_from_run_id": {"type": "string"},
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+}
+
+async def run_workflow(name, args=None, resume_from_run_id=None):
+    meta, script_fn = WORKFLOWS[name]
+    out = await WorkflowTool().call(
+        meta, script_fn,
+        args=args,
+        resume_from_run_id=resume_from_run_id,
+    )
+    return {"launched": out["launched"], "result": out["result"],
+            "task": serialize_task(out["task"])}
 ```
 
 ## Workflow metadata: 起動前に検証する
 
-各 workflow は `name`、`description`、任意の `phases` を持つ metadata object を登録します。runtime は workflow code を実行する前に検証します。`name` と `description` は task と UI の表示に使い、`phases` は progress bar の group 名を定義します。
+各 saved workflow は `name`、`description`、任意の `phases` を持つ trusted metadata を登録します。runtime は workflow code を実行する前に検証します。`name` と `description` は task と UI の表示に使い、`phases` は progress 表示の group 名を定義します。これらは model input ではなく host registry に属します。
 
-不正な入力はすぐ `WorkflowInputError` になり、登録時に止まります。s14 の cron 式検証と同じ考えです。不正な script が実行時まで進んでから壊れないようにします。
+不正な登録内容は launch 前に `WorkflowInputError` になります。s14 の cron 式検証と同じ考えです。不正な saved workflow が実行時まで進んでから壊れないようにします。
 
 runtime は `meta.name` をローカル artifact のファイル名に使うため、英数字で始まり、英数字、`.`、`_`、`-` のみからなる 1-64 文字の安全な slug も要求する。
 
@@ -85,7 +97,7 @@ def validate_meta(meta):
 
 ## Orchestration primitive: この少数だけで、すべての flow を書ける
 
-script は独立した context で動き、global variable として使えるのは少数の orchestration primitive だけです。script 自身はファイルを直接読み書きせず、shell も実行しません。実際のコード操作は、派遣された subagent が自分の tool permission で行います。primitive はすべて `ExecutionState` の method です。
+script は少数の orchestration primitive だけを公開する `ExecutionState` を受け取り、ファイルを直接読み書きせず、shell も実行しません。production integration では `agent()` の背後に real agent runner を接続し、その runner の tool permission を維持できます。本章は journal と resume を再現可能にするため `MockAgentRunner` を使います。sample の finding は固定 test data であり、real code audit の結果ではありません。
 
 | Primitive | 役割 |
 |------|------|
@@ -140,7 +152,7 @@ class LocalWorkflowTask:
 
 ## 保存: Snapshot + journal で中断から再開する
 
-runtime は各 run を `s18_workflow_runtime/.runtime/` に保存します。`<runId>.json` snapshot、`<runId>.output.json` output、`<runId>.journal.jsonl` journal です。snapshot と journal は安定した `runId` を共有し、resume 時に同じ run の状態と完了済み step を特定できるようにします。
+runtime は各 run を `s18_workflow_runtime/.runtime/` に保存します。`<runId>.json` snapshot、`<runId>.output.json` output、`<runId>.journal.jsonl` journal、`<runId>.lock` coordination file です。fresh run は journal を開く前に exclusive file creation で新しい `runId` を予約します。run lock は実行と最終永続化が終わるまで保持するため、別 process は同じ run を同時に resume できません。snapshot に workflow name、arguments、task state を記録し、resume は保存済み snapshot と journal を先に検証してから、成功済み artifact を変更します。
 
 journal は checkpoint resume の中心で、各 `agent()` の結果を 1 行ずつ記録します。
 
@@ -172,11 +184,11 @@ if cached is not MISS:
 
 ## 決定性: Resume に意味を持たせる再現性
 
-resume が動くには、workflow が再現可能でなければなりません。stable hash と決定的な runner は、同じ workflow + 同じ argument から同じ key を作ります。そのため workflow code は、制御されていない clock、randomness、filesystem state など、run ごとに key を変える入力を避けます。
+resume が動くには、workflow が再現可能でなければなりません。stable hash は同じ workflow と argument から同じ journal key を作り、本章の deterministic runner は sample result も同じにします。real runner の内容は変化しても、semantic call key は安定させ、制御されていない clock、randomness、filesystem state を key に混ぜない必要があります。
 
 ## 実際に動かす
 
-sample workflow `review-changes` は `pipeline` を使い、各 review dimension を独立して audit → verify へ通します。audit では schema 付き `agent()` が問題を探し、verify では `parallel()` が各 finding に別の adversarial verification subagent を送ります。実在すると確認された問題だけを残し、severity 順に並べます。
+sample workflow `review-changes` は `pipeline` を使い、各 review dimension を独立して audit → verify へ通します。deterministic runner は audit で structured fixture finding を、verify で fixture verdict を作ります。sample は特定 model の review 品質ではなく、pipeline、validation、journal、resume に焦点を当てます。
 
 ```python
 async def sample_workflow(ctx, args):
@@ -206,24 +218,25 @@ async def sample_workflow(ctx, args):
 |--|-----------|---------------------|
 | loop | 1 つ、モデル駆動 | main loop は不変。その上に決定的 orchestration を追加 |
 | 次の step を決めるもの | モデルが毎ラウンド判断 | script が orchestration flow を事前に定義 |
-| multi-agent | s06 subagent を一度だけ派遣 | script 化された、再現可能で復元可能な一括 orchestration |
-| 新しい仕組み | — | script DSL、task lifecycle、progress event、journal/resume、structured output、deterministic VM |
+| multi-agent | s06 subagent を一度だけ派遣 | agent-runner boundary を通る scripted、resumable call |
+| 新しい仕組み | — | orchestration primitive、host registry と tool adapter、task lifecycle、progress event、journal/resume、structured output |
 
-s18 は main loop を置き換えません。tool layer に `Workflow` を公開し、背後で local workflow runtime を起動します。1 つの workflow が N 個の Agent loop を決定的に駆動します。s06 の subagent はモデルがその場で 1 回派遣し、s18 は orchestration を replay 可能な script にします。
+s18 は main loop を置き換えません。tool layer に `Workflow` を公開し、背後で local workflow runtime を起動します。saved script が agent-runner boundary を通じて N 回の call を協調させます。s06 の subagent はモデルがその場で 1 回派遣し、s18 は orchestration を resumable な host code にします。
 
 ## 試してみる
 
 ```bash
-python s18_workflow_runtime/code.py          # review-changes を起動し、event stream を確認
+python s18_workflow_runtime/code.py          # real API: model が Workflow または s17 tool を選ぶ
+python s18_workflow_runtime/code.py demo     # deterministic fixture と event stream を確認
 python s18_workflow_runtime/code.py resume   # 前回の runId から resume。すべての agent() が journal cache に当たる
 ```
 
-1 回の起動から `async_launched`、phase change と subagent progress、最後の `task_notification` までを観察してください。結果は task object に保存されます。resume 時はすべて cache hit するため `agents=0 tokens=0` と表示され、結果は前回と 1 byte も違いません。
+default command では、保存済み `review-changes` workflow の実行を model に依頼できます。この tool call は s17 から継承した tools と同じ loop と dispatcher を通ります。`demo` は deterministic fixture を直接実行し、lifecycle と resume を繰り返し観察できるようにします。runner call 11 回と fixture finding 6 件を報告し、resume 時はすべて cache hit するため `agents=0 tokens=0` と表示されます。
 
 ## 次へ
 
-orchestration は Agent 能力の上にもう 1 層を加えます。main loop は個々の操作を管理し、script はチーム全体の flow を管理します。仕事が決定的で復元可能な script になると、モデルは「ラウンドごとの driver」から「script に schedule される実行 unit」へ変わります。同じ `agent()` を main loop でモデルがその場で呼ぶことも、workflow 内で script がまとめて編成することもできます。
+orchestration は Agent 能力の上にもう 1 層を加えます。main loop は個々の操作を管理し、saved script は fixed flow を管理します。本章は agent-runner boundary を deterministic にしています。real runner へ置き換えると実際の仕事は変わりますが、workflow lifecycle、journal、resume contract は変わりません。
 
-次へ: [s19 Goal Loop](../s19_goal_loop/) — Orchestration は仕事を複数の agent へ fan-out します。次章は逆に、1 つの goal が control を main loop へ引き戻し、objective が達成されるまで turn の終了を認めません。
+次へ: [s19 Goal Loop](../s19_goal_loop/) — Orchestration は仕事を複数の agent へ fan-out します。次章は focused loop で control を goal へ引き戻します。未達成なら継続し、達成または safety exit で user に control を返します。
 
-<!-- translation-sync: zh@v2, en@v2, ja@v2 -->
+<!-- translation-sync: zh@v6, en@v6, ja@v6 -->

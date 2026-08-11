@@ -1,22 +1,18 @@
-# s06: Subagent — Break Large Tasks into Small Ones with Clean Context
+# s06: Subagent — Give a Subtask Its Own Context
 
 [English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md)
 
 s01 → s02 → s03 → s04 → s05 → `s06` → [s07](../s07_skill_loading/) → s08 → ... → s18 → s19
 
-> *"Break large tasks small, each with clean context"* — Subagent uses an independent messages[], no pollution in the main conversation.
+> A subagent starts with a fresh `messages[]`. Its final text returns to the parent; its intermediate conversation does not.
 >
-> **Harness Layer**: Sub-Agent — Context isolation, attention doesn't drift.
+> **Harness Layer**: Delegation — Run a focused task in a separate conversation context.
 
 ---
 
 ## The Problem
 
-The Agent is fixing a bug. It reads 30 files to trace the call chain, chatting for 60 rounds along the way. The messages list grows to 120 entries, most of which are intermediate steps from "tracing the call chain" — unrelated to the final goal of "fixing the bug."
-
-These intermediate steps occupy context space, making the Agent increasingly "forgetful" — it can no longer remember what the original problem was.
-
-Think of it differently: when you fix a bug, you'd "open a new terminal" to trace the call chain. When done, close the terminal, write the result into your notes, and return to the original terminal to keep fixing. The Agent needs this ability too — **open an independent sub-process, give it an independent message list, let it focus on one thing.**
+The Agent is fixing a bug. It reads many files to trace the call chain, and every tool call and result stays in the parent's `messages[]`. Once the call chain is understood, most of those intermediate details are no longer needed, but they still occupy context.
 
 ---
 
@@ -24,87 +20,69 @@ Think of it differently: when you fix a bug, you'd "open a new terminal" to trac
 
 ![Subagent Overview](images/subagent-overview.en.svg)
 
-The minimal hook structure and `todo_write` tool from the previous chapter are preserved; this chapter focuses on the new `task` tool. When called, it spawns a sub-Agent with a fresh `messages[]`, running its own loop, and returning only a summary text to the main Agent. Conversation context is discarded, but file system side effects (writes, edits, commands) remain in the working directory.
+Calling `task` synchronously runs a nested agent loop with a fresh `messages[]`. When that loop finishes, its final text becomes the tool result in the parent conversation.
 
-The sub-Agent's tools are restricted: it has bash/read/write/edit/glob, but no task, preventing recursive spawning. The sub-Agent's tool calls still go through permission hooks; context isolation does not bypass security.
+This is message isolation, not process or filesystem isolation. Parent and subagent run in the same Python process and share `WORKDIR`, so writes and commands still affect the same workspace. The subagent has the five base tools but no `task`, and its tool calls use the same permission and lifecycle hooks as the parent.
 
 ---
 
 ## How It Works
 
-**spawn_subagent**, gives the sub-Agent a fresh messages list, runs its own loop, returns only the conclusion:
+**run_subagent** creates the fresh message list, runs the nested loop, and returns the final text:
 
 ```python
-def spawn_subagent(description: str) -> str:
-    # Sub-Agent tools: base tools, but no task (no recursion)
-    sub_tools = [...]
-    messages = [{"role": "user", "content": description}]  # fresh messages[]
+SUB_TOOLS = list(BASE_TOOLS)  # no task tool
 
-    for _ in range(30):  # safety limit
+def run_subagent(prompt: str) -> str:
+    messages = [{"role": "user", "content": prompt}]
+
+    for _ in range(30):
         response = client.messages.create(
             model=MODEL, system=SUB_SYSTEM,
-            messages=messages, tools=sub_tools, max_tokens=8000,
+            messages=messages, tools=SUB_TOOLS, max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason != "tool_use":
-            break
+            return extract_text(response.content) or "(no summary)"
+
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                blocked = trigger_hooks("PreToolUse", block)
-                if blocked:
-                    results.append({... "content": str(blocked)})
-                    continue
-                handler = SUB_HANDLERS.get(block.name)
-                output = handler(**block.input) if handler else f"Unknown"
-                trigger_hooks("PostToolUse", block, output)
+                output = execute_tool(block, SUB_HANDLERS)
                 results.append({... "content": output})
         messages.append({"role": "user", "content": results})
 
-    # Return only the final text conclusion, all intermediate steps discarded
-    return extract_text(messages[-1]["content"])
+    return "Subagent stopped after 30 turns without a final answer."
 ```
 
 The main Agent calls it just like any other tool:
 
 ```python
-TOOLS = [
-    {"name": "bash", ...},
-    {"name": "read_file", ...},
-    {"name": "write_file", ...},
-    {"name": "edit_file", ...},
-    {"name": "glob", ...},
-    {"name": "todo_write", ...},
-    # s06: new task tool
-    {"name": "task",
-     "description": "Launch a subagent to handle a complex subtask. Returns only the final conclusion.",
-     "input_schema": {"type": "object", "properties": {"description": {"type": "string"}}, "required": ["description"]}},
-]
+TASK_TOOL = {
+    "name": "task",
+    "description": "Run a subagent with fresh conversation context and return its final text.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"prompt": {"type": "string"}},
+        "required": ["prompt"],
+    },
+}
 
-TOOL_HANDLERS["task"] = spawn_subagent
+TOOLS = [*BASE_TOOLS, TASK_TOOL]
+TOOL_HANDLERS = {**BASE_HANDLERS, "task": run_subagent}
 ```
 
-Three key design decisions:
+The boundary is:
 
 | Decision | Choice | Reason |
 |----------|--------|--------|
-| Context isolation | Fresh `messages[]` | Sub-Agent's intermediate steps don't pollute main Agent's context |
-| Return only conclusion | `extract_text(last_message)` | Not returning the entire messages list |
-| No recursion | Sub-Agent has no task tool | Prevents sub-Agent from spawning further sub-Agents |
-| Security not bypassed | Sub-Agent tool calls go through PreToolUse hook | Context isolation does not mean permission isolation |
+| Conversation | Fresh `messages[]` | Parent history is not copied into the subagent |
+| Execution | Same process and `WORKDIR` | Filesystem changes remain visible to both loops |
+| Return value | Final text only | Child tool calls and results are not copied into parent messages |
+| Delegation depth | No `task` in `SUB_TOOLS` | This lesson permits one delegation level |
+| Tool policy | Shared Hooks | Parent and subagent use the same permission checks |
 
-The dispatch mechanism is unchanged; the task tool is routed through `TOOL_HANDLERS[block.name]`. The sub-Agent has its own `SUB_SYSTEM` prompt, explicitly instructing "complete the task, do not delegate further."
-
----
-
-## Changes from s05
-
-| Component | Before (s05) | After (s06) |
-|-----------|-------------|-------------|
-| Tool count | 6 (bash, read, write, edit, glob, todo_write) | 7 (+task) |
-| New function | — | spawn_subagent (independent messages[] + 30-round safety limit) |
-| Context isolation | Everything in the main conversation | Sub-Agent uses fresh messages[] |
-| Loop | Unchanged | Dispatch unchanged, sub-Agent has independent SUB_SYSTEM and hook-protected loop |
+The parent dispatches `task` through the same handler map as its other tools. The subagent uses `SUB_SYSTEM`, `SUB_TOOLS`, and its own local `messages` list.
 
 ---
 
@@ -121,7 +99,7 @@ Try these prompts:
 2. `Delegate: read all .py files in agents/ and summarize what each one does`
 3. `Use a task to create s06_subagent/example/string_tools.py with a slugify(text: str) function, then verify it from the parent agent`
 
-What to watch for: Do `[Subagent spawned]` / `[Subagent done]` appear? Do sub-Agent tool calls print as `[sub] ...`? Does the parent Agent continue with only the summary returned by the sub-Agent?
+What to watch for: Do `[Subagent started]` / `[Subagent done]` appear? Do subagent tool calls print as `[sub] ...`? Does the parent continue with only the final text returned by `task`?
 
 ---
 
@@ -132,4 +110,4 @@ The Agent can now break tasks apart. But different tasks require different knowl
 → s07 Skill Loading: Inject skills on demand instead of piling documents into the system prompt. Load only when needed, as natural as reading a file.
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v2, en@v2, ja@v2 -->

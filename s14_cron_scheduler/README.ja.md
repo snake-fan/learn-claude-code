@@ -57,6 +57,7 @@ class CronJob:
     prompt: str      # 発火時に Agent に注入するメッセージ
     recurring: bool  # True=定期的、False=一回限り
     durable: bool    # True=ディスク書き込み、セッション横断
+    pending_delivery: bool = False
 ```
 
 cron 式、5 フィールド、Unix で 50 年使われている：
@@ -108,6 +109,17 @@ def cron_matches(cron_expr: str, dt: datetime) -> bool:
 スケジューラは独立した daemon スレッドで動作、agent_loop が実行中かどうかに依存しない。個々のジョブエラーはスレッド全体を殺さない：
 
 ```python
+def _enqueue_due_job(job):
+    if not job.recurring:
+        job.pending_delivery = True
+        try:
+            if job.durable:
+                save_durable_jobs()
+        except Exception:
+            job.pending_delivery = False
+            raise
+    cron_queue.append(job)
+
 def cron_scheduler_loop():
     while True:
         time.sleep(1)
@@ -116,14 +128,12 @@ def cron_scheduler_loop():
         with cron_lock:
             for job in list(scheduled_jobs.values()):
                 try:
-                    if cron_matches(job.cron, now):
-                        if _last_fired.get(job.id) != minute_marker:
-                            cron_queue.append(job)
-                            _last_fired[job.id] = minute_marker
-                        if not job.recurring:
-                            scheduled_jobs.pop(job.id, None)
-                            if job.durable:
-                                save_durable_jobs()
+                    if job.pending_delivery:
+                        continue
+                    if (cron_matches(job.cron, now)
+                            and _last_fired.get(job.id) != minute_marker):
+                        _enqueue_due_job(job)
+                        _last_fired[job.id] = minute_marker
                 except Exception as e:
                     print(f"[cron error] {job.id}: {e}")
 ```
@@ -132,7 +142,7 @@ def cron_scheduler_loop():
 - **agent_loop から独立**：agent_loop が動いていなくても、スケジューラはバックグラウンドで時刻をチェック
 - **日付認識 minute_marker**：`"YYYY-MM-DD HH:MM"` を使用、同じ分の重複発火を防ぎつつ翌日のスキップも防止
 - **ジョブ単位の try/except**：一つの悪いジョブがスケジューラスレッド全体をクラッシュさせない
-- **一回限りジョブ**：発火後、scheduled_jobs から自動削除
+- **一回限りジョブ**：その prompt を含む model call が成功するまで `pending_delivery` として保持
 
 ### Queue Processor + agent_loop: 配信側
 
@@ -160,6 +170,12 @@ fired = consume_cron_queue()
 for job in fired:
     messages.append({"role": "user",
                      "content": f"[Scheduled] {job.prompt}"})
+try:
+    response = client.messages.create(...)
+except Exception:
+    restore_cron_jobs(fired)
+    raise
+acknowledge_cron_jobs(fired)  # model call の成功後だけ確認
 ```
 
 生産者（スケジューラスレッド）、配信者（queue processor）、消費者（agent_loop）は `cron_queue`、`cron_lock`、`agent_lock` で分離されている。
@@ -182,6 +198,8 @@ def schedule_job(cron, prompt, recurring=True, durable=True):
 
 - **Durable**：タスク定義を `.scheduled_tasks.json` に書き込み。Agent 再起動後にファイルから復元。
 - **Session-only**：メモリ内のみ。Agent 終了で消失。
+
+durable な一回限りジョブは、先に `pending_delivery=true` で永続化し、その後 scheduler がメモリ上の queue に入れる。永続化に失敗した場合は memory 上の pending state を戻し、次の scheduler tick で再試行する。prompt を `messages` に追加した時点でも削除せず、model call が成功したあとに `acknowledge_cron_jobs()` が削除する。model call に失敗した場合は queue へ戻す。確認前に process が停止すると再配信される可能性があるため、この境界は exactly-once ではなく at-least-once である。
 
 > **重要な前提**：cron スケジューラは Agent プロセス内で実行される必要がある。プロセスが終了するとスケジューラも停止。Durable はタスク定義が再起動後も保持されることを意味するだけで、次回 Agent 起動時にスケジューラが「発火すべき」と判定して初めて発火する。「アプリケーションが閉じていても定期的に実行」が必要な場合は、システム crontab または systemd timer を使用。
 
@@ -252,4 +270,4 @@ python s14_cron_scheduler/code.py
 s15 Agent Teams → 一人の Agent では足りない、チームを組もう。永続的なチームメイト + 非同期受信箱。
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v5, en@v5, ja@v5 -->

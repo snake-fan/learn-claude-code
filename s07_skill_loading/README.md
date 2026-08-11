@@ -11,18 +11,18 @@ s01 → s02 → s03 → s04 → s05 → s06 → `s07` → [s08](../s08_context_c
 
 ## The Problem
 
-Your project has a React component spec, a SQL style guide, and an API design doc. You want the Agent to follow these specs automatically. The most straightforward idea — stuff them all into the system prompt:
+Suppose a project has a React component specification, a SQL style guide, and an API design document. We want the Agent to follow these rules during development. The most direct approach is to put all of them into the system prompt:
 
 ```python
 SYSTEM = (
     f"You are a coding agent. "
-    + open("docs/react-style.md").read()       # 2000 lines
-    + open("docs/sql-style.md").read()         # 1500 lines
-    + open("docs/api-design.md").read()        # 3000 lines
+    + open("docs/react-style.md").read()
+    + open("docs/sql-style.md").read()
+    + open("docs/api-design.md").read()
 )
 ```
 
-6500 lines of system prompt. The Agent carries these docs on every LLM call — whether it's changing a CSS color or fixing a SQL query. 99% of the content is irrelevant to the current task, burning tokens for nothing.
+Every LLM call now carries all three documents. Even when a task uses only one of them, the other two still occupy context.
 
 ---
 

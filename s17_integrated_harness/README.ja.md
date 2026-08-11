@@ -6,7 +6,7 @@ s01 → ... → s15 → [s16](../s16_mcp_plugin/) → `s17` → [s18](../s18_wor
 
 > *"仕組みは多い、ループは 1 つ"* — tools、permissions、memory、tasks、teams、plugins はすべて同じ `while True` に接続される。
 >
-> **Harness レイヤー**: 統合 — s01-s16 の仕組みを 1 つの実行可能なシステムへ戻す。
+> **Harness レイヤー**: 統合 — この例で実際に使う仕組みを 1 つの実行可能なシステムへまとめる。
 
 ---
 
@@ -26,7 +26,7 @@ s01 → ... → s15 → [s16](../s16_mcp_plugin/) → `s17` → [s18](../s18_wor
 - task-bound worktree
 - MCP external tool integration
 
-難しいのは機能を積み上げることではない。それぞれの仕組みが loop のどこに接続されるかを見抜くことだ。S17 は統合チェックポイントであり、これまでの component を 1 つの harness に戻してから、s18-s19 が編成と目標完了を外側に追加する。
+難しいのは機能を積み上げることではない。それぞれの仕組みが loop のどこに接続されるかを見抜くことだ。S17 は統合チェックポイントであり、この実行可能な example が保持する仕組みを 1 つの harness に接続する。S18 はその上に Workflow 編成を追加し、s19 はより小さな loop で goal closure を個別に扱う。
 
 ---
 
@@ -79,7 +79,7 @@ loop 自体は同じ構造のままだ。model を呼び、response に `tool_us
 
 ### Tools と Dispatch
 
-built-in tool pool には 25 個の tool がある：
+built-in tool pool には 24 個の tool がある：
 
 ```text
 bash, read_file, write_file, edit_file, glob
@@ -88,7 +88,7 @@ create_task, list_tasks, get_task, claim_task, complete_task
 schedule_cron, list_crons, cancel_cron
 spawn_teammate, send_message
 request_shutdown, request_plan, review_plan
-create_worktree, remove_worktree
+create_worktree
 connect_mcp
 ```
 
@@ -114,7 +114,7 @@ if blocked:
 
 これにより permission、logging、audit が同じ hook point に接続できる。Lead、one-shot subagent、teammate の tool はすべて先に `PreToolUse` を通り、許可された call は handler 実行後に `PostToolUse` を通る。
 
-MCP tool では discovery metadata を確認し、`(readOnly)` と示された tool はそのまま実行する。mutating または分類されていない tool は先に user へ確認する。
+permission 判定では、MCP server 自身の description を authorization の根拠にしない。host が既知の read-only call の exact allowlist を持ち、それ以外の MCP tool は user に確認する。file tool が `WORKDIR` の外へ出る場合は拒否し、すべての bash command は実行前に確認する。interactive approval を開けるのは foreground user turn だけで、asynchronous turn は main CLI と stdin を奪い合わず fail closed する。
 
 ### Plan と Task
 
@@ -132,7 +132,7 @@ S17 には 2 層の plan がある：
 S17 には 2 種類の delegation がある：
 
 - `task`: one-shot subagent。独立した `messages[]` を使い、中間 context を捨て、final summary だけ返す。
-- `spawn_teammate`: persistent teammate thread。固定の tool round 上限なしで `WORK → result → IDLE` を続ける。model または dispatch の失敗は `error` を送り、thread cleanup は未完了 assignment を task board へ戻す。idle 中はまず `MessageBus` を待ち、timeout 後だけ ready task を scan して最大 1 件を atomic に claim する。
+- `spawn_teammate`: persistent teammate thread。固定の tool round 上限なしで `WORK → result → IDLE` を続ける。model または dispatch の失敗は `error` を送り、thread cleanup は未完了 assignment を task board へ戻す。model call の前には毎回 inbox を読み、direct message や shutdown request が連続する tool-use round の後ろで待ち続けないようにする。idle 中はまず `MessageBus` を待ち、timeout 後だけ ready task を scan して最大 1 件を atomic に claim する。
 
 one-shot subagent は context isolation を解決する。persistent teammate は長期並列協作を解決する。
 
@@ -172,7 +172,9 @@ should_run_background → start_background_task → placeholder tool_result
 background done → task_notification → next round injects messages
 ```
 
-cron scheduler は daemon thread として動き、1 秒ごとに確認する。CLI は `cron_queue`、Lead inbox、完了済み background work を監視し、どの event からでも Agent を 1 turn 自動で起動する。
+background path に入るのは bash だけである。command の非ゼロ終了や worker の例外は、成功ではなく `failed` notification になる。各 Shell command は独立した process group で動き、command の終了、または Agent が通常経路や `SIGTERM` で終了する時に元の group を停止する。別の session を作った process はその境界から離れられる。
+
+cron scheduler は daemon thread として動き、1 秒ごとに確認する。durable な一回限り job は、先に `pending_delivery` として永続化してから queue へ入れ、その prompt を含む model call が成功するまで保持する。呼び出し失敗時と restart 後には再び queue に入るため、配信は at-least-once である。CLI は `cron_queue`、Lead inbox、終了した background work を監視し、どの event からでも Agent を 1 turn 自動で起動する。
 
 ### Worktree と MCP
 
@@ -181,10 +183,10 @@ s15 から継承した task-scoped worktree は working directory を管理す�
 - pending かつ unowned の task は main workspace のままでもよく、`create_worktree(name, task_id)` で別々の branch と directory に紐付けることもできる
 - 作成前に task、name、path、branch、Git registry を検証する。Git command が失敗した後も registry と branch state を照合し、部分的に作成された checkout は未紐付けのまま manual recovery 用に保持する
 - idle teammate は ready task を 1 つ atomic に claim し、assignment は `task_id` と effective `cwd` の両方を保持する
-- teammate のすべての file tool はその `cwd` を使い、task owner だけが task を complete して assignment を解除できる
-- モデル向けの `remove_worktree(name)` tool は unfinished task の binding を拒否し、clean checkout だけを削除する。tracked、untracked、ignored file はすべて削除を止める。破壊的な削除は host の操作として別途 user confirmation を必要とする。成功後は binding を解除して branch を保持し、checkout 削除後の unbind 永続化が失敗した場合は manual recovery 用の partial success を返す
+- teammate のすべての file tool はその `cwd` を使い、task owner だけが complete できる。assignment は current model turn の終了まで保持する
+- 削除は host 側の `remove_worktree()` helper に残し、モデルからは呼べない。user または host が task ownership、assignment lease、background work、Git state を先に確認し、破壊的な削除には別途 user confirmation を必要とする
 
-worktree は tool の default working directory を変更して working copy を分離するだけで、sandbox ではない。
+worktree は tool の default working directory を変更して working copy を分離するだけで、sandbox ではない。process group cleanup は別の session を作った process を封じ込められないため、削除は host-owned のままにする。
 
 MCP は external capability を担当する：
 
@@ -205,10 +207,10 @@ MCP は external capability を担当する：
 | skill | s16 の focus 外 | system prompt の catalog + `load_skill` |
 | compact | s16 の focus 外 | LLM 前 compaction + `compact` tool + reactive compact |
 | error recovery | simple try/except | retry / max_tokens / prompt too long |
-| background | s16 の focus 外 | slow-operation thread + task notification |
-| cron | s16 の focus 外 | daemon scheduler + durable jobs |
+| background | background bash + notification | 同じ lifecycle に permission hook を接続 |
+| cron | daemon scheduler + durable jobs | 同じ scheduler を integrated event loop に接続 |
 | multi-agent | s15 から継承 | atomic task ownership と task-scoped `cwd` を維持 |
-| worktree | task の optional binding | safe create/remove semantics を維持 |
+| worktree | task の optional binding | モデルが作成し、host が確認して削除 |
 | MCP | 新規 | integrated tool pool の一部として維持 |
 
 ---
@@ -237,7 +239,7 @@ python s17_integrated_harness/code.py
 - teammate が plan を提出し、approval 前に停止するか
 - idle teammate が ready task を 1 つだけ atomic に claim するか
 - teammate のすべての file tool が claimed task の `cwd` へ切り替わるか
-- task owner だけが complete して assignment を解除できるか
+- complete 後も同じ turn の間は task `cwd` を保ち、IDLE で assignment を解除するか
 
 ---
 
@@ -260,4 +262,4 @@ while True:
 
 次へ：[s18 Workflow Runtime](../s18_workflow_runtime/) — 編成の形が固定なら、多数の会話ターンではなく、決定的で再開可能なコードへ移す。
 
-<!-- translation-sync: zh@v3, en@v3, ja@v3 -->
+<!-- translation-sync: zh@v8, en@v8, ja@v8 -->

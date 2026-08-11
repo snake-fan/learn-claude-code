@@ -107,7 +107,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-Under 30 lines — that's the minimal runnable agent harness kernel. It's not intelligence itself, but the smallest runtime framework that lets the model keep acting. The model decides (whether to call a tool, which one), the harness executes (if called, run it, feed the result back). The next 18 chapters all add mechanisms on top of this loop. The loop itself never changes.
+Under 30 lines — that's the minimal runnable agent harness kernel. It's not intelligence itself, but the smallest runtime framework that lets the model keep acting. The model decides (whether to call a tool, which one), the harness executes (calls the tool and appends the result as a new message). The next 19 chapters all add mechanisms on top of this loop. The loop itself never changes.
 
 ---
 

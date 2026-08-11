@@ -33,11 +33,11 @@ MCP（Model Context Protocol）は、Agent が外部ツールを発見・呼び�
 | assemble_tool_pool | 組み込みツールと MCP ツールを一つのツールプールに組み立てる |
 | mcp\_\_server\_\_tool 命名 | 異なる server 間のツール名衝突を防止 |
 
-s15 の Team runtime を土台にし、idle 時の atomic task claim、安全な task-worktree binding、coordination protocol を引き継ぐ。cron scheduling、background bash の lifecycle、完了後に Lead を自動で起こす通知もそのまま残す。本章では `connect_mcp` ツールを追加し、サービスへの接続、ツール発見、ツールプールへの追加を行う。
+s15 の Team runtime を土台にし、idle 時の atomic task claim、restart 後も復元できる task-worktree binding、current assignment だけに結び付く plan approval を引き継ぐ。background bash は非ゼロ終了を failure として報告し、作業終了時に command の元の process group を停止する。durable な一回限り cron job は、先に pending delivery として永続化してから queue へ入れ、その prompt を含む model call が成功するまで保持する。本章では `connect_mcp` ツールを追加し、サービスへの接続、ツール発見、ツールプールへの追加を行う。
 
 task-bound worktree はチームメイトのファイルツールに対するデフォルト作業ディレクトリを変更するだけであり、セキュリティサンドボックスではない。
 
-モデルに公開する `remove_worktree` が受け取るのは `name` だけなので、削除できるのは clean な checkout に限られる。変更を破棄する場合は、ユーザーが Git を手動実行するか、明示的な確認を経て host が下位の強制削除経路を呼び出す。モデル自身が強制削除を選ぶことはできない。
+Worktree 削除はモデルに公開しない。user または host が task、assignment、background process、Git state を確認してから cleanup helper を呼ぶ。変更の破棄は、user が手動で行う Git 操作、または明示的な確認後に host が行う操作のままである。
 
 本章はプロセス内の server handler を登録し、発見から呼び出しまでをオフラインで実行する。各 handler はクライアントが必要とする `tools/list` と `tools/call` を提供する。
 
@@ -184,4 +184,4 @@ tools、permissions、hooks、todo、task graph、memory、compact、background 
 [s17 Integrated Harness](../s17_integrated_harness/) → s01-s16 の仕組みを 1 つの harness に統合。仕組みは多く、loop は 1 つ。
 
 
-<!-- translation-sync: zh@v4, en@v4, ja@v4 -->
+<!-- translation-sync: zh@v7, en@v7, ja@v7 -->

@@ -33,11 +33,11 @@ MCP (Model Context Protocol) defines how agents discover and invoke external too
 | assemble_tool_pool | Assembles built-in tools and MCP tools into one tool pool |
 | mcp\_\_server\_\_tool naming | Prevents tool name collisions across different servers |
 
-Builds on s15's team runtime: atomic idle task claiming, safe task-bound worktrees, and coordination protocols. It also retains cron scheduling, the background bash lifecycle, and completion notifications that automatically wake the Lead. This chapter adds the `connect_mcp` tool, which connects to a service, discovers its tools, and adds them to the tool pool.
+Builds on s15's team runtime: atomic idle task claiming, task-worktree bindings that can recover after a restart, and plan approvals tied to the current assignment. Background bash reports non-zero exits as failures and stops the command's original process group when work ends. A durable one-shot cron job is persisted as pending before it enters the delivery queue and stays there until the model call containing its prompt succeeds. This chapter adds the `connect_mcp` tool, which connects to a service, discovers its tools, and adds them to the tool pool.
 
 A task-bound worktree changes the teammate file tools' default working directory; it is not a security sandbox.
 
-The model-facing `remove_worktree` tool accepts only `name`, so it can remove only a clean checkout. Discarding changes remains a manual Git operation for the user, or a host action that follows explicit confirmation; the model cannot opt into the lower-level force path itself.
+Worktree removal is not model-facing. The user or host reviews the task, assignment, background process, and Git state before calling the cleanup helper. Discarding changes remains a manual Git operation or a host action after explicit confirmation.
 
 The chapter registers in-process server handlers so the full discovery and invocation flow runs offline. Each handler exposes the two operations the client needs: `tools/list` and `tools/call`.
 
@@ -184,4 +184,4 @@ Tools, permissions, hooks, todo, task graph, memory, compact, background work, c
 [s17 Integrated Harness](../s17_integrated_harness/) → Combine the mechanisms from s01-s16 into one harness. Many mechanisms, one loop.
 
 
-<!-- translation-sync: zh@v4, en@v4, ja@v4 -->
+<!-- translation-sync: zh@v7, en@v7, ja@v7 -->

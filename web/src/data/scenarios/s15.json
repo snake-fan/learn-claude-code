@@ -51,8 +51,8 @@
     {
       "type": "tool_call",
       "toolName": "spawn_teammate",
-      "content": "{\"name\":\"backend\",\"role\":\"backend engineer\",\"prompt\":\"Claim the authentication task and propose a plan.\"}",
-      "annotation": "A persistent teammate receives focused work through the team runtime."
+      "content": "{\"name\":\"backend\",\"role\":\"backend engineer\",\"prompt\":\"Claim the authentication task and propose a plan.\",\"require_plan\":true}",
+      "annotation": "The plan gate is active before the teammate thread starts, so claim and mutation cannot race ahead of approval."
     },
     {
       "type": "tool_call",
@@ -62,13 +62,30 @@
     },
     {
       "type": "system_event",
-      "content": "plan_request(req_plan_7) -> plan_response(req_plan_7, approved=true)",
-      "annotation": "Typed correlation and an approval gate protect mutating tools."
+      "content": "claim_next_task(backend) -> task_1712345678_0042; task_store_lock commits owner=backend",
+      "annotation": "The ownership check and persisted state transition share the cross-process task-store lock."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "request_plan",
+      "content": "{\"teammate\":\"backend\",\"task\":\"Inspect the claimed authentication task and submit a plan before changing files.\"}",
+      "annotation": "The Lead delivers the plan request for the current assignment; the gate was already active before the teammate thread started."
     },
     {
       "type": "system_event",
-      "content": "claim_next_task(backend) -> task_1712345678_0042; task_lock commits owner=backend",
-      "annotation": "The ownership check and state transition are atomic."
+      "content": "backend submit_plan -> plan_approval_request(request_id=req_000007, task_id=task_1712345678_0042)",
+      "annotation": "The request records the task and work version that the plan is meant to authorize."
+    },
+    {
+      "type": "tool_call",
+      "toolName": "review_plan",
+      "content": "{\"request_id\":\"req_000007\",\"approve\":true,\"feedback\":\"Proceed with the scoped refactor.\"}",
+      "annotation": "Approval is correlated by request ID and cannot carry into a different assignment."
+    },
+    {
+      "type": "system_event",
+      "content": "plan_approval_response(request_id=req_000007, approve=true) -> backend",
+      "annotation": "The teammate receives the typed response before mutating tools are released."
     },
     {
       "type": "system_event",
@@ -84,7 +101,7 @@
     {
       "type": "system_event",
       "content": "backend -> Lead: result(auth refactor complete) -> idle_notification",
-      "annotation": "Result and idle state are separate events; the teammate remains available."
+      "annotation": "The task directory stays selected through the completion turn, then IDLE releases the assignment."
     },
     {
       "type": "system_event",

@@ -80,6 +80,6 @@
   <text x="95" y="548" fill="#334155" font-size="9">durable work: task tools · cron tools</text>
   <text x="510" y="512" fill="#334155" font-size="9">team: spawn_teammate · send_message · typed protocols</text>
   <text x="510" y="530" fill="#334155" font-size="9">protocol: request_shutdown · request_plan · review_plan</text>
-  <text x="510" y="548" fill="#334155" font-size="9">workdir/plugin: create/remove_worktree · connect_mcp</text>
+  <text x="510" y="548" fill="#334155" font-size="9">workdir/plugin: create_worktree · connect_mcp</text>
   <path d="M 850 518 L 890 518 L 890 152 L 850 152" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)" stroke-dasharray="4,4"/>
 </svg>

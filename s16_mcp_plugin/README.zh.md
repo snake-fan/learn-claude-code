@@ -33,11 +33,11 @@ MCP（Model Context Protocol）定义了 Agent 如何发现和调用外部工具
 | assemble_tool_pool | 把内置工具和 MCP 工具组装成一个工具池 |
 | mcp\_\_server\_\_tool 命名 | 避免不同 server 的工具名冲突 |
 
-本章建立在 s15 团队运行时之上，沿用 idle 阶段的原子任务认领、安全的 task-worktree 绑定和协调协议，也保留 cron 调度、后台 bash 生命周期，以及任务完成后自动唤醒 Lead 的通知。新增的 `connect_mcp` 工具用于连接服务、发现工具并加入工具池。
+本章建立在 s15 团队运行时之上，沿用 idle 阶段的原子任务认领、可在重启后恢复的 task-worktree 绑定，以及只对当前 assignment 生效的计划审批。后台 bash 会把非零退出报告为失败，并在任务结束时停止命令原来的进程组；durable 的一次性 cron 任务会先持久化为待投递，再进入队列，并一直保留到包含该 prompt 的模型调用成功。新增的 `connect_mcp` 工具用于连接服务、发现工具并加入工具池。
 
 task-bound worktree 只会改变队友文件工具的默认工作目录，并不是安全沙箱。
 
-模型可见的 `remove_worktree` 只接受 `name`，因此只能移除状态干净的 checkout。若确实要丢弃改动，应由用户手动执行 Git，或者由宿主在明确确认后调用底层的强制清理路径，不能让模型自行选择。
+Worktree 移除不对模型开放。用户或宿主先检查任务、assignment、后台进程和 Git 状态，再调用清理函数。丢弃改动仍是用户手动执行的 Git 操作，或者宿主在明确确认后执行的操作。
 
 本章注册进程内 server handler，让工具发现和调用流程可以离线运行。每个 handler 都提供客户端需要的 `tools/list` 和 `tools/call` 两个操作。
 
@@ -184,4 +184,4 @@ python s16_mcp_plugin/code.py
 [s17 Agent Harness 集成](../s17_integrated_harness/) → 把 s01-s16 的机制合回同一个 harness。机制很多，循环一个。
 
 
-<!-- translation-sync: zh@v4, en@v4, ja@v4 -->
+<!-- translation-sync: zh@v7, en@v7, ja@v7 -->

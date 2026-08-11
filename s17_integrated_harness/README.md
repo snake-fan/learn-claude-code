@@ -6,7 +6,7 @@ s01 → ... → s15 → [s16](../s16_mcp_plugin/) → `s17` → [s18](../s18_wor
 
 > *"Many mechanisms, one loop"* — tools, permissions, memory, tasks, teams, and plugins all hang off the same `while True`.
 >
-> **Harness layer**: Integration — put the mechanisms from s01-s16 into one runnable system.
+> **Harness layer**: Integration — put the mechanisms used by this example into one runnable system.
 
 ---
 
@@ -26,7 +26,7 @@ A long-running coding agent needs all of these at once:
 - task-bound worktrees
 - MCP external tool integration
 
-The hard part is not piling up features. The hard part is seeing where each mechanism belongs around the loop. S17 is the integration checkpoint: every earlier component is placed back into one harness before s18-s19 add orchestration and goal closure around it.
+The hard part is not piling up features. The hard part is seeing where each mechanism belongs around the loop. S17 is the integration checkpoint: the mechanisms retained by this runnable example are placed into one harness. S18 extends it with workflow orchestration; s19 uses a smaller loop to study goal closure on its own.
 
 ---
 
@@ -79,7 +79,7 @@ The loop keeps the same structure: call the model, check whether the response co
 
 ### Tools and Dispatch
 
-The built-in tool pool contains 25 tools:
+The built-in tool pool contains 24 tools:
 
 ```text
 bash, read_file, write_file, edit_file, glob
@@ -88,7 +88,7 @@ create_task, list_tasks, get_task, claim_task, complete_task
 schedule_cron, list_crons, cancel_cron
 spawn_teammate, send_message
 request_shutdown, request_plan, review_plan
-create_worktree, remove_worktree
+create_worktree
 connect_mcp
 ```
 
@@ -114,7 +114,7 @@ if blocked:
 
 That means permission, logging, and audit logic all attach to the same hook point. Lead tools, one-shot subagent tools, and teammate tools all pass through `PreToolUse`; an allowed call then runs `PostToolUse` after its handler.
 
-For MCP tools, the hook reads the discovered metadata: a tool marked `(readOnly)` can run directly, while a mutating or unclassified tool asks the user first.
+The policy does not trust an MCP server's own description as authorization. The host owns a small exact allowlist for known read-only calls; every other MCP tool asks the user. File tools are denied outside `WORKDIR`, and every bash command asks before execution. Only the foreground user turn may open an interactive approval prompt; asynchronous turns fail closed instead of competing with the main CLI for stdin.
 
 ### Planning and Tasks
 
@@ -132,7 +132,7 @@ They share an intent, not an implementation: `todo_write` replaces one session c
 S17 has two kinds of delegation:
 
 - `task`: one-shot subagent. It uses an isolated `messages[]`, discards intermediate context, and returns only a final summary.
-- `spawn_teammate`: persistent teammate thread. It follows `WORK → result → IDLE` without a fixed tool-round cap; model or dispatch failures emit an `error`, and thread cleanup releases an unfinished assignment back to the task board. While idle it waits for `MessageBus` delivery first, then scans ready tasks only after the wait times out and atomically claims at most one.
+- `spawn_teammate`: persistent teammate thread. It follows `WORK → result → IDLE` without a fixed tool-round cap; model or dispatch failures emit an `error`, and thread cleanup releases an unfinished assignment back to the task board. It drains its inbox before every model call, so direct messages and shutdown requests cannot wait behind an unbroken tool-use sequence. While idle it waits for `MessageBus` delivery first, then scans ready tasks only after the wait times out and atomically claims at most one.
 
 One-shot subagents solve context isolation. Persistent teammates solve long-running parallel collaboration.
 
@@ -172,7 +172,9 @@ should_run_background → start_background_task → placeholder tool_result
 background done → task_notification → next round injects messages
 ```
 
-The cron scheduler runs as a daemon thread and checks once per second. The CLI watches `cron_queue`, Lead's inbox, and completed background work; any of them can wake one automatic agent turn.
+Only bash can enter the background path. A non-zero exit or worker exception produces a `failed` notification instead of a false success. Each shell runs in its own process group, which the runtime stops when the command or Agent process ends through the normal or `SIGTERM` path. That cleanup covers the original group; a process that creates another session can escape it.
+
+The cron scheduler runs as a daemon thread and checks once per second. A durable one-shot job is persisted as `pending_delivery` before entering the queue and remains there until the model call containing its prompt succeeds; a failed call restores it to the queue, and a restart queues it again. Delivery is therefore at-least-once. The CLI watches `cron_queue`, Lead's inbox, and terminal background work; any of them can wake one automatic agent turn.
 
 ### Worktree and MCP
 
@@ -181,10 +183,10 @@ The task-scoped worktree behavior inherited from s15 manages working directories
 - a pending, unowned task may remain in the main workspace or be bound by `create_worktree(name, task_id)` to a separate branch and directory
 - creation prevalidates the task, name, path, branch, and Git registry; a failed Git command is reconciled against the registry and branch state, and any partial checkout remains unbound and preserved for manual recovery
 - an idle teammate atomically claims one ready task; the assignment records both `task_id` and its effective `cwd`
-- all teammate file tools use that `cwd`, and only the owning teammate can complete the task and clear the assignment
-- the model-facing `remove_worktree(name)` tool refuses unfinished task bindings and removes only clean checkouts; tracked, untracked, and ignored files all block it. Destructive removal remains a host operation that requires separate user confirmation. Successful removal clears the binding and preserves the branch; a post-removal unbind failure is reported as partial success for manual recovery
+- all teammate file tools use that `cwd`; only the owning teammate can complete the task, and the assignment stays selected until that model turn ends
+- removal stays in the host-side `remove_worktree()` helper. The model cannot call it. The user or host first checks task ownership, assignment leases, background work, and Git state; destructive removal requires separate user confirmation
 
-The worktree changes tool default directories. It separates working copies; it is not a sandbox.
+The worktree changes tool default directories. It separates working copies; it is not a sandbox, and process-group cleanup does not contain a process that starts another session. This is why deletion remains host-owned.
 
 MCP owns external capability:
 
@@ -205,10 +207,10 @@ MCP owns external capability:
 | skill | outside s16's focus | catalog in system prompt + `load_skill` |
 | compact | outside s16's focus | pre-LLM compaction + `compact` tool + reactive compact |
 | error recovery | simple try/except | retry / max_tokens / prompt too long |
-| background | outside s16's focus | slow-operation thread + task notification |
-| cron | outside s16's focus | daemon scheduler + durable jobs |
+| background | background bash + notifications | same lifecycle, with permission hooks in the execution path |
+| cron | daemon scheduler + durable jobs | same scheduler inside the integrated event loop |
 | multi-agent | inherited from s15 | preserved with atomic task ownership and task-scoped `cwd` |
-| worktree | optional task binding | preserved with safe create/remove semantics |
+| worktree | optional task binding | model creates; host reviews and removes |
 | MCP | introduced | preserved as part of the integrated tool pool |
 
 ---
@@ -237,7 +239,7 @@ Watch for:
 - whether teammates submit plans and pause before approval
 - whether an idle teammate atomically claims only one ready task
 - whether every teammate file tool switches to the claimed task's `cwd`
-- whether only the task owner can complete it and clear the assignment
+- whether completion keeps the task `cwd` through the rest of the turn and releases it at IDLE
 
 ---
 
@@ -260,4 +262,4 @@ This is the course's integration checkpoint: many mechanisms, one loop.
 
 Next: [s18 Workflow Runtime](../s18_workflow_runtime/) — when the orchestration shape is fixed, move it out of chat turns and into deterministic, resumable code.
 
-<!-- translation-sync: zh@v3, en@v3, ja@v3 -->
+<!-- translation-sync: zh@v8, en@v8, ja@v8 -->

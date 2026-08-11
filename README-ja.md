@@ -74,7 +74,7 @@ Harness = Tools + Knowledge + Observation + Action Interfaces + Permissions
 
 - **知識のキュレーション。** Agent にドメイン専門性を与える。製品ドキュメント、アーキテクチャ決定記録、スタイルガイド、規制要件。オンデマンドで読み込み（s07）、前もって詰め込まない。Agent は何が利用可能か知った上で、必要なものを自ら取得すべき。
 
-- **コンテキストの管理。** Agent にクリーンな記憶を与える。サブ Agent 隔離（s06）がノイズの漏洩を防ぐ。コンテキスト圧縮（s08）が履歴の氾濫を防ぐ。タスクシステム（s12）が目標を単一の会話を超えて永続化する。
+- **コンテキストの管理。** サブ Agent は明確な作業を別のメッセージリストに置く。コンテキスト圧縮（s08）は古い履歴を短くし、タスクシステム（s12）は目標を単一の会話を超えて永続化する。
 
 - **権限の制御。** Agent に境界を与える。ファイルアクセスのサンドボックス化。破壊的操作への承認要求。Agent と外部システム間の信頼境界の実施。安全工学と Harness 工学の交差点。
 
@@ -172,7 +172,7 @@ Claude Code = 一つの agent loop
 >
 > **s05** &nbsp; *"計画のないエージェントは行き当たりばったり"* &mdash; まずステップを書き出し、それから実行
 >
-> **s06** &nbsp; *"大きなタスクを分割し、各サブタスクにクリーンなコンテキストを"* &mdash; サブ Agent が作業し、結果だけを持ち帰る
+> **s06** &nbsp; サブタスクに新しい `messages[]` を与え、最終テキストを 1 つの tool result として返す
 >
 > **s07** &nbsp; *"必要な知識を、必要な時に読み込む"* &mdash; スキルはまず一覧だけ、必要な時に展開する
 >
@@ -194,11 +194,11 @@ Claude Code = 一つの agent loop
 >
 > **s16** &nbsp; *"能力不足？ MCP でプラグイン"* &mdash; 外部ツールを同じツールプールに接続する
 >
-> **s17** &nbsp; *"仕組みは多く、ループは一つ"* &mdash; すべての仕組みを 1 つの Harness に戻す
+> **s17** &nbsp; *"仕組みは多く、ループは一つ"* &mdash; 統合例で使う仕組みを 1 つの Harness に戻す
 >
 > **s18** &nbsp; *"編成の形が固定なら、コードにする"* &mdash; 再開可能なジャーナルを持つ決定的 Workflow
 >
-> **s19** &nbsp; *"本当に終われる時を目標が決める"* &mdash; 独立した evaluator が conversation から目標達成を確認するまで継続する
+> **s19** &nbsp; *"本当に終われる時を目標が決める"* &mdash; 停止候補ごとに独立 evaluator が確認し、不可能、失敗、継続上限の場合は user に制御を返す
 
 ---
 
@@ -229,7 +229,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-各セッションはこのループの上に 1 つの Harness メカニズムを重ねる -- ループ自体は変わらない。ループは Agent のもの。メカニズムは Harness のもの。
+各セッションはこの loop の周りで 1 つの Harness mechanism を分けて扱う。s17 で累積 runtime を再統合し、s18 と s19 で Workflow 編成と goal closure を個別に扱う。loop は Agent のもので、mechanism は Harness のものである。
 
 ## バージョン状況
 
@@ -262,7 +262,7 @@ def agent_loop(messages):
 
 ## コースの範囲
 
-これは Harness 工学を 0 から組み立てるコースである。各セッションで一つの仕組みを分けて扱い、s17 で一つの Agent loop に戻す。チームランタイムは JSONL メールボックスを使い、その後のセッションで Workflow 編成と目標による継続ループを追加する。
+これは Harness 工学を 0 から組み立てるコースである。各セッションで一つの仕組みを分けて扱い、s17 で累積 runtime を一つの Agent loop に戻す。s18 はその loop に Workflow 編成を追加する。s19 はより小さな tool pool で goal-controlled continuation に集中する mechanism example であり、もう一つの累積 runtime ではない。
 
 ## クイックスタート
 
@@ -317,7 +317,7 @@ flowchart TD
         direction LR
         S1["<b>第1段階：Agent が動ける</b><br/>━━━━━━━━━━━━━<br/><b>s01 Agent Loop</b><br/>└─ 1つのループ + bash<br/><br/><b>s02 Tool Use</b><br/>└─ 1つのツールから複数へ<br/><br/><b>s03 Permission</b><br/>└─ 実行してよいか判断する<br/><br/><b>s04 Hooks</b><br/>└─ ツール前後に拡張入口を作る"]:::stage1
 
-        S2["<b>第2段階：複雑な仕事をこなす</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ 先に計画し、それから実行<br/><br/><b>s06 Subagent</b><br/>└─ サブ Agent が結果を返す<br/><br/><b>s08 Context Compact</b><br/>└─ 長いコンテキストに空きを作る"]:::stage2
+        S2["<b>第2段階：複雑な仕事をこなす</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ 先に計画し、それから実行<br/><br/><b>s06 Subagent</b><br/>└─ 新しい messages、最終テキストを返す<br/><br/><b>s08 Context Compact</b><br/>└─ 長いコンテキストに空きを作る"]:::stage2
 
         S3["<b>第3段階：記憶して回復する</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ セッションを越えて保存・想起<br/><br/><b>s10 Context Assembly</b><br/>└─ 実行時状態からモデル入力を組み立てる<br/><br/><b>s11 Error Recovery</b><br/>└─ 再試行し、別の道へ"]:::stage3
 
@@ -369,8 +369,8 @@ flowchart TD
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | 永続スケジューリング / セッション限定トリガー |
 | [s15](./s15_agent_teams/) | Agent Teams | 永続チームメイト / 原子的認領 / タスクに紐付く Worktree / 型付きプロトコル |
 | [s16](./s16_mcp_plugin/) | MCP Plugin | ツール発見 / 名前空間 / ツールプール組み立て |
-| [s17](./s17_integrated_harness/) | Integrated Harness | すべての仕組みを 1 つのループへ |
-| [s18](./s18_workflow_runtime/) | Workflow Runtime | スクリプト編成 / バックグラウンド実行 / ジャーナル再開 |
+| [s17](./s17_integrated_harness/) | Integrated Harness | tools、runtime context、tasks、teams、scheduling、MCP を 1 つの loop へ |
+| [s18](./s18_workflow_runtime/) | Workflow Runtime | スクリプト編成 / lifecycle event / ジャーナル再開 |
 | [s19](./s19_goal_loop/) | Goal Loop | 目標ゲート / conversation の評価 / 自動継続 |
 
 ## プロジェクト構成

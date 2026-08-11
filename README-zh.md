@@ -74,7 +74,7 @@ Harness = Tools + Knowledge + Observation + Action Interfaces + Permissions
 
 - **策划知识。** 给 agent 领域专长。产品文档、架构决策记录、风格指南、合规要求。按需加载（s07），不要前置塞入。Agent 应该知道有什么可用，然后自己拉取所需。
 
-- **管理上下文。** 给 agent 干净的记忆。子 agent 隔离（s06）防止噪声泄露。上下文压缩（s08）防止历史淹没。任务系统（s12）让目标持久化到单次对话之外。
+- **管理上下文。** 子 Agent 把明确的工作留在另一份消息列表中；上下文压缩（s08）缩短较早的历史；任务系统（s12）让目标持久化到单次对话之外。
 
 - **控制权限。** 给 agent 边界。沙箱化文件访问。对破坏性操作要求审批。在 agent 和外部系统之间实施信任边界。这是安全工程与 harness 工程的交汇点。
 
@@ -172,7 +172,7 @@ Claude Code = 一个 agent loop
 >
 > **s05** &nbsp; *"没有计划的 agent 走哪算哪"* &mdash; 先列步骤再动手, 完成率翻倍
 >
-> **s06** &nbsp; *"大任务拆小, 每个小任务干净的上下文"* &mdash; 子 Agent 自己干活，只把结果带回来
+> **s06** &nbsp; 给子任务全新的 `messages[]`，最终文本作为一条工具结果返回
 >
 > **s07** &nbsp; *"用到时再加载, 别全塞 prompt 里"* &mdash; 技能先列目录，用到时再展开
 >
@@ -194,11 +194,11 @@ Claude Code = 一个 agent loop
 >
 > **s16** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
 >
-> **s17** &nbsp; *"机制很多，循环一个"* &mdash; 前面所有机制集成到同一个 harness
+> **s17** &nbsp; *"机制很多，循环一个"* &mdash; 集成示例用到的机制归到同一个 harness
 >
 > **s18** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 可恢复 journal 支撑确定性 workflow
 >
-> **s19** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 持续工作，直到独立判断器根据对话确认目标达成
+> **s19** &nbsp; *"目标决定循环什么时候真正结束"* &mdash; 每次准备停止时都由独立判断器审查；目标不可能、执行失败或超过续跑上限时把控制权交还用户
 
 ---
 
@@ -229,7 +229,7 @@ def agent_loop(messages):
         messages.append({"role": "user", "content": results})
 ```
 
-每个课程在这个循环之上叠加一个 harness 机制 -- 循环本身始终不变。循环属于 agent。机制属于 harness。
+每个课程围绕这个循环单独展开一个 harness 机制。s17 把累积的运行时接回一起；s18 和 s19 再分别聚焦 workflow 编排与目标收口。循环属于 agent，机制属于 harness。
 
 ## 版本说明
 
@@ -262,7 +262,7 @@ def agent_loop(messages):
 
 ## 课程边界
 
-这是一个从 0 到 1 的 harness 工程课程。每章先单独展开一个机制，s17 再把它们接回完整的 Agent 循环。团队运行时使用 JSONL 邮箱，后续章节继续加入 workflow 编排和由目标控制的持续循环。
+这是一个从 0 到 1 的 harness 工程课程。每章先单独展开一个机制，s17 再把累积的运行时接回完整的 Agent 循环。s18 在这个循环上加入 workflow 编排；s19 用更小的工具池单独讲目标控制的续跑，不是又一个累积式运行时。
 
 ## 快速开始
 
@@ -317,7 +317,7 @@ flowchart TD
         direction LR
         S1["<b>第一阶段：让 Agent 能动手</b><br/>━━━━━━━━━━━━━<br/><b>s01 Agent Loop</b><br/>└─ 一个循环 + bash<br/><br/><b>s02 Tool Use</b><br/>└─ 单个到多个工具<br/><br/><b>s03 Permission</b><br/>└─ 判断能不能做<br/><br/><b>s04 Hooks</b><br/>└─ 工具前后留扩展插口"]:::stage1
 
-        S2["<b>第二阶段：做复杂任务</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ 先列计划，再执行<br/><br/><b>s06 Subagent</b><br/>└─ 子节点干活带回结果<br/><br/><b>s08 Context Compact</b><br/>└─ 长下文腾空间"]:::stage2
+        S2["<b>第二阶段：做复杂任务</b><br/>━━━━━━━━━━━━━<br/><b>s05 TodoWrite</b><br/>└─ 先列计划，再执行<br/><br/><b>s06 Subagent</b><br/>└─ 全新消息，返回最终文本<br/><br/><b>s08 Context Compact</b><br/>└─ 长下文腾空间"]:::stage2
 
         S3["<b>第三阶段：记住和恢复</b><br/>━━━━━━━━━━━━━<br/><b>s09 Memory</b><br/>└─ 跨会话持久化与召回<br/><br/><b>s10 Context Assembly</b><br/>└─ 从运行时状态组装模型输入<br/><br/><b>s11 Error Recovery</b><br/>└─ 重试换路子"]:::stage3
 
@@ -370,8 +370,8 @@ flowchart TD
 | [s14](./s14_cron_scheduler/) | Cron Scheduler | 持久化调度 / 会话级触发 |
 | [s15](./s15_agent_teams/) | Agent Teams | 持久队友 / 原子认领 / 任务绑定的 Worktree / 类型协议 |
 | [s16](./s16_mcp_plugin/) | MCP Plugin | 工具发现 / 命名空间 / 工具池组装 |
-| [s17](./s17_integrated_harness/) | Agent Harness 集成 | 全部机制归到一个循环 |
-| [s18](./s18_workflow_runtime/) | Workflow Runtime | 脚本编排 / 后台运行 / journal 续跑 |
+| [s17](./s17_integrated_harness/) | Agent Harness 集成 | 工具、运行时上下文、任务、团队、调度和 MCP 归到一个循环 |
+| [s18](./s18_workflow_runtime/) | Workflow Runtime | 脚本编排 / 生命周期事件 / journal 续跑 |
 | [s19](./s19_goal_loop/) | Goal Loop | 目标闸门 / 对话判断 / 自动续轮 |
 
 ## 项目结构

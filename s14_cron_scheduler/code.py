@@ -22,7 +22,7 @@ Four layers:
   4. Consumer: agent_loop consumes queued jobs and injects them into messages
 """
 
-import os, subprocess, json, time, random, threading
+import atexit, os, signal, subprocess, json, time, random, threading
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -184,15 +184,77 @@ def safe_path(p: str) -> Path:
     return path
 
 
+_shell_processes: set[subprocess.Popen] = set()
+_shell_process_lock = threading.RLock()
+
+
+def _stop_process_group(process: subprocess.Popen):
+    """Stop processes that remain in the command's original process group."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
+def _stop_all_shell_processes():
+    with _shell_process_lock:
+        processes = list(_shell_processes)
+    for process in processes:
+        _stop_process_group(process)
+
+
+def _handle_termination_signal(signum, _frame):
+    _stop_all_shell_processes()
+    raise SystemExit(128 + signum)
+
+
+atexit.register(_stop_all_shell_processes)
+signal.signal(signal.SIGTERM, _handle_termination_signal)
+
+
+def _run_bash_process(command: str, cwd: Path | None = None) -> tuple[str, int | None]:
+    process = None
+    try:
+        process = subprocess.Popen(
+            command, shell=True, cwd=cwd or WORKDIR,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True,
+        )
+        with _shell_process_lock:
+            _shell_processes.add(process)
+        stdout, stderr = process.communicate(timeout=120)
+        out = (stdout + stderr).strip()
+        return (out[:50000] if out else "(no output)"), process.returncode
+    except subprocess.TimeoutExpired:
+        return "Error: Timeout (120s)", None
+    except OSError as exc:
+        return f"Error: {type(exc).__name__}: {exc}", None
+    finally:
+        if process is not None:
+            _stop_process_group(process)
+            try:
+                process.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                pass
+            with _shell_process_lock:
+                _shell_processes.discard(process)
+
+
+def _format_bash_result(output: str, exit_code: int | None) -> str:
+    if exit_code == 0:
+        return output
+    if exit_code is None:
+        return output
+    return f"Error: command exited with status {exit_code}\n{output}"
+
+
 def run_bash(command: str, run_in_background: bool = False) -> str:
     # run_in_background is handled by agent_loop dispatch, not here
-    try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=120)
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
+    return _format_bash_result(*_run_bash_process(command))
 
 
 def run_read(path: str, limit: int | None = None) -> str:
@@ -276,9 +338,10 @@ def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
 
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
     """Model explicit request takes priority; fallback to heuristic."""
-    if tool_input.get("run_in_background"):
-        return True
-    return is_slow_operation(tool_name, tool_input)
+    return tool_name == "bash" and (
+        tool_input.get("run_in_background") is True
+        or is_slow_operation(tool_name, tool_input)
+    )
 
 
 def execute_tool(block) -> str:
@@ -291,22 +354,33 @@ def execute_tool(block) -> str:
         "schedule_cron": run_schedule_cron, "list_crons": run_list_crons,
         "cancel_cron": run_cancel_cron,
     }.get(block.name)
-    if handler:
-        return handler(**block.input)
-    return f"Unknown tool: {block.name}"
+    if not handler:
+        return f"Unknown tool: {block.name}"
+    try:
+        return str(handler(**block.input))
+    except (TypeError, ValueError) as exc:
+        return f"Error: {exc}"
 
 
 def start_background_task(block) -> str:
-    """Run tool in a daemon thread. Returns background task ID."""
+    """Run one bash call in a daemon thread. Returns background task ID."""
     global _bg_counter
     _bg_counter += 1
     bg_id = f"bg_{_bg_counter:04d}"
     cmd = block.input.get("command", block.name)
 
     def worker():
-        result = execute_tool(block)
+        try:
+            if block.name != "bash":
+                raise ValueError("only bash can run in the background")
+            output, exit_code = _run_bash_process(str(block.input["command"]))
+            result = _format_bash_result(output, exit_code)
+            status = "completed" if exit_code == 0 else "failed"
+        except Exception as exc:
+            result = f"Error: {type(exc).__name__}: {exc}"
+            status = "failed"
         with background_lock:
-            background_tasks[bg_id]["status"] = "completed"
+            background_tasks[bg_id]["status"] = status
             background_results[bg_id] = result
 
     with background_lock:
@@ -321,10 +395,10 @@ def start_background_task(block) -> str:
 
 
 def collect_background_results() -> list[str]:
-    """Collect completed background results as task_notification messages."""
+    """Collect terminal background results as task_notification messages."""
     with background_lock:
         ready_ids = [bid for bid, task in background_tasks.items()
-                     if task["status"] == "completed"]
+                     if task["status"] in {"completed", "failed"}]
     notifications = []
     for bg_id in ready_ids:
         with background_lock:
@@ -334,7 +408,7 @@ def collect_background_results() -> list[str]:
         notifications.append(
             f"<task_notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>completed</status>\n"
+            f"  <status>{task['status']}</status>\n"
             f"  <command>{task['command']}</command>\n"
             f"  <summary>{summary}</summary>\n"
             f"</task_notification>")
@@ -355,11 +429,12 @@ class CronJob:
     prompt: str      # message to inject when fired
     recurring: bool  # True = recurring, False = one-shot
     durable: bool    # True = persist to disk
+    pending_delivery: bool = False
 
 
 scheduled_jobs: dict[str, CronJob] = {}
 cron_queue: list[CronJob] = []
-cron_lock = threading.Lock()
+cron_lock = threading.RLock()
 agent_lock = threading.Lock()
 _last_fired: dict[str, str] = {}  # job_id → "YYYY-MM-DD HH:MM"
 
@@ -461,8 +536,11 @@ def validate_cron(cron_expr: str) -> str | None:
 
 def save_durable_jobs():
     """Persist durable jobs to .scheduled_tasks.json."""
-    durable = [asdict(j) for j in scheduled_jobs.values() if j.durable]
-    DURABLE_PATH.write_text(json.dumps(durable, indent=2))
+    with cron_lock:
+        durable = [asdict(j) for j in scheduled_jobs.values() if j.durable]
+        temporary = DURABLE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(durable, indent=2))
+        os.replace(temporary, DURABLE_PATH)
 
 
 def load_durable_jobs():
@@ -478,6 +556,8 @@ def load_durable_jobs():
                 print(f"  \033[31m[cron] skipping invalid job {job.id}: {err}\033[0m")
                 continue
             scheduled_jobs[job.id] = job
+            if job.pending_delivery:
+                cron_queue.append(job)
         valid = [j for j in jobs if j["id"] in scheduled_jobs]
         if valid:
             print(f"  \033[35m[cron] loaded {len(valid)} durable job(s)\033[0m")
@@ -498,8 +578,8 @@ def schedule_job(cron: str, prompt: str, recurring: bool = True,
     )
     with cron_lock:
         scheduled_jobs[job.id] = job
-    if durable:
-        save_durable_jobs()
+        if durable:
+            save_durable_jobs()
     print(f"  \033[35m[cron register] {job.id} '{cron}' → {prompt[:40]}\033[0m")
     return job
 
@@ -508,12 +588,26 @@ def cancel_job(job_id: str) -> str:
     """Cancel a cron job."""
     with cron_lock:
         job = scheduled_jobs.pop(job_id, None)
+        cron_queue[:] = [queued for queued in cron_queue if queued.id != job_id]
+        if job and job.durable:
+            save_durable_jobs()
     if not job:
         return f"Job {job_id} not found"
-    if job.durable:
-        save_durable_jobs()
     print(f"  \033[31m[cron cancel] {job_id}\033[0m")
     return f"Cancelled {job_id}"
+
+
+def _enqueue_due_job(job: CronJob):
+    """Persist a one-shot delivery before exposing it through the queue."""
+    if not job.recurring:
+        job.pending_delivery = True
+        try:
+            if job.durable:
+                save_durable_jobs()
+        except Exception:
+            job.pending_delivery = False
+            raise
+    cron_queue.append(job)
 
 
 def cron_scheduler_loop():
@@ -528,16 +622,14 @@ def cron_scheduler_loop():
         with cron_lock:
             for job in list(scheduled_jobs.values()):
                 try:
+                    if job.pending_delivery:
+                        continue
                     if cron_matches(job.cron, now):
                         if _last_fired.get(job.id) != minute_marker:
-                            cron_queue.append(job)
+                            _enqueue_due_job(job)
                             _last_fired[job.id] = minute_marker
                             print(f"  \033[35m[cron fire] {job.id} → "
                                   f"{job.prompt[:40]}\033[0m")
-                        if not job.recurring:
-                            scheduled_jobs.pop(job.id, None)
-                            if job.durable:
-                                save_durable_jobs()
                 except Exception as e:
                     print(f"  \033[31m[cron error] {job.id}: {e}\033[0m")
 
@@ -548,6 +640,30 @@ def consume_cron_queue() -> list[CronJob]:
         fired = list(cron_queue)
         cron_queue.clear()
     return fired
+
+
+def acknowledge_cron_jobs(jobs: list[CronJob]):
+    """Remove one-shot jobs after a model call accepts their prompts."""
+    durable_changed = False
+    with cron_lock:
+        for job in jobs:
+            current = scheduled_jobs.get(job.id)
+            if current and not current.recurring and current.pending_delivery:
+                scheduled_jobs.pop(job.id, None)
+                durable_changed = durable_changed or current.durable
+        if durable_changed:
+            save_durable_jobs()
+
+
+def restore_cron_jobs(jobs: list[CronJob]):
+    """Put unacknowledged deliveries back after a failed model call."""
+    with cron_lock:
+        queued_ids = {job.id for job in cron_queue}
+        for job in jobs:
+            current = scheduled_jobs.get(job.id)
+            if current and current.id not in queued_ids:
+                cron_queue.append(current)
+                queued_ids.add(current.id)
 
 
 def has_cron_queue() -> bool:
@@ -692,16 +808,18 @@ def agent_loop(messages: list, context: dict) -> dict:
             messages.append({"role": "user",
                              "content": f"[Scheduled] {job.prompt}"})
             print(f"  \033[35m[inject cron] {job.prompt[:50]}\033[0m")
-
         try:
             response = client.messages.create(
                 model=MODEL, system=system, messages=messages,
                 tools=TOOLS, max_tokens=8000)
         except Exception as e:
+            restore_cron_jobs(fired)
             messages.append({"role": "assistant", "content": [
                 {"type": "text",
                  "text": f"[Error] {type(e).__name__}: {e}"}]})
             return context
+
+        acknowledge_cron_jobs(fired)
 
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason != "tool_use":

@@ -11,7 +11,8 @@ memory, prompt assembly, error recovery, task graph, background tasks, cron,
 persistent teams, protocols, atomic task claims, optional worktrees, and MCP.
 """
 
-import ast, json, os, subprocess, time, random, threading, re
+import ast, atexit, fcntl, json, os, signal, subprocess, time, random, threading, re
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, asdict, field
@@ -55,6 +56,21 @@ PROMPT = "\033[36ms17 >> \033[0m"
 CLI_ACTIVE = False
 
 
+class ConsoleBroker:
+    """Serialize normal prompts and worker permission questions on one stdin."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.reader = None
+
+    def ask(self, prompt: str) -> str:
+        with self._lock:
+            return (self.reader or input)(prompt)
+
+
+CONSOLE = ConsoleBroker()
+
+
 def terminal_print(text: str):
     if threading.current_thread() is threading.main_thread() or not CLI_ACTIVE:
         print(text)
@@ -76,11 +92,55 @@ TASKS_DIR = WORKDIR / ".tasks"
 TASKS_DIR.mkdir(exist_ok=True)
 TASKS_ROOT = TASKS_DIR.resolve()
 task_lock = threading.RLock()
+TASK_LOCK_PATH = TASKS_DIR / ".lock"
+_task_store_state = threading.local()
 CURRENT_TODOS: list[dict] = []
 
 # owner -> {"task_id": str, "cwd": Path}. A teammate gets one assignment at
 # a time, and every filesystem tool resolves its cwd through this registry.
 teammate_assignments: dict[str, dict[str, object]] = {}
+assignment_versions: dict[str, int] = {}
+
+
+@contextmanager
+def task_store_lock():
+    """Serialize task mutations across threads and host processes."""
+    with task_lock:
+        depth = getattr(_task_store_state, "depth", 0)
+        if depth == 0:
+            handle = TASK_LOCK_PATH.open("a+")
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            _task_store_state.handle = handle
+        _task_store_state.depth = depth + 1
+        try:
+            yield
+        finally:
+            _task_store_state.depth -= 1
+            if _task_store_state.depth == 0:
+                handle = _task_store_state.handle
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                handle.close()
+                del _task_store_state.handle
+
+
+def advance_assignment_version(owner: str):
+    """Invalidate old approvals without clearing an explicit plan requirement."""
+    with task_lock:
+        assignment_versions[owner] = assignment_versions.get(owner, 0) + 1
+        gates = globals().get("plan_gates")
+        request_ids = globals().get("plan_request_ids")
+        team = globals().get("team_lock")
+        if team is not None:
+            team.acquire()
+        try:
+            if (isinstance(gates, dict) and owner in gates
+                    and gates[owner] != "not_required"):
+                gates[owner] = "required"
+            if isinstance(request_ids, dict):
+                request_ids.pop(owner, None)
+        finally:
+            if team is not None:
+                team.release()
 
 
 @dataclass
@@ -119,17 +179,25 @@ def create_task(subject: str, description: str = "",
 
 
 def save_task(task: Task):
-    with task_lock:
-        _task_path(task.id).write_text(json.dumps(asdict(task), indent=2))
+    with task_store_lock():
+        path = _task_path(task.id)
+        temporary = path.with_name(
+            f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        try:
+            temporary.write_text(json.dumps(asdict(task), indent=2))
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def load_task(task_id: str) -> Task:
-    with task_lock:
+    with task_store_lock():
         return Task(**json.loads(_task_path(task_id).read_text()))
 
 
 def list_tasks() -> list[Task]:
-    with task_lock:
+    with task_store_lock():
         if not TASKS_ROOT.is_relative_to(WORKDIR.resolve()):
             raise ValueError("Tasks directory escapes workspace")
         return [load_task(path.stem)
@@ -176,12 +244,16 @@ def _incomplete_dependencies(task: Task) -> list[str]:
 
 def claim_task(task_id: str, owner: str = "agent") -> str:
     """Atomically claim one task and bind the owner's filesystem cwd."""
-    with task_lock:
+    with task_store_lock():
         task = load_task(task_id)
         if task.status != "pending":
             return f"Task {task_id} is {task.status}, cannot claim"
         if task.owner:
             return f"Task {task_id} is already owned by {task.owner}"
+        assignment = teammate_assignments.get(owner)
+        if assignment:
+            return (f"Owner {owner} must finish the current work turn for "
+                    f"{assignment['task_id']} before claiming another task")
         current = _owner_in_progress(owner)
         if current:
             return (f"Owner {owner} must complete {current.id} before "
@@ -195,24 +267,31 @@ def claim_task(task_id: str, owner: str = "agent") -> str:
         task.status = "in_progress"
         save_task(task)
         teammate_assignments[owner] = {"task_id": task.id, "cwd": cwd}
+        advance_assignment_version(owner)
     print(f"  \033[36m[claim] {task.subject} → in_progress (owner: {owner})\033[0m")
     return f"Claimed {task.id} ({task.subject})"
 
 
 def complete_task(task_id: str, owner: str = "agent") -> str:
     """Complete an assignment only when the caller owns it."""
-    with task_lock:
+    with task_store_lock():
         task = load_task(task_id)
         if task.status != "in_progress":
             return f"Task {task_id} is {task.status}, cannot complete"
         if task.owner != owner:
             return (f"Task {task_id} is owned by {task.owner}, "
                     f"not {owner}; cannot complete")
+        gate = globals().get("plan_gates", {}).get(owner, "not_required")
+        if gate in {"required", "pending", "rejected"}:
+            return f"Task {task_id} cannot complete while plan status is {gate}"
+        assignment = teammate_assignments.get(owner)
+        if not assignment or assignment.get("task_id") != task.id:
+            cwd, error = task_worktree_cwd(task)
+            if error:
+                return f"Task {task_id} cannot complete: {error}"
+            teammate_assignments[owner] = {"task_id": task.id, "cwd": cwd}
         task.status = "completed"
         save_task(task)
-        assignment = teammate_assignments.get(owner)
-        if assignment and assignment.get("task_id") == task_id:
-            teammate_assignments.pop(owner, None)
         unblocked = [t.subject for t in list_tasks()
                      if t.status == "pending" and t.blockedBy and can_start(t.id)]
     print(f"  \033[32m[complete] {task.subject} ✓\033[0m")
@@ -253,7 +332,7 @@ def _worktree_branch(name: str) -> str:
     return f"wt/{name}"
 
 
-def run_git(args: list[str], cwd: Path | None = None) -> tuple[bool, str]:
+def _run_git(args: list[str], cwd: Path | None = None) -> tuple[bool, str]:
     """Run Git without shell interpolation and return (ok, combined output)."""
     try:
         result = subprocess.run(
@@ -263,11 +342,17 @@ def run_git(args: list[str], cwd: Path | None = None) -> tuple[bool, str]:
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, f"{type(exc).__name__}: {exc}"
     output = (result.stdout + result.stderr).strip()
-    return result.returncode == 0, output[:5000] or "(no output)"
+    return result.returncode == 0, output or "(no output)"
+
+
+def run_git(args: list[str], cwd: Path | None = None) -> tuple[bool, str]:
+    """Run Git and bound only the text returned to the model."""
+    ok, output = _run_git(args, cwd)
+    return ok, output[:5000]
 
 
 def _registered_worktrees() -> tuple[dict[Path, dict[str, str]], str | None]:
-    ok, output = run_git(["worktree", "list", "--porcelain"])
+    ok, output = _run_git(["worktree", "list", "--porcelain"])
     if not ok:
         return {}, f"cannot read Git worktree registry: {output}"
     entries: dict[Path, dict[str, str]] = {}
@@ -314,12 +399,17 @@ def task_worktree_cwd(task: Task) -> tuple[Path, str | None]:
 def assignment_cwd(owner: str) -> Path:
     with task_lock:
         assignment = teammate_assignments.get(owner)
-        if not assignment:
-            if _owner_in_progress(owner):
-                raise ValueError(f"Missing assignment metadata for {owner}")
+        task = _owner_in_progress(owner)
+        if task and (not assignment or assignment.get("task_id") != task.id):
+            cwd, error = task_worktree_cwd(task)
+            if error:
+                raise ValueError(error)
+            assignment = {"task_id": task.id, "cwd": cwd}
+            teammate_assignments[owner] = assignment
+        elif not assignment:
             return WORKDIR
         task = load_task(str(assignment["task_id"]))
-        if task.status != "in_progress" or task.owner != owner:
+        if task.status not in {"in_progress", "completed"} or task.owner != owner:
             raise ValueError(f"Assignment for {owner} is no longer active")
         cwd, error = task_worktree_cwd(task)
         if error:
@@ -327,6 +417,22 @@ def assignment_cwd(owner: str) -> Path:
         if cwd.resolve() != Path(assignment["cwd"]).resolve():
             raise ValueError(f"Assignment cwd changed for task {task.id}")
         return cwd
+
+
+def release_completed_assignment(owner: str) -> bool:
+    """Release a completed cwd lease only at a model turn boundary."""
+    with task_lock:
+        assignment = teammate_assignments.get(owner)
+        if not assignment:
+            return False
+        task = load_task(str(assignment["task_id"]))
+        if task.status != "completed" or task.owner != owner:
+            return False
+        teammate_assignments.pop(owner, None)
+        advance_assignment_version(owner)
+        if owner in globals().get("plan_gates", {}):
+            globals()["plan_gates"][owner] = "not_required"
+        return True
 
 
 def release_teammate_assignment(owner: str):
@@ -340,6 +446,9 @@ def release_teammate_assignment(owner: str):
                 save_task(task)
         finally:
             teammate_assignments.pop(owner, None)
+            advance_assignment_version(owner)
+            if owner in globals().get("plan_gates", {}):
+                globals()["plan_gates"][owner] = "not_required"
 
 
 def create_worktree(name: str, task_id: str) -> str:
@@ -436,6 +545,19 @@ def remove_worktree(name: str, discard_changes: bool = False) -> str:
         if active:
             return (f"Error: Worktree '{name}' is bound to active task "
                     f"{active[0].id}; complete it before removal")
+        leased = [owner for owner, assignment in teammate_assignments.items()
+                  if Path(assignment["cwd"]).resolve() == path.resolve()]
+        if leased:
+            return (f"Error: Worktree '{name}' is still in use by "
+                    f"{', '.join(sorted(leased))}; wait for the turn to end")
+        with globals().get("background_lock", threading.Lock()):
+            running = [task for task in globals().get("background_tasks", {}).values()
+                       if task.get("status") == "running"
+                       and task.get("cwd")
+                       and Path(task["cwd"]).resolve() == path.resolve()]
+        if running:
+            return (f"Error: Worktree '{name}' has a running background command; "
+                    "wait for it to finish")
 
         ok, status = run_git(
             ["status", "--porcelain", "--ignored"], cwd=path
@@ -536,7 +658,7 @@ PROMPT_SECTIONS = {
              "schedule_cron, list_crons, cancel_cron, "
              "spawn_teammate, send_message, "
              "request_shutdown, request_plan, review_plan, "
-             "create_worktree, remove_worktree, "
+             "create_worktree, "
              "connect_mcp. MCP tools are prefixed mcp__{server}__{tool}.",
     "teams": (
         "When parallel work would help, first propose a small team with clear "
@@ -546,9 +668,8 @@ PROMPT_SECTIONS = {
         "create a task-bound worktree only when a separate working directory "
         "would prevent conflicting edits. A teammate "
         "must complete its current Task before claiming another. A worktree "
-        "changes tool default cwd only; it is not a sandbox. The "
-        "remove_worktree tool removes only clean checkouts and never discards "
-        "changes. React to team "
+        "changes tool default cwd only; it is not a sandbox. Worktree removal "
+        "stays with the host or user. React to team "
         "events delivered by the runtime, and shut teammates down when "
         "coordination is complete."
     ),
@@ -592,18 +713,78 @@ def safe_path(path: str, cwd: Path | None = None) -> Path:
     return resolved
 
 
+_shell_processes: set[subprocess.Popen] = set()
+_shell_process_lock = threading.RLock()
+
+
+def _stop_process_group(process: subprocess.Popen):
+    """Stop processes that remain in the command's original process group."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
+def _stop_all_shell_processes():
+    with _shell_process_lock:
+        processes = list(_shell_processes)
+    for process in processes:
+        _stop_process_group(process)
+
+
+def _handle_termination_signal(signum, _frame):
+    _stop_all_shell_processes()
+    raise SystemExit(128 + signum)
+
+
+atexit.register(_stop_all_shell_processes)
+signal.signal(signal.SIGTERM, _handle_termination_signal)
+
+
+def _run_bash_process(command: str, cwd: Path | None = None) -> tuple[str, int | None]:
+    process = None
+    try:
+        process = subprocess.Popen(
+            command, shell=True, cwd=cwd or WORKDIR,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True,
+        )
+        with _shell_process_lock:
+            _shell_processes.add(process)
+        stdout, stderr = process.communicate(timeout=120)
+        out = (stdout + stderr).strip()
+        return (out[:50000] if out else "(no output)"), process.returncode
+    except subprocess.TimeoutExpired:
+        return "Error: Timeout (120s)", None
+    except OSError as exc:
+        return f"Error: {type(exc).__name__}: {exc}", None
+    finally:
+        if process is not None:
+            _stop_process_group(process)
+            try:
+                process.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                pass
+            with _shell_process_lock:
+                _shell_processes.discard(process)
+
+
+def _format_bash_result(output: str, exit_code: int | None) -> str:
+    if exit_code == 0:
+        return output
+    if exit_code is None:
+        return output
+    return f"Error: command exited with status {exit_code}\n{output}"
+
+
 def run_bash(command: str, cwd: Path | None = None,
              run_in_background: bool = False) -> str:
     # run_in_background is consumed by the dispatcher; direct execution ignores it.
-    try:
-        r = subprocess.run(command, shell=True, cwd=cwd or WORKDIR,
-                           capture_output=True, text=True, timeout=120)
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
-    except OSError as exc:
-        return f"Error: {type(exc).__name__}: {exc}"
+    return _format_bash_result(*_run_bash_process(command, cwd))
 
 
 def run_read(path: str, limit: int | None = None,
@@ -655,6 +836,39 @@ def run_glob(pattern: str, cwd: Path | None = None) -> str:
         return "\n".join(results) if results else "(no matches)"
     except Exception as e:
         return f"Error: {e}"
+
+
+def _agent_cwd() -> tuple[Path | None, str | None]:
+    try:
+        return assignment_cwd("agent"), None
+    except (FileNotFoundError, ValueError) as exc:
+        return None, f"Error: Invalid task assignment: {exc}"
+
+
+def run_agent_bash(command: str, run_in_background: bool = False) -> str:
+    cwd, error = _agent_cwd()
+    return error or run_bash(command, cwd, run_in_background)
+
+
+def run_agent_read(path: str, limit: int | None = None,
+                   offset: int = 0) -> str:
+    cwd, error = _agent_cwd()
+    return error or run_read(path, limit, offset, cwd)
+
+
+def run_agent_write(path: str, content: str) -> str:
+    cwd, error = _agent_cwd()
+    return error or run_write(path, content, cwd)
+
+
+def run_agent_edit(path: str, old_text: str, new_text: str) -> str:
+    cwd, error = _agent_cwd()
+    return error or run_edit(path, old_text, new_text, cwd)
+
+
+def run_agent_glob(pattern: str) -> str:
+    cwd, error = _agent_cwd()
+    return error or run_glob(pattern, cwd)
 
 
 def call_tool_handler(handler, args: dict, name: str) -> str:
@@ -781,6 +995,8 @@ class ProtocolState:
     target: str
     status: str
     payload: str
+    work_version: int | None = None
+    task_id: str | None = None
     created_at: float = field(default_factory=time.time)
 
 
@@ -868,7 +1084,7 @@ def scan_unclaimed_tasks() -> list[Task]:
 def claim_next_task(name: str) -> Task | None:
     """Claim the first still-available task, never a second assignment."""
     with task_lock:
-        if _owner_in_progress(name):
+        if teammate_assignments.get(name) or _owner_in_progress(name):
             return None
     for task in scan_unclaimed_tasks():
         result = claim_task(task.id, owner=name)
@@ -884,6 +1100,13 @@ def _last_assistant_text(content) -> str:
         if isinstance(block, dict) and block.get("type") == "text":
             return str(block.get("text", "")).strip()
     return ""
+
+
+def current_work_identity(owner: str) -> tuple[int, str | None]:
+    with task_lock:
+        assignment = teammate_assignments.get(owner)
+        task_id = str(assignment["task_id"]) if assignment else None
+        return assignment_versions.get(owner, 0), task_id
 
 
 def _run_teammate_tool(name: str, block, handlers: dict) -> str:
@@ -904,6 +1127,7 @@ def apply_plan_response(name: str, msg: dict) -> tuple[bool, str]:
     """Apply only the Lead response for this teammate's current plan."""
     metadata = msg.get("metadata", {})
     request_id = metadata.get("request_id", "")
+    work_version, task_id = current_work_identity(name)
     with team_lock:
         state = pending_requests.get(request_id)
         expected_id = plan_request_ids.get(name)
@@ -915,6 +1139,8 @@ def apply_plan_response(name: str, msg: dict) -> tuple[bool, str]:
             and state.type == "plan_approval"
             and state.sender == name
             and state.target == "lead"
+            and state.work_version == work_version
+            and state.task_id == task_id
             and state.status in {"approved", "rejected"}
             and metadata.get("approve", False)
             == (state.status == "approved")
@@ -959,7 +1185,8 @@ def _teammate_send_message(from_name: str, to: str, content: str) -> str:
 
 # ── Teammate Thread ──
 
-def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
+def spawn_teammate_thread(name: str, role: str, prompt: str,
+                          require_plan: bool = False) -> str:
     if not is_valid_agent_name(name):
         return ("Invalid teammate name: use 1-64 letters, digits, "
                 "underscores, or dashes")
@@ -970,7 +1197,8 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                for existing in active_teammates):
             return f"Teammate '{name}' already exists"
         active_teammates[name] = "working"
-        plan_gates[name] = "not_required"
+        plan_gates[name] = "required" if require_plan else "not_required"
+        assignment_versions[name] = 1
 
     system = (f"You are '{name}', a {role}. "
               "Use tools to complete tasks. "
@@ -1062,7 +1290,11 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
             except FileNotFoundError:
                 return f"Error: Task {task_id} not found"
 
-        messages = [{"role": "user", "content": prompt}]
+        initial_prompt = prompt
+        if require_plan:
+            initial_prompt += ("\n\n[Plan required] Submit a plan and wait for "
+                               "Lead approval before bash, write_file, or edit_file.")
+        messages = [{"role": "user", "content": initial_prompt}]
         sub_tools = [
             {"name": "bash", "description": "Run a shell command.",
              "input_schema": {"type": "object",
@@ -1133,6 +1365,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
 
         should_stop = False
         while not should_stop:
+            for msg in BUS.read_inbox(name):
+                if handle_inbox_message(name, msg, messages):
+                    should_stop = True
+                    break
+            if should_stop:
+                break
             with team_lock:
                 active_teammates[name] = "working"
             try:
@@ -1164,6 +1402,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                 with team_lock:
                     active_teammates[name] = "waiting_approval"
             else:
+                release_completed_assignment(name)
                 with team_lock:
                     active_teammates[name] = "idle"
                 BUS.send(name, "lead", "Waiting for more work.",
@@ -1231,17 +1470,22 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
 
 
 def _teammate_submit_plan(from_name: str, plan: str) -> str:
-    with team_lock:
-        if plan_gates.get(from_name) == "pending":
-            return "A plan is already waiting for review."
-        req_id = new_request_id()
-        pending_requests[req_id] = ProtocolState(
-            request_id=req_id, type="plan_approval",
-            sender=from_name, target="lead",
-            status="pending", payload=plan)
-        plan_gates[from_name] = "pending"
-        plan_request_ids[from_name] = req_id
-        active_teammates[from_name] = "waiting_approval"
+    with task_lock:
+        assignment = teammate_assignments.get(from_name)
+        task_id = str(assignment["task_id"]) if assignment else None
+        work_version = assignment_versions.get(from_name, 0)
+        with team_lock:
+            if plan_gates.get(from_name) == "pending":
+                return "A plan is already waiting for review."
+            req_id = new_request_id()
+            pending_requests[req_id] = ProtocolState(
+                request_id=req_id, type="plan_approval",
+                sender=from_name, target="lead",
+                status="pending", payload=plan,
+                work_version=work_version, task_id=task_id)
+            plan_gates[from_name] = "pending"
+            plan_request_ids[from_name] = req_id
+            active_teammates[from_name] = "waiting_approval"
     BUS.send(from_name, "lead", plan,
              "plan_approval_request",
              {"request_id": req_id})
@@ -1278,6 +1522,10 @@ def run_request_plan(teammate: str, task: str) -> str:
 
 def run_review_plan(request_id: str, approve: bool,
                     feedback: str = "") -> str:
+    state = pending_requests.get(request_id)
+    if not state:
+        return f"Request {request_id} not found"
+    work_version, task_id = current_work_identity(state.sender)
     with team_lock:
         state = pending_requests.get(request_id)
         if not state:
@@ -1286,6 +1534,8 @@ def run_review_plan(request_id: str, approve: bool,
             return f"Request {request_id} is not a plan"
         if state.status != "pending":
             return f"Request {request_id} already {state.status}"
+        if state.work_version != work_version or state.task_id != task_id:
+            return f"Request {request_id} belongs to an earlier assignment"
         if plan_request_ids.get(state.sender) != request_id:
             return f"Request {request_id} is not the current plan"
         state.status = "approved" if approve else "rejected"
@@ -1320,7 +1570,11 @@ def trigger_hooks(event: str, *args):
 
 
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
-DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777"]
+MCP_AUTO_ALLOW = {
+    "mcp__docs__search",
+    "mcp__docs__get_version",
+    "mcp__deploy__status",
+}
 
 
 def permission_hook(block):
@@ -1328,32 +1582,33 @@ def permission_hook(block):
     # ask the user, or allow execution to continue.
     if block.name == "bash":
         command = block.input.get("command", "")
+        if not isinstance(command, str):
+            return "Permission denied: shell command must be a string"
         for pattern in DENY_LIST:
             if pattern in command:
                 return f"Permission denied: '{pattern}' is on the deny list"
-        if any(token in command for token in DESTRUCTIVE):
-            print(f"\n\033[33m[permission] destructive command\033[0m")
-            print(f"  {command}")
-            choice = input("  Allow? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
-                return "Permission denied by user"
+        if threading.current_thread() is not threading.main_thread():
+            return ("Permission denied: interactive shell approval is unavailable "
+                    "during an asynchronous turn")
+        terminal_print("\n\033[33m[permission] shell command\033[0m")
+        terminal_print(f"  {command}")
+        choice = CONSOLE.ask("  Allow? [y/N] ").strip().lower()
+        if choice not in ("y", "yes"):
+            return "Permission denied by user"
     if block.name in ("read_file", "write_file", "edit_file"):
         path = block.input.get("path", "")
+        if not isinstance(path, str):
+            return "Permission denied: path must be a string"
         if not (WORKDIR / path).resolve().is_relative_to(WORKDIR):
-            print(f"\n\033[33m[permission] Access outside workspace\033[0m")
-            print(f"  {block.name}: {path}")
-            choice = input("  Allow? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
-                return "Permission denied by user"
-    if block.name.startswith("mcp__"):
-        tools, _ = assemble_tool_pool()
-        tool = next((item for item in tools if item["name"] == block.name), None)
-        description = (tool or {}).get("description", "").lower()
-        if "(readonly)" not in description:
-            print(f"\n\033[33m[permission] MCP mutating tool: {block.name}\033[0m")
-            choice = input("  Allow? [y/N] ").strip().lower()
-            if choice not in ("y", "yes"):
-                return "Permission denied by user"
+            return "Permission denied: path is outside the workspace"
+    if block.name.startswith("mcp__") and block.name not in MCP_AUTO_ALLOW:
+        if threading.current_thread() is not threading.main_thread():
+            return ("Permission denied: interactive MCP approval is unavailable "
+                    "during an asynchronous turn")
+        terminal_print(f"\n\033[33m[permission] MCP tool: {block.name}\033[0m")
+        choice = CONSOLE.ask("  Allow? [y/N] ").strip().lower()
+        if choice not in ("y", "yes"):
+            return "Permission denied by user"
     return None
 
 
@@ -1728,7 +1983,8 @@ def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
     if tool_name != "bash":
         return False
-    return bool(tool_input.get("run_in_background")) or is_slow_operation(tool_name, tool_input)
+    return (tool_input.get("run_in_background") is True
+            or is_slow_operation(tool_name, tool_input))
 
 
 def start_background_task(block, handlers: dict) -> str:
@@ -1736,13 +1992,24 @@ def start_background_task(block, handlers: dict) -> str:
     _bg_counter += 1
     bg_id = f"bg_{_bg_counter:04d}"
     command = block.input.get("command", block.name)
+    cwd, cwd_error = _agent_cwd()
 
     def worker():
-        handler = handlers.get(block.name)
-        result = call_tool_handler(handler, block.input, block.name)
+        try:
+            if block.name != "bash":
+                raise ValueError("only bash can run in the background")
+            if cwd_error:
+                raise ValueError(cwd_error.removeprefix("Error: "))
+            output, exit_code = _run_bash_process(
+                str(block.input["command"]), cwd)
+            result = _format_bash_result(output, exit_code)
+            status = "completed" if exit_code == 0 else "failed"
+        except Exception as exc:
+            result = f"Error: {type(exc).__name__}: {exc}"
+            status = "failed"
         trigger_hooks("PostToolUse", block, result)
         with background_lock:
-            background_tasks[bg_id]["status"] = "completed"
+            background_tasks[bg_id]["status"] = status
             background_results[bg_id] = str(result)
 
     with background_lock:
@@ -1750,6 +2017,7 @@ def start_background_task(block, handlers: dict) -> str:
             "tool_use_id": block.id,
             "command": command,
             "status": "running",
+            "cwd": str(cwd) if cwd else None,
         }
     threading.Thread(target=worker, daemon=True).start()
     print(f"  \033[33m[background] {bg_id}: {str(command)[:60]}\033[0m")
@@ -1759,7 +2027,7 @@ def start_background_task(block, handlers: dict) -> str:
 def collect_background_results() -> list[str]:
     with background_lock:
         ready = [bg_id for bg_id, task in background_tasks.items()
-                 if task["status"] == "completed"]
+                 if task["status"] in {"completed", "failed"}]
     notifications = []
     for bg_id in ready:
         with background_lock:
@@ -1769,7 +2037,7 @@ def collect_background_results() -> list[str]:
         notifications.append(
             f"<task_notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>completed</status>\n"
+            f"  <status>{task['status']}</status>\n"
             f"  <command>{task['command']}</command>\n"
             f"  <summary>{summary}</summary>\n"
             f"</task_notification>")
@@ -1777,9 +2045,9 @@ def collect_background_results() -> list[str]:
 
 
 def has_pending_background() -> bool:
-    """Return whether completed background work is waiting for delivery."""
+    """Return whether terminal background work is waiting for delivery."""
     with background_lock:
-        return any(task["status"] == "completed"
+        return any(task["status"] in {"completed", "failed"}
                    for task in background_tasks.values())
 
 
@@ -1797,11 +2065,12 @@ class CronJob:
     prompt: str
     recurring: bool
     durable: bool
+    pending_delivery: bool = False
 
 
 scheduled_jobs: dict[str, CronJob] = {}
 cron_queue: list[CronJob] = []
-cron_lock = threading.Lock()
+cron_lock = threading.RLock()
 _last_fired: dict[str, str] = {}
 
 
@@ -1888,8 +2157,11 @@ def validate_cron(cron_expr: str) -> str | None:
 
 
 def save_durable_jobs():
-    durable = [asdict(job) for job in scheduled_jobs.values() if job.durable]
-    DURABLE_PATH.write_text(json.dumps(durable, indent=2))
+    with cron_lock:
+        durable = [asdict(job) for job in scheduled_jobs.values() if job.durable]
+        temporary = DURABLE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(durable, indent=2))
+        os.replace(temporary, DURABLE_PATH)
 
 
 def load_durable_jobs():
@@ -1900,6 +2172,8 @@ def load_durable_jobs():
             job = CronJob(**item)
             if not validate_cron(job.cron):
                 scheduled_jobs[job.id] = job
+                if job.pending_delivery:
+                    cron_queue.append(job)
     except Exception:
         pass
 
@@ -1915,19 +2189,33 @@ def schedule_job(cron: str, prompt: str,
         recurring=recurring, durable=durable)
     with cron_lock:
         scheduled_jobs[job.id] = job
-    if durable:
-        save_durable_jobs()
+        if durable:
+            save_durable_jobs()
     return job
 
 
 def cancel_job(job_id: str) -> str:
     with cron_lock:
         job = scheduled_jobs.pop(job_id, None)
+        cron_queue[:] = [queued for queued in cron_queue if queued.id != job_id]
+        if job and job.durable:
+            save_durable_jobs()
     if not job:
         return f"Job {job_id} not found"
-    if job.durable:
-        save_durable_jobs()
     return f"Cancelled {job_id}"
+
+
+def _enqueue_due_job(job: CronJob):
+    """Persist a one-shot delivery before exposing it through the queue."""
+    if not job.recurring:
+        job.pending_delivery = True
+        try:
+            if job.durable:
+                save_durable_jobs()
+        except Exception:
+            job.pending_delivery = False
+            raise
+    cron_queue.append(job)
 
 
 def cron_scheduler_loop():
@@ -1938,13 +2226,11 @@ def cron_scheduler_loop():
         with cron_lock:
             for job in list(scheduled_jobs.values()):
                 try:
+                    if job.pending_delivery:
+                        continue
                     if cron_matches(job.cron, now) and _last_fired.get(job.id) != marker:
-                        cron_queue.append(job)
+                        _enqueue_due_job(job)
                         _last_fired[job.id] = marker
-                        if not job.recurring:
-                            scheduled_jobs.pop(job.id, None)
-                            if job.durable:
-                                save_durable_jobs()
                 except Exception as e:
                     print(f"  \033[31m[cron error] {job.id}: {e}\033[0m")
 
@@ -1954,6 +2240,30 @@ def consume_cron_queue() -> list[CronJob]:
         fired = list(cron_queue)
         cron_queue.clear()
     return fired
+
+
+def acknowledge_cron_jobs(jobs: list[CronJob]):
+    """Remove one-shot jobs after a model call accepts their prompts."""
+    durable_changed = False
+    with cron_lock:
+        for job in jobs:
+            current = scheduled_jobs.get(job.id)
+            if current and not current.recurring and current.pending_delivery:
+                scheduled_jobs.pop(job.id, None)
+                durable_changed = durable_changed or current.durable
+        if durable_changed:
+            save_durable_jobs()
+
+
+def restore_cron_jobs(jobs: list[CronJob]):
+    """Put unacknowledged deliveries back after a failed model call."""
+    with cron_lock:
+        queued_ids = {job.id for job in cron_queue}
+        for job in jobs:
+            current = scheduled_jobs.get(job.id)
+            if current and current.id not in queued_ids:
+                cron_queue.append(current)
+                queued_ids.add(current.id)
 
 
 def run_schedule_cron(cron: str, prompt: str,
@@ -1980,8 +2290,19 @@ def run_cancel_cron(job_id: str) -> str:
     return cancel_job(job_id)
 
 
-load_durable_jobs()
-threading.Thread(target=cron_scheduler_loop, daemon=True).start()
+_runtime_services_started = False
+_runtime_services_lock = threading.Lock()
+
+
+def start_runtime_services():
+    """Start durable scheduling once when a CLI host becomes active."""
+    global _runtime_services_started
+    with _runtime_services_lock:
+        if _runtime_services_started:
+            return
+        load_durable_jobs()
+        threading.Thread(target=cron_scheduler_loop, daemon=True).start()
+        _runtime_services_started = True
 
 
 # ── MCP System ──
@@ -2115,10 +2436,6 @@ def assemble_tool_pool() -> tuple[list[dict], dict]:
 def run_create_worktree(name: str, task_id: str) -> str:
     return create_worktree(name, task_id)
 
-def run_remove_worktree(name: str) -> str:
-    """Model-facing cleanup never opts into destructive removal."""
-    return remove_worktree(name)
-
 # ── Basic tool handlers ──
 
 def run_create_task(subject: str, description: str = "",
@@ -2163,12 +2480,14 @@ def run_complete_task(task_id: str) -> str:
     except FileNotFoundError:
         return f"Error: task {task_id} not found"
 
-def run_spawn_teammate(name: str, role: str, prompt: str) -> str:
-    return spawn_teammate_thread(name, role, prompt)
+def run_spawn_teammate(name: str, role: str, prompt: str,
+                       require_plan: bool = False) -> str:
+    return spawn_teammate_thread(name, role, prompt, require_plan)
 
 def run_send_message(to: str, content: str) -> str:
     if to not in active_teammates:
         return f"Teammate '{to}' is not active"
+    advance_assignment_version(to)
     BUS.send("lead", to, content)
     return f"Sent to {to}"
 
@@ -2277,7 +2596,8 @@ BUILTIN_TOOLS = [
                                          "pattern": "^[A-Za-z0-9_-]{1,64}$",
                                      },
                                      "role": {"type": "string"},
-                                     "prompt": {"type": "string"}},
+                                     "prompt": {"type": "string"},
+                                     "require_plan": {"type": "boolean"}},
                       "required": ["name", "role", "prompt"]}},
     {"name": "send_message", "description": "Send message to a teammate.",
      "input_schema": {"type": "object",
@@ -2314,18 +2634,6 @@ BUILTIN_TOOLS = [
                                      "task_id": {"type": "string"}},
                       "required": ["name", "task_id"],
                       "additionalProperties": False}},
-    {"name": "remove_worktree",
-     "description": "Remove a clean task worktree while retaining its branch.",
-     "input_schema": {"type": "object",
-                      "properties": {
-                          "name": {
-                              "type": "string",
-                              "pattern": ("^(?!.*\\.\\.)[A-Za-z0-9]"
-                                          "[A-Za-z0-9._-]{0,63}$"),
-                              "maxLength": 64,
-                          }},
-                      "required": ["name"],
-                      "additionalProperties": False}},
     {"name": "connect_mcp",
      "description": "Connect to an MCP server (docs, deploy) and discover tools.",
      "input_schema": {"type": "object",
@@ -2334,8 +2642,11 @@ BUILTIN_TOOLS = [
 ]
 
 BUILTIN_HANDLERS = {
-    "bash": run_bash, "read_file": run_read, "write_file": run_write,
-    "edit_file": run_edit, "glob": run_glob,
+    "bash": run_agent_bash,
+    "read_file": run_agent_read,
+    "write_file": run_agent_write,
+    "edit_file": run_agent_edit,
+    "glob": run_agent_glob,
     "todo_write": run_todo_write, "task": spawn_subagent,
     "load_skill": load_skill,
     "create_task": run_create_task, "list_tasks": run_list_tasks,
@@ -2349,7 +2660,6 @@ BUILTIN_HANDLERS = {
     "request_shutdown": run_request_shutdown,
     "request_plan": run_request_plan, "review_plan": run_review_plan,
     "create_worktree": run_create_worktree,
-    "remove_worktree": run_remove_worktree,
     "connect_mcp": run_connect_mcp,
 }
 
@@ -2422,10 +2732,12 @@ def agent_loop(messages: list, context: dict, active_request: str):
     state = RecoveryState()
     max_tokens = DEFAULT_MAX_TOKENS
 
+    unacknowledged_cron_jobs: list[CronJob] = []
     while True:
         # One cycle: inject scheduled/background work, prepare context, call
         # the model, execute tool_use blocks, append tool_results, repeat.
         fired = consume_cron_queue()
+        unacknowledged_cron_jobs.extend(fired)
         for job in fired:
             messages.append({"role": "user",
                              "content": f"[Scheduled] {job.prompt}"})
@@ -2453,9 +2765,14 @@ def agent_loop(messages: list, context: dict, active_request: str):
                 messages[:] = reactive_compact(messages, active_request)
                 state.has_attempted_reactive_compact = True
                 continue
+            restore_cron_jobs(unacknowledged_cron_jobs)
             messages.append({"role": "assistant", "content": [
                 {"type": "text", "text": f"[Error] {type(e).__name__}: {e}"}]})
+            release_completed_assignment("agent")
             return
+
+        acknowledge_cron_jobs(unacknowledged_cron_jobs)
+        unacknowledged_cron_jobs.clear()
 
         if response.stop_reason == "max_tokens":
             if not state.has_escalated:
@@ -2468,6 +2785,7 @@ def agent_loop(messages: list, context: dict, active_request: str):
                 messages.append({"role": "user", "content": CONTINUATION_PROMPT})
                 state.recovery_count += 1
                 continue
+            release_completed_assignment("agent")
             return
 
         max_tokens = DEFAULT_MAX_TOKENS
@@ -2475,6 +2793,7 @@ def agent_loop(messages: list, context: dict, active_request: str):
         messages.append({"role": "assistant", "content": response.content})
         if not has_tool_use(response.content):
             trigger_hooks("Stop", messages)
+            release_completed_assignment("agent")
             return
 
         results = []
@@ -2540,15 +2859,14 @@ def async_event_loop(history: list, context: dict, session_state: dict):
     while True:
         time.sleep(1)
         with agent_lock:
-            fired = consume_cron_queue()
+            with cron_lock:
+                fired = list(cron_queue)
             inbox = consume_lead_inbox(route_protocol=True)
             if not fired and not inbox and not has_pending_background():
                 continue
             turn_start = len(history)
             scheduled_requests = []
             for job in fired:
-                history.append({"role": "user",
-                                "content": f"[Scheduled] {job.prompt}"})
                 scheduled_requests.append(f"Run scheduled task: {job.prompt}")
                 terminal_print(
                     f"  \033[35m[cron auto] {job.prompt[:60]}\033[0m")
@@ -2569,6 +2887,7 @@ def async_event_loop(history: list, context: dict, session_state: dict):
 
 if __name__ == "__main__":
     CLI_ACTIVE = True
+    start_runtime_services()
     print("s17: integrated harness")
     print("Enter a question, press Enter to send. Type q to quit.\n")
     history = []
@@ -2578,16 +2897,16 @@ if __name__ == "__main__":
                      args=(history, context, session_state), daemon=True).start()
     while True:
         try:
-            query = input(PROMPT)
+            query = CONSOLE.ask(PROMPT)
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):
             break
-        trigger_hooks("UserPromptSubmit", query)
-        turn_start = len(history)
-        session_state["active_user_request"] = query
-        history.append({"role": "user", "content": query})
         with agent_lock:
+            trigger_hooks("UserPromptSubmit", query)
+            turn_start = len(history)
+            session_state["active_user_request"] = query
+            history.append({"role": "user", "content": query})
             agent_loop(history, context, query)
             context = update_context(context, history)
             print_turn_assistants(history, turn_start)

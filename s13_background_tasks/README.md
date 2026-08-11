@@ -33,7 +33,7 @@ Sync vs Background:
 | Slow operations | Agent waits | Background thread executes |
 | Agent idle | Yes | No, continues processing |
 | Result | Immediate return | Notification injected next turn |
-| Decision criteria | — | `run_in_background` param (model explicit request), heuristic fallback |
+| Decision criteria | — | bash `run_in_background` param, heuristic fallback |
 
 ---
 
@@ -41,7 +41,7 @@ Sync vs Background:
 
 ### should_run_background: Explicit Request First, Heuristic Fallback
 
-The model explicitly requests background execution via the bash tool's `run_in_background` parameter. If the model does not specify it, keyword heuristics decide:
+The model explicitly requests background execution via the bash tool's `run_in_background` parameter. If the model does not specify it, keyword heuristics decide. Only bash enters this path; other tools still run through their normal argument validation.
 
 ```python
 def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
@@ -56,7 +56,9 @@ def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
 
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
     """Model explicit request takes priority; fallback to heuristic."""
-    if tool_input.get("run_in_background"):
+    if tool_name != "bash":
+        return False
+    if tool_input.get("run_in_background") is True:
         return True
     return is_slow_operation(tool_name, tool_input)
 ```
@@ -78,9 +80,14 @@ def start_background_task(block) -> str:
     bg_id = f"bg_{_bg_counter:04d}"
 
     def worker():
-        result = execute_tool(block)
+        try:
+            output, exit_code = _run_bash_process(block.input["command"])
+            status = "completed" if exit_code == 0 else "failed"
+            result = _format_bash_result(output, exit_code)
+        except Exception as exc:
+            status, result = "failed", f"Error: {exc}"
         with background_lock:
-            background_tasks[bg_id]["status"] = "completed"
+            background_tasks[bg_id]["status"] = status
             background_results[bg_id] = result
 
     with background_lock:
@@ -94,7 +101,7 @@ def start_background_task(block) -> str:
     return bg_id
 ```
 
-`start_background_task()` returns `bg_id`. `daemon=True` ensures the thread exits with the agent process.
+`start_background_task()` returns `bg_id`. A non-zero exit code or worker exception becomes `failed`, instead of being reported as a successful completion. The shell starts in its own process group. When the command finishes, times out, or the Agent exits through the normal or `SIGTERM` path, the runtime stops that original group. This is lifecycle cleanup, not a sandbox: a process that creates another session can leave the group.
 
 ### collect_background_results: Notification Collection
 
@@ -102,10 +109,10 @@ When background tasks complete, results are collected and formatted as `<task_no
 
 ```python
 def collect_background_results() -> list[str]:
-    """Collect completed results as task_notification messages."""
+    """Collect terminal results as task_notification messages."""
     with background_lock:
         ready_ids = [bid for bid, task in background_tasks.items()
-                     if task["status"] == "completed"]
+                     if task["status"] in ("completed", "failed")]
     notifications = []
     for bg_id in ready_ids:
         with background_lock:
@@ -114,7 +121,7 @@ def collect_background_results() -> list[str]:
         notifications.append(
             f"<task_notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>completed</status>\n"
+            f"  <status>{task['status']}</status>\n"
             f"  <command>{task['command']}</command>\n"
             f"  <summary>{output[:200]}</summary>\n"
             f"</task_notification>")
@@ -213,4 +220,4 @@ Background tasks solved "slow operations don't block." But what if you want to d
 s14 Cron Scheduler → Give the agent an alarm clock.
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v4, en@v4, ja@v4 -->

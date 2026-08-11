@@ -57,6 +57,7 @@ class CronJob:
     prompt: str      # Message injected to the agent when fired
     recurring: bool  # True=recurring, False=one-shot
     durable: bool    # True=write to disk, survives sessions
+    pending_delivery: bool = False
 ```
 
 Cron expression, 5 fields, used by Unix for 50 years:
@@ -108,6 +109,17 @@ def cron_matches(cron_expr: str, dt: datetime) -> bool:
 The scheduler runs in an independent daemon thread, not dependent on whether agent_loop is executing. Individual job errors don't kill the entire thread:
 
 ```python
+def _enqueue_due_job(job):
+    if not job.recurring:
+        job.pending_delivery = True
+        try:
+            if job.durable:
+                save_durable_jobs()
+        except Exception:
+            job.pending_delivery = False
+            raise
+    cron_queue.append(job)
+
 def cron_scheduler_loop():
     while True:
         time.sleep(1)
@@ -116,14 +128,12 @@ def cron_scheduler_loop():
         with cron_lock:
             for job in list(scheduled_jobs.values()):
                 try:
-                    if cron_matches(job.cron, now):
-                        if _last_fired.get(job.id) != minute_marker:
-                            cron_queue.append(job)
-                            _last_fired[job.id] = minute_marker
-                        if not job.recurring:
-                            scheduled_jobs.pop(job.id, None)
-                            if job.durable:
-                                save_durable_jobs()
+                    if job.pending_delivery:
+                        continue
+                    if (cron_matches(job.cron, now)
+                            and _last_fired.get(job.id) != minute_marker):
+                        _enqueue_due_job(job)
+                        _last_fired[job.id] = minute_marker
                 except Exception as e:
                     print(f"[cron error] {job.id}: {e}")
 ```
@@ -132,7 +142,7 @@ Key design:
 - **Independent of agent_loop**: scheduler checks time in background even when agent_loop isn't running
 - **Date-aware minute_marker**: uses `"YYYY-MM-DD HH:MM"` to prevent same-minute double-fire while not skipping on the next day
 - **Per-job try/except**: one bad job doesn't crash the scheduler thread
-- **One-shot jobs**: auto-removed from scheduled_jobs after firing
+- **One-shot jobs**: stay persisted as `pending_delivery` until the model accepts a call containing their prompt
 
 ### Queue Processor + agent_loop: Delivery
 
@@ -160,6 +170,12 @@ fired = consume_cron_queue()
 for job in fired:
     messages.append({"role": "user",
                      "content": f"[Scheduled] {job.prompt}"})
+try:
+    response = client.messages.create(...)
+except Exception:
+    restore_cron_jobs(fired)
+    raise
+acknowledge_cron_jobs(fired)  # only after the model call succeeds
 ```
 
 Producer (scheduler thread), deliverer (queue processor), and consumer (agent_loop) are decoupled via `cron_queue`, `cron_lock`, and `agent_lock`.
@@ -182,6 +198,8 @@ Loading durable jobs from disk also skips invalid expressions, preventing a sing
 
 - **Durable**: Task definition written to `.scheduled_tasks.json`. Loaded on agent restart.
 - **Session-only**: In-memory only. Gone when the agent closes.
+
+A durable one-shot job is persisted with `pending_delivery=true` before the scheduler exposes it through the in-memory queue. If persistence fails, the in-memory pending flag rolls back so the next scheduler tick can retry. The job is not deleted when the prompt is merely appended to `messages`; startup requeues it, and `acknowledge_cron_jobs()` removes it only after the model call succeeds. A failed model call restores the queued delivery. A crash before the acknowledgement may deliver the prompt again, so this boundary is at-least-once rather than exactly-once.
 
 > **Important caveat**: The cron scheduler must run inside the agent process. Process exits, scheduler stops. Durable only means the task definition survives restarts — next time the agent starts, the scheduler discovers "it should fire" and fires. If you need "run even when the app is closed", use system crontab or systemd timer.
 
@@ -252,4 +270,4 @@ One agent can do a lot now: plan, compress, background, schedule. But some tasks
 s15 Agent Teams → One agent isn't enough, form a team. Persistent teammates + async inboxes.
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v5, en@v5, ja@v5 -->

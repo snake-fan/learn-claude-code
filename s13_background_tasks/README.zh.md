@@ -33,7 +33,7 @@ Agent 的 bash 工具也一样。`pip install torch` 要 10 分钟，`npm run bu
 | 慢操作 | Agent 干等 | 后台线程执行 |
 | Agent 空闲 | 是 | 否，继续处理 |
 | 结果 | 立即返回 | 下轮注入通知 |
-| 判断标准 | — | `run_in_background` 参数（模型显式请求），启发式兜底 |
+| 判断标准 | — | bash 的 `run_in_background` 参数，启发式兜底 |
 
 ---
 
@@ -41,7 +41,7 @@ Agent 的 bash 工具也一样。`pip install torch` 要 10 分钟，`npm run bu
 
 ### should_run_background: 显式请求优先，启发式兜底
 
-模型通过 bash 工具的 `run_in_background` 参数显式请求后台执行。如果模型没有指定，则使用关键词启发式判断：
+模型通过 bash 工具的 `run_in_background` 参数显式请求后台执行。如果模型没有指定，则使用关键词启发式判断。只有 bash 会进入这条路径，其他工具仍按原来的参数规则校验和执行。
 
 ```python
 def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
@@ -56,7 +56,9 @@ def is_slow_operation(tool_name: str, tool_input: dict) -> bool:
 
 def should_run_background(tool_name: str, tool_input: dict) -> bool:
     """Model explicit request takes priority; fallback to heuristic."""
-    if tool_input.get("run_in_background"):
+    if tool_name != "bash":
+        return False
+    if tool_input.get("run_in_background") is True:
         return True
     return is_slow_operation(tool_name, tool_input)
 ```
@@ -78,9 +80,14 @@ def start_background_task(block) -> str:
     bg_id = f"bg_{_bg_counter:04d}"
 
     def worker():
-        result = execute_tool(block)
+        try:
+            output, exit_code = _run_bash_process(block.input["command"])
+            status = "completed" if exit_code == 0 else "failed"
+            result = _format_bash_result(output, exit_code)
+        except Exception as exc:
+            status, result = "failed", f"Error: {exc}"
         with background_lock:
-            background_tasks[bg_id]["status"] = "completed"
+            background_tasks[bg_id]["status"] = status
             background_results[bg_id] = result
 
     with background_lock:
@@ -94,7 +101,7 @@ def start_background_task(block) -> str:
     return bg_id
 ```
 
-`start_background_task()` 返回 `bg_id`。`daemon=True` 确保 Agent 进程退出时线程一起退出。
+`start_background_task()` 返回 `bg_id`。命令以非零状态退出或 worker 抛出异常时，任务会进入 `failed`，不会再被写成成功完成。Shell 会在独立的进程组中启动；命令完成、超时，或 Agent 经正常路径、`SIGTERM` 退出时，运行时会停止原进程组。这只是生命周期清理，并不是沙箱；另建 session 的进程仍可能离开该进程组。
 
 ### collect_background_results: 通知收集
 
@@ -102,10 +109,10 @@ def start_background_task(block) -> str:
 
 ```python
 def collect_background_results() -> list[str]:
-    """Collect completed results as task_notification messages."""
+    """Collect terminal results as task_notification messages."""
     with background_lock:
         ready_ids = [bid for bid, task in background_tasks.items()
-                     if task["status"] == "completed"]
+                     if task["status"] in ("completed", "failed")]
     notifications = []
     for bg_id in ready_ids:
         with background_lock:
@@ -114,7 +121,7 @@ def collect_background_results() -> list[str]:
         notifications.append(
             f"<task_notification>\n"
             f"  <task_id>{bg_id}</task_id>\n"
-            f"  <status>completed</status>\n"
+            f"  <status>{task['status']}</status>\n"
             f"  <command>{task['command']}</command>\n"
             f"  <summary>{output[:200]}</summary>\n"
             f"</task_notification>")
@@ -213,4 +220,4 @@ python s13_background_tasks/code.py
 s14 Cron Scheduler → 给 Agent 装一个闹钟。
 
 
-<!-- translation-sync: zh@v1, en@v1, ja@v1 -->
+<!-- translation-sync: zh@v4, en@v4, ja@v4 -->

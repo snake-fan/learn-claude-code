@@ -198,11 +198,11 @@ def scan_unclaimed_tasks() -> list[Task]:
     ]
 ```
 
-候補一覧は一時点の snapshot にすぎない。別のチームメイトも同じタスクを見る可能性があるため、所有権の変更は `task_lock` で保護した `claim_task()` 内で行う：
+候補一覧は一時点の snapshot にすぎない。別のチームメイトだけでなく、同じ task directory を使う別の Harness process も同じ task を見る可能性がある。そのため、所有権の変更は process 内 lock と file lock を組み合わせた `task_store_lock()` の下で `claim_task()` が行う：
 
 ```python
 def claim_task(task_id: str, owner: str) -> str:
-    with task_lock:
+    with task_store_lock():
         task = load_task(task_id)
         if task.status != "pending" or task.owner is not None:
             return "Task is no longer available"
@@ -220,7 +220,7 @@ def claim_task(task_id: str, owner: str) -> str:
         return f"Claimed {task.id}"
 ```
 
-複数のチームメイトが同じ候補を発見しても、`in_progress` へ進められる Claim は 1 つだけである。現在のタスクを完了するまで、チームメイトは次のタスクを Claim できない。worktree の紐付けが壊れている場合、リポジトリディレクトリへ戻さず Claim を失敗させる。
+複数のチームメイトが同じ候補を発見しても、`in_progress` へ進められる Claim は 1 つだけである。同じ store lock を保持したまま temporary file へ書き、正式な task file を atomic に置き換える。現在のタスクを完了するまで、チームメイトは次のタスクを Claim できない。worktree の紐付けが壊れている場合、リポジトリディレクトリへ戻さず Claim を失敗させる。
 
 ### 8. Claim した仕事は同じ WORK ループを再利用する
 
@@ -274,23 +274,27 @@ if not error:
     }
 ```
 
-`complete_task(task_id, owner)` は、呼び出し元が進行中タスクの owner か確認する。ランタイムが assignment を削除するのは完了に成功した時だけである。失敗時はタスクのディレクトリを維持し、チームメイトが修正して再試行できるようにする。タスクの `worktree` 紐付けは checkout を削除するまで残る。
+`complete_task(task_id, owner)` は、呼び出し元が進行中タスクの owner か確認する。成功時は結果を記録するが assignment をすぐには解除せず、同じ model turn の後続 tool call もそのタスクの directory を使う。チームメイトが IDLE に戻る時にランタイムが assignment を解除する。失敗時も directory を維持し、修正して再試行できるようにする。
+
+process 再起動後、`assignment_cwd()` は永続化された task owner と worktree binding から進行中の assignment を復元できる。同じ owner が別の task へ移った場合は、local の古い lease も置き換える。binding が見つからない、または無効な場合は repository directory へ戻さず失敗する。
 
 > Worktree が分離するのは Git の作業ディレクトリとブランチであり、sandbox ではない。Shell コマンドは親プロセスに許可されたパスやリソースへアクセスできる。
 
-### 10. Worktree のクリーンアップはデフォルトで作業を残す
+### 10. Worktree の削除は host が担う
 
-モデル向けの `remove_worktree(name)` tool は、`pending` または `in_progress` のタスクに紐付いた worktree の削除を拒否する。タスク完了後も tracked、untracked、ignored file をすべて未コミットデータとして扱い、clean な checkout だけを `--force` なしで削除する。
+モデルは task-bound worktree を作成できるが、削除はできない。cleanup は host helper として残し、user または host が task ownership、assignment lease、background work、Git status を先に確認する。helper は pending または in-progress の binding、current turn の lease、その directory を使用中の background command を拒否する。明示的に破壊的削除を選ばない限り、tracked、untracked、ignored file はすべて cleanup を止める。
 
-低レベルの Python helper は、host が別途ユーザーの明示的な確認を得た場合のために `discard_changes=True` を残すが、この parameter はモデルの tool schema にはない。変更のある worktree は削除せず、user が確認できる状態で残す。どちらの削除経路でも `wt/<name>` ブランチはリポジトリに残り、upstream のない clean な local commit も保持される。削除成功後は checkout が存在しないため、タスクの worktree 紐付けを解除する。
+`remove_worktree(name, discard_changes=True)` は、user の明示的な確認を別途得た host からのみ呼び出す。どちらの削除経路でも `wt/<name>` ブランチはリポジトリに残り、upstream のない clean な local commit も保持される。削除成功後は task binding を解除する。
+
+process group cleanup は best effort である。command は別の session を作って元の group から離れられるため、worktree は process sandbox ではなく、モデルに自動削除させるべきでもない。
 
 ```text
-clean worktree   → ディレクトリを削除し、wt/<name> ブランチは保持
-changed worktree → model tool は拒否し、保持か破棄かを user が決める
+clean worktree   → host が directory を削除し、wt/<name> branch を保持できる
+changed worktree → 保持か破棄かを user が決める
 pending/running task → 削除を拒否
 ```
 
-タスク完了と worktree cleanup も分かれている。`complete_task` はタスク結果を記録し、Lead はその後に worktree を確認、merge、keep、remove できる。
+タスク完了と worktree cleanup も分かれている。`complete_task` はタスク結果を記録し、teammate が IDLE に戻った後で user または host が worktree を確認、merge、keep、remove できる。
 
 ### 11. 制御メッセージには型と request_id を使う
 
@@ -307,6 +311,8 @@ class ProtocolState:
     target: str
     status: str
     payload: str
+    work_version: int | None = None
+    task_id: str | None = None
 
 
 pending_requests: dict[str, ProtocolState] = {}
@@ -335,6 +341,8 @@ Lead → plan_request
 Lead → plan_approval_response(request_id, approve, feedback)
 ```
 
+Lead が起動前から plan を必須にしたい場合は、`spawn_teammate(..., require_plan=True)` を使う。gate は teammate thread の開始前に有効になる。すでに動いている teammate には `request_plan` で plan を要求できる。
+
 ツール dispatch がゲートを強制する：
 
 ```python
@@ -347,7 +355,7 @@ def _run_teammate_tool(name, block, handlers):
     return handlers[block.name](**block.input)
 ```
 
-状態が `required`、`pending`、`rejected` の間、チームメイトはファイルを読み、計画を提出または修正できるが、Shell コマンドの実行とファイルの書き込みはできない。承認応答で状態が `approved` になると、ツールを使えるようになる。
+状態が `required`、`pending`、`rejected` の間、チームメイトはファイルを読み、計画を提出または修正できるが、Shell コマンドの実行とファイルの書き込みはできない。提出時には current task と work version を記録し、承認時に両方が一致する場合だけ有効になる。新しい task または直接 assignment は古い承認を無効にするが、plan の必須状態は解除しない。
 
 ---
 
@@ -431,4 +439,4 @@ Lead がチーム案を示したら、次のように返す：
 
 次へ：[s16 MCP Tools](../s16_mcp_plugin/)。
 
-<!-- translation-sync: zh@v3, en@v3, ja@v3 -->
+<!-- translation-sync: zh@v6, en@v6, ja@v6 -->
