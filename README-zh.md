@@ -190,7 +190,7 @@ Claude Code = 一个 agent loop
 >
 > **s14** &nbsp; *"能力不够? 插上 MCP"* &mdash; 把外部工具接进同一个工具池
 >
-> **s15** &nbsp; *"机制很多，循环一个"* &mdash; 集成示例用到的机制归到同一个 harness
+> **s15** &nbsp; *"多种机制，一个循环"* &mdash; 集成示例用到的机制归到同一个 harness
 >
 > **s16** &nbsp; *"编排形状固定时，就把它写进代码"* &mdash; 保存好的 workflow 使用 journal 续跑
 >
