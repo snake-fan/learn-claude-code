@@ -661,32 +661,50 @@ SKILL_REGISTRY: dict[str, dict] = {}
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    if not text.startswith("---"):
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
         return {}, text
-    parts = text.split("---", 2)
-    if len(parts) < 3:
+
+    closing_index = next(
+        (index for index, line in enumerate(lines[1:], start=1)
+         if line.rstrip("\r\n") == "---"),
+        None,
+    )
+    if closing_index is None:
         return {}, text
+
+    frontmatter = "".join(lines[1:closing_index])
+    body = "".join(lines[closing_index + 1:]).strip()
     try:
-        meta = yaml.safe_load(parts[1]) or {}
+        meta = yaml.safe_load(frontmatter) or {}
     except yaml.YAMLError:
         meta = {}
-    return meta, parts[2].strip()
+    if not isinstance(meta, dict):
+        meta = {}
+    return meta, body
 
 
 def scan_skills():
     SKILL_REGISTRY.clear()
     if not SKILLS_DIR.exists():
         return
+    skills_root = SKILLS_DIR.resolve()
     for directory in sorted(SKILLS_DIR.iterdir()):
         if not directory.is_dir():
             continue
         manifest = directory / "SKILL.md"
         if not manifest.exists():
             continue
+        if not manifest.resolve().is_relative_to(skills_root):
+            continue
         raw = manifest.read_text()
-        meta, _ = _parse_frontmatter(raw)
-        name = meta.get("name", directory.name)
-        desc = meta.get("description", raw.split("\n")[0].lstrip("#").strip())
+        meta, body = _parse_frontmatter(raw)
+        raw_name = meta.get("name")
+        name = raw_name.strip() if isinstance(raw_name, str) else ""
+        name = name or directory.name
+        raw_desc = meta.get("description")
+        desc = raw_desc.strip() if isinstance(raw_desc, str) else ""
+        desc = desc or body.split("\n", 1)[0].lstrip("#").strip()
         SKILL_REGISTRY[name] = {
             "name": name,
             "description": desc,
