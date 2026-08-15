@@ -9,6 +9,7 @@ import threading
 import time
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1165,6 +1166,202 @@ class AgentTeamsRuntimeTests(unittest.TestCase):
             calls_after_delivery = len(seen_messages)
             time.sleep(1.2)
             self.assertEqual(len(seen_messages), calls_after_delivery)
+
+    def test_s15_background_results_have_one_atomic_consumer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
+            )
+
+            class CoordinatedLock:
+                def __init__(self):
+                    self.lock = threading.Lock()
+                    self.barrier = threading.Barrier(2)
+                    self.local = threading.local()
+
+                def __enter__(self):
+                    self.lock.acquire()
+                    return self
+
+                def __exit__(self, exc_type, exc_value, traceback):
+                    self.lock.release()
+                    if not getattr(self.local, "coordinated", False):
+                        self.local.coordinated = True
+                        self.barrier.wait(timeout=2.0)
+
+            lesson.background_tasks["bg_0001"] = {
+                "tool_use_id": "tool-1",
+                "command": "pytest",
+                "status": "completed",
+            }
+            lesson.background_results["bg_0001"] = "all tests passed"
+            lesson.background_lock = CoordinatedLock()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(
+                    lambda _: lesson.collect_background_results(), range(2)
+                ))
+
+            notifications = [note for batch in results for note in batch]
+            self.assertEqual(len(notifications), 1)
+            self.assertIn("all tests passed", notifications[0])
+            self.assertFalse(lesson.background_tasks)
+            self.assertFalse(lesson.background_results)
+
+    def test_s15_background_ids_are_allocated_atomically(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
+            )
+
+            class TrackingLock:
+                def __init__(self):
+                    self.lock = threading.Lock()
+                    self.owner = None
+
+                def __enter__(self):
+                    self.lock.acquire()
+                    self.owner = threading.get_ident()
+                    return self
+
+                def __exit__(self, exc_type, exc_value, traceback):
+                    self.owner = None
+                    self.lock.release()
+
+                def held_by_current_thread(self):
+                    return self.owner == threading.get_ident()
+
+            class RaceAwareCounter:
+                def __init__(self, lock):
+                    self.lock = lock
+                    self.barrier = threading.Barrier(2)
+
+                def __add__(self, value):
+                    if not self.lock.held_by_current_thread():
+                        self.barrier.wait(timeout=2.0)
+                    return 1
+
+            blocks = [
+                types.SimpleNamespace(
+                    id=f"tool-{index}",
+                    name="bash",
+                    input={"command": f"printf {index}",
+                           "run_in_background": True},
+                )
+                for index in (1, 2)
+            ]
+            lock = TrackingLock()
+            lesson.background_lock = lock
+            lesson._bg_counter = RaceAwareCounter(lock)
+            lesson._run_bash_process = lambda *args, **kwargs: ("ok", 0)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                task_ids = list(executor.map(
+                    lambda block: lesson.start_background_task(block, {}),
+                    blocks,
+                ))
+
+            self.assertCountEqual(task_ids, ["bg_0001", "bg_0002"])
+            self.assertEqual(set(lesson.background_tasks),
+                             {"bg_0001", "bg_0002"})
+
+    def test_s15_background_hook_failure_reaches_terminal_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
+            )
+            block = types.SimpleNamespace(
+                id="tool-hook",
+                name="bash",
+                input={"command": "printf ok", "run_in_background": True},
+            )
+            lesson._run_bash_process = lambda *args, **kwargs: ("ok", 0)
+
+            def fail_post_hook(event, *args):
+                if event == "PostToolUse":
+                    raise RuntimeError("hook failed")
+
+            lesson.trigger_hooks = fail_post_hook
+            bg_id = lesson.start_background_task(block, {})
+
+            self.assertTrue(wait_until(
+                lambda: lesson.background_tasks[bg_id]["status"] != "running"
+            ))
+            self.assertEqual(lesson.background_tasks[bg_id]["status"], "failed")
+            self.assertIn("PostToolUse hook failed",
+                          lesson.background_results[bg_id])
+            notification = lesson.collect_background_results()[0]
+            self.assertIn("<status>failed</status>", notification)
+            self.assertIn("PostToolUse hook failed", notification)
+
+    def test_s15_background_thread_start_failure_rolls_back_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
+            )
+            block = types.SimpleNamespace(
+                id="tool-start",
+                name="bash",
+                input={"command": "printf ok", "run_in_background": True},
+            )
+
+            class FailingThread:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def start(self):
+                    raise RuntimeError("cannot start thread")
+
+            with patch.object(lesson.threading, "Thread", FailingThread):
+                with self.assertRaisesRegex(RuntimeError, "cannot start thread"):
+                    lesson.start_background_task(block, {})
+
+            self.assertFalse(lesson.background_tasks)
+            self.assertFalse(lesson.background_results)
+
+    def test_s15_background_start_failure_becomes_tool_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lesson = load_lesson(
+                Path(tmp), ROOT / "s15_integrated_harness" / "code.py"
+            )
+            block = types.SimpleNamespace(
+                type="tool_use",
+                id="tool-start",
+                name="bash",
+                input={"command": "printf ok", "run_in_background": True},
+            )
+            responses = iter([
+                types.SimpleNamespace(
+                    stop_reason="tool_use",
+                    content=[block],
+                ),
+                types.SimpleNamespace(
+                    stop_reason="end_turn",
+                    content=[types.SimpleNamespace(type="text", text="done")],
+                ),
+            ])
+            lesson.call_llm = lambda *args, **kwargs: next(responses)
+            lesson.trigger_hooks = lambda *args, **kwargs: None
+            lesson.remember_after_turn = lambda messages: None
+
+            def fail_start(*args, **kwargs):
+                raise RuntimeError("cannot start thread")
+
+            lesson.start_background_task = fail_start
+            messages = []
+            lesson.agent_loop(messages, {}, "run in background")
+
+            tool_results = [
+                item
+                for message in messages
+                if message.get("role") == "user"
+                and isinstance(message.get("content"), list)
+                for item in message["content"]
+                if item.get("type") == "tool_result"
+            ]
+            self.assertEqual(len(tool_results), 1)
+            self.assertIn("Failed to start background task",
+                          tool_results[0]["content"])
+            self.assertIn("cannot start thread", tool_results[0]["content"])
 
     def test_teammate_survives_stale_worktree_assignment(self):
         with tempfile.TemporaryDirectory() as tmp:
