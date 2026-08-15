@@ -96,7 +96,10 @@ system = build_system(relevant_memories)
 Users do not always say "remember this." After the Agent finishes the current response, `extract_memories()` inspects the conversation and keeps only information likely to help later:
 
 ```python
-if response.stop_reason != "tool_use":
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
+if not tool_calls:
     force = trigger_hooks("Stop", messages)
     if force:
         messages.append({"role": "user", "content": force})

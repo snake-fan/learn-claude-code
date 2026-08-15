@@ -130,7 +130,7 @@ register_hook("PreToolUse", log_hook)
 register_hook("PostToolUse", large_output_hook)
 ```
 
-**Stop** triggers when the loop is about to exit (`stop_reason != "tool_use"`). The following hook prints a cleanup summary:
+**Stop** triggers when the loop is about to exit. The following hook prints a cleanup summary:
 
 ```python
 def summary_hook(messages: list) -> str | None:
@@ -147,7 +147,10 @@ register_hook("Stop", summary_hook)
 In agent_loop, triggered before exit:
 
 ```python
-if response.stop_reason != "tool_use":
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
+if not tool_calls:
     force = trigger_hooks("Stop", messages)   # ← before exiting
     if force:
         # hook returned a message → inject it and continue
@@ -159,10 +162,7 @@ if response.stop_reason != "tool_use":
 **Only one change in the loop**: s03 directly called `check_permission(block)`, s04 replaces it with `trigger_hooks("PreToolUse", block)`:
 
 ```python
-for block in response.content:
-    if block.type != "tool_use":
-        continue
-
+for block in tool_calls:
     # s03: if not check_permission(block): ...
     # s04: hooks replace hardcoding
     blocked = trigger_hooks("PreToolUse", block)

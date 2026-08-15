@@ -255,13 +255,13 @@ def agent_loop(messages, active_request):
 1 回の応答には、ファイル書き込みと圧縮のように複数のツール呼び出しが含まれることがあります。Harness はまず一括処理をすべて実行し、各 `tool_use` に対応する `tool_result` を追加します。そのターンが完結してから要約します。
 
 ```python
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
 results = []
 compact_requested = False
 
-for block in response.content:
-    if block.type != "tool_use":
-        continue
-
+for block in tool_calls:
     if block.name == "compact":
         output = "Compaction requested after this tool batch."
         compact_requested = True

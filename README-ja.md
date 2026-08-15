@@ -143,7 +143,7 @@ Claude Code = 一つの agent loop
 
     User --> messages[] --> LLM --> response
                                       |
-                            stop_reason == "tool_use"?
+                              tool_use block を含む？
                            /                          \
                          yes                           no
                           |                             |
@@ -210,18 +210,20 @@ def agent_loop(messages):
         messages.append({"role": "assistant",
                          "content": response.content})
 
-        if response.stop_reason != "tool_use":
+        tool_calls = [
+            block for block in response.content if block.type == "tool_use"
+        ]
+        if not tool_calls:
             return
 
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                output = TOOL_HANDLERS[block.name](**block.input)
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": output,
-                })
+        for block in tool_calls:
+            output = TOOL_HANDLERS[block.name](**block.input)
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": output,
+            })
         messages.append({"role": "user", "content": results})
 ```
 
@@ -349,7 +351,7 @@ flowchart TD
 
 | セッション | トピック | キーコンセプト |
 |---|---|---|
-| [s01](./s01_agent_loop/) | Agent Loop | `messages` / `while True` / `stop_reason` |
+| [s01](./s01_agent_loop/) | Agent Loop | `messages` / `while True` / `tool_use` |
 | [s02](./s02_tool_use/) | Tool Use | `TOOL_HANDLERS` / dispatch map / 並行性 |
 | [s03](./s03_permission/) | Permission | `PermissionRule` / 承認パイプライン |
 | [s04](./s04_hooks/) | Hooks | `PreToolUse` / `PostToolUse` / 拡張ポイント |

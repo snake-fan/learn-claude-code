@@ -25,12 +25,12 @@
 
 ![Agent Loop](images/agent-loop.ja.svg)
 
-一つの `while True` ループ — モデルがツールを呼べば続き、呼ばなければ停止。全体でたった 2 つのシグナル：
+一つの `while True` ループ — モデルがツールを呼べば続き、呼ばなければ停止。ループは response の content block を直接確認する：
 
 | シグナル | 意味 | ループの動作 |
 |----------|------|-------------|
-| `stop_reason == "tool_use"` | モデルが「ツールが必要」と挙手 | 実行 → 結果を戻す → 続行 |
-| `stop_reason != "tool_use"` | モデルが「完了」と宣言 | ループ終了 |
+| `tool_use` block を含む | モデルがツール呼び出しを要求 | 実行 → 結果を戻す → 続行 |
+| `tool_use` block を含まない | モデルがツールを呼ばなかった | ループ終了 |
 
 ---
 
@@ -57,22 +57,26 @@ response = client.messages.create(
 
 ```python
 messages.append({"role": "assistant", "content": response.content})
-if response.stop_reason != "tool_use":
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
+if not tool_calls:
     return
 ```
+
+実際の `tool_use` block だけが実行段階に進むため、空の tool result メッセージは追加されない。
 
 **ステップ 4**：モデルが要求したツールを実行し、結果を収集する。
 
 ```python
 results = []
-for block in response.content:
-    if block.type == "tool_use":
-        output = run_bash(block.input["command"])
-        results.append({
-            "type": "tool_result",
-            "tool_use_id": block.id,
-            "content": output,
-        })
+for block in tool_calls:
+    output = run_bash(block.input["command"])
+    results.append({
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": output,
+    })
 ```
 
 **ステップ 5**：ツールの結果を新しいメッセージとして追加し、ステップ 2 に戻る。
@@ -92,22 +96,24 @@ def agent_loop(messages):
         )
         messages.append({"role": "assistant", "content": response.content})
 
-        if response.stop_reason != "tool_use":
+        tool_calls = [
+            block for block in response.content if block.type == "tool_use"
+        ]
+        if not tool_calls:
             return
 
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                output = run_bash(block.input["command"])
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": output,
-                })
+        for block in tool_calls:
+            output = run_bash(block.input["command"])
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": output,
+            })
         messages.append({"role": "user", "content": results})
 ```
 
-30 行未満 — これが最小実行可能な agent harness のカーネルだ。これは知能そのものではなく、モデルが継続的に行動できるための最小ランタイムフレームワーク。モデルが決定し（ツールを呼ぶか、どれを呼ぶか）、harness が実行を担う（ツールを呼び出し、結果を新しいメッセージとして追加する）。次の 16 章はすべてこのループの上に仕組みを積み重ねていく。ループ自体は永遠に変わらない。
+30 行あまり — これが最小実行可能な agent harness のカーネルだ。これは知能そのものではなく、モデルが継続的に行動できるための最小ランタイムフレームワーク。モデルが決定し（ツールを呼ぶか、どれを呼ぶか）、harness が実行を担う（ツールを呼び出し、結果を新しいメッセージとして追加する）。次の 16 章はすべてこのループの上に仕組みを積み重ねていく。ループ自体は永遠に変わらない。
 
 ---
 

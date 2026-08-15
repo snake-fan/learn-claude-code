@@ -108,13 +108,12 @@ def check_permission(block) -> bool:
     return True
 
 # agent_loop で — s02 のループに 1 行追加するだけ：
-for block in response.content:
-    if block.type == "tool_use":
-        if not check_permission(block):           # ← 新規
-            results.append({... "content": "Permission denied."})
-            continue
-        output = TOOL_HANDLERS[block.name](**block.input)  # s02 既存
-        results.append(...)
+for block in tool_calls:
+    if not check_permission(block):           # ← 新規
+        results.append({... "content": "Permission denied."})
+        continue
+    output = TOOL_HANDLERS[block.name](**block.input)  # s02 既存
+    results.append(...)
 ```
 
 ---

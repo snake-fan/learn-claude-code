@@ -21,7 +21,7 @@ The model thinks "read this file" but has to spell out `cat path/to/file`. An ex
 
 ![Tool Dispatch](images/tool-dispatch.en.svg)
 
-The s01 loop is fully preserved (LLM call, stop_reason check, message append — not a single word changed). The only change is in that one line of tool execution: `run_bash()` is replaced with `TOOL_HANDLERS[block.name]()` dispatch lookup.
+The s01 loop is fully preserved (LLM call, `tool_use` block check, message append — not a single word changed). The only change is in that one line of tool execution: `run_bash()` is replaced with `TOOL_HANDLERS[block.name]()` dispatch lookup.
 
 Adding a tool to the Agent requires just two things:
 
@@ -91,11 +91,10 @@ TOOL_HANDLERS = {
 }
 
 # Only one line changed in the loop — from hardcoded run_bash to dispatch lookup:
-for block in response.content:
-    if block.type == "tool_use":
-        handler = TOOL_HANDLERS[block.name]    # lookup
-        output = handler(**block.input)         # call
-        results.append(...)
+for block in tool_calls:
+    handler = TOOL_HANDLERS[block.name]    # lookup
+    output = handler(**block.input)         # call
+    results.append(...)
 ```
 
 Adding a tool = one entry in `TOOLS` array + one line in `TOOL_HANDLERS` dict. The loop stays the same.
@@ -128,7 +127,7 @@ Calls are executed one by one in their original `response.content` order.
 | Tool count | 1 (bash) | 5 (+read, write, edit, glob) |
 | Tool execution | Hardcoded `run_bash()` | TOOL_HANDLERS dispatch lookup |
 | Path safety | None | safe_path validation (file tools only) |
-| Loop | `while True` + `stop_reason` | Identical to s01 |
+| Loop | `while True` + `tool_use` block | Identical to s01 |
 
 ---
 

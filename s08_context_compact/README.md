@@ -255,13 +255,13 @@ An automatic threshold knows only how large the context is. The model can also c
 A response may request several tools at once, such as writing a file and then compacting. The Harness first executes the complete batch and appends one `tool_result` for every `tool_use`. It summarizes only after that turn is complete:
 
 ```python
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
 results = []
 compact_requested = False
 
-for block in response.content:
-    if block.type != "tool_use":
-        continue
-
+for block in tool_calls:
     if block.name == "compact":
         output = "Compaction requested after this tool batch."
         compact_requested = True

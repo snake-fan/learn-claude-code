@@ -21,7 +21,7 @@ s01 の Agent には bash 一つのツールしかない。ファイルを読む
 
 ![Tool Dispatch](images/tool-dispatch.ja.svg)
 
-s01 のループは完全に保持される（LLM 呼び出し、stop_reason 判定、メッセージ追加 — 一文字も変更なし）。唯一の変更点はツール実行の 1 行：`run_bash()` が `TOOL_HANDLERS[block.name]()` の検索ディスパッチに置き換わる。
+s01 のループは完全に保持される（LLM 呼び出し、`tool_use` block 判定、メッセージ追加 — 一文字も変更なし）。唯一の変更点はツール実行の 1 行：`run_bash()` が `TOOL_HANDLERS[block.name]()` の検索ディスパッチに置き換わる。
 
 Agent にツールを追加するには、たった二つ：
 
@@ -91,11 +91,10 @@ TOOL_HANDLERS = {
 }
 
 # ループ内で変更されたのは一行だけ — ハードコードの run_bash から検索ディスパッチへ：
-for block in response.content:
-    if block.type == "tool_use":
-        handler = TOOL_HANDLERS[block.name]    # 検索
-        output = handler(**block.input)         # 呼び出し
-        results.append(...)
+for block in tool_calls:
+    handler = TOOL_HANDLERS[block.name]    # 検索
+    output = handler(**block.input)         # 呼び出し
+    results.append(...)
 ```
 
 ツールの追加 = `TOOLS` 配列に一条 + `TOOL_HANDLERS` 辞書に一行。ループは変わらない。
@@ -128,7 +127,7 @@ for block in response.content:
 | ツール数 | 1 (bash) | 5 (+read, write, edit, glob) |
 | ツール実行 | ハードコード `run_bash()` | TOOL_HANDLERS 検索ディスパッチ |
 | パス安全性 | なし | safe_path 検証（file tools のみ） |
-| ループ | `while True` + `stop_reason` | s01 と完全に同一 |
+| ループ | `while True` + `tool_use` block | s01 と完全に同一 |
 
 ---
 

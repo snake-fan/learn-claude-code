@@ -1499,11 +1499,12 @@ def spawn_teammate_thread(name: str, role: str, prompt: str,
                          f"{type(exc).__name__}: {exc}", "error")
                 break
             messages.append({"role": "assistant", "content": response.content})
-            if response.stop_reason == "tool_use":
+            tool_calls = [
+                block for block in response.content if block.type == "tool_use"
+            ]
+            if tool_calls:
                 results = []
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
+                for block in tool_calls:
                     output = _run_teammate_tool(name, block, sub_handlers)
                     results.append({"type": "tool_result",
                                     "tool_use_id": block.id,

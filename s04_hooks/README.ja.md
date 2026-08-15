@@ -130,7 +130,7 @@ register_hook("PreToolUse", log_hook)
 register_hook("PostToolUse", large_output_hook)
 ```
 
-**Stop** はループが終了する直前に発火する（`stop_reason != "tool_use"`）。以下の hook は終了時の統計を出力する：
+**Stop** はループが終了する直前に発火する。以下の hook は終了時の統計を出力する：
 
 ```python
 def summary_hook(messages: list) -> str | None:
@@ -147,7 +147,10 @@ register_hook("Stop", summary_hook)
 agent_loop 内では、終了前に発火：
 
 ```python
-if response.stop_reason != "tool_use":
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
+if not tool_calls:
     force = trigger_hooks("Stop", messages)   # ← 終了する前に
     if force:
         # フックがメッセージを返した → 注入して続行
@@ -159,10 +162,7 @@ if response.stop_reason != "tool_use":
 **ループ内で変更されたのは一箇所だけ**：s03 は直接 `check_permission(block)` を呼び出していたが、s04 は `trigger_hooks("PreToolUse", block)` に置き換えた：
 
 ```python
-for block in response.content:
-    if block.type != "tool_use":
-        continue
-
+for block in tool_calls:
     # s03: if not check_permission(block): ...
     # s04: フックがハードコードを代替
     blocked = trigger_hooks("PreToolUse", block)

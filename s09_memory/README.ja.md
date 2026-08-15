@@ -96,7 +96,10 @@ system = build_system(relevant_memories)
 ユーザーが毎回「覚えて」と言うとは限らない。Agent が現在の返答を終えた後、`extract_memories()` は会話を確認し、今後も役立つ可能性がある情報だけを取り出す。
 
 ```python
-if response.stop_reason != "tool_use":
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
+if not tool_calls:
     force = trigger_hooks("Stop", messages)
     if force:
         messages.append({"role": "user", "content": force})

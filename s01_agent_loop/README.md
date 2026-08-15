@@ -25,12 +25,12 @@ Every round-trip, you're the middle layer. Automating that is what this chapter 
 
 ![Agent Loop](images/agent-loop.en.svg)
 
-A `while True` loop: keep going when the model calls a tool, stop when it doesn't. The entire process hinges on two signals:
+A `while True` loop: keep going when the model calls a tool, stop when it doesn't. The loop checks the response content blocks directly:
 
 | Signal | Meaning | Loop Action |
 |--------|---------|-------------|
-| `stop_reason == "tool_use"` | Model raises hand: "I need a tool" | Execute → feed result back → continue |
-| `stop_reason != "tool_use"` | Model says: "I'm done" | Exit loop |
+| Contains a `tool_use` block | Model requests a tool call | Execute → feed result back → continue |
+| Contains no `tool_use` block | Model did not call a tool | Exit loop |
 
 ---
 
@@ -57,22 +57,26 @@ response = client.messages.create(
 
 ```python
 messages.append({"role": "assistant", "content": response.content})
-if response.stop_reason != "tool_use":
+tool_calls = [
+    block for block in response.content if block.type == "tool_use"
+]
+if not tool_calls:
     return
 ```
+
+Only concrete `tool_use` blocks enter the execution stage, so the loop never appends an empty tool-result message.
 
 **Step 4**: Execute the tool the model requested and collect the results.
 
 ```python
 results = []
-for block in response.content:
-    if block.type == "tool_use":
-        output = run_bash(block.input["command"])
-        results.append({
-            "type": "tool_result",
-            "tool_use_id": block.id,
-            "content": output,
-        })
+for block in tool_calls:
+    output = run_bash(block.input["command"])
+    results.append({
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": output,
+    })
 ```
 
 **Step 5**: Append the tool results as a new message and go back to Step 2.
@@ -92,22 +96,24 @@ def agent_loop(messages):
         )
         messages.append({"role": "assistant", "content": response.content})
 
-        if response.stop_reason != "tool_use":
+        tool_calls = [
+            block for block in response.content if block.type == "tool_use"
+        ]
+        if not tool_calls:
             return
 
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                output = run_bash(block.input["command"])
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": output,
-                })
+        for block in tool_calls:
+            output = run_bash(block.input["command"])
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": output,
+            })
         messages.append({"role": "user", "content": results})
 ```
 
-Under 30 lines — that's the minimal runnable agent harness kernel. It's not intelligence itself, but the smallest runtime framework that lets the model keep acting. The model decides (whether to call a tool, which one), the harness executes (calls the tool and appends the result as a new message). The next 16 chapters all add mechanisms on top of this loop. The loop itself never changes.
+Just over 30 lines — that's the minimal runnable agent harness kernel. It's not intelligence itself, but the smallest runtime framework that lets the model keep acting. The model decides (whether to call a tool, which one), the harness executes (calls the tool and appends the result as a new message). The next 16 chapters all add mechanisms on top of this loop. The loop itself never changes.
 
 ---
 
