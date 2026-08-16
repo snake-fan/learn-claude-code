@@ -117,12 +117,15 @@ This step controls the number of messages. Tool results inside the retained mess
 
 ## Step 3: micro_compact
 
-`micro_compact` collects all current `tool_result` blocks. It preserves the latest 3 results and shortens earlier results longer than 120 characters. Persisted results keep their file path; the rest become placeholders:
+`micro_compact` preserves every `tool_result` added after the most recent assistant response, so the model sees each new result in full once. Among results the model has already consumed, it keeps the latest 3 and shortens older results longer than 120 characters. Persisted results keep their file path; the rest become placeholders:
 
 ![Replacing old results](images/micro-compact.en.svg)
 
 ```python
-for block in results[:-self.KEEP_RECENT_RESULTS]:
+unseen = self.unseen_tool_result_positions(messages)
+consumed = [entry for entry in results if entry[:2] not in unseen]
+
+for _, _, block in consumed[:-self.KEEP_RECENT_RESULTS]:
     content = str(block.get("content", ""))
     if len(content) <= 120:
         continue
@@ -305,7 +308,7 @@ Read the README.md files from s01_agent_loop through s05_todo_write.
 Compare their top-level headings and summarize the naming pattern.
 ```
 
-This task produces at least 5 file results. The latest 3 remain complete, while earlier long results become `[Earlier tool result omitted.]`. A persisted result retains its saved path.
+This task produces at least 5 file results. Every result remains complete until the model sees it once. On later turns, the latest 3 consumed results remain complete while older long results become `[Earlier tool result omitted.]`. A persisted result retains its saved path.
 
 ### Experiment 2: Persist a Large Result
 

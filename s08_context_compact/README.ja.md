@@ -117,12 +117,15 @@ messages = [*messages[:head_end], marker, *messages[tail_start:]]
 
 ## ステップ 3：micro_compact
 
-`micro_compact` は、現在の履歴にあるすべての `tool_result` を収集します。最新 3 件は完全に保持し、それより古く 120 文字を超える結果を短くします。保存済みの結果にはファイルパスを残し、それ以外はプレースホルダーに置き換えます。
+`micro_compact` は直近の assistant 応答より後に追加されたすべての `tool_result` を完全に保持し、モデルが各結果を少なくとも 1 回は完全な形で読めるようにします。モデルがすでに読んだ結果については最新 3 件を残し、それより古く 120 文字を超える結果を短くします。保存済みの結果にはファイルパスを残し、それ以外はプレースホルダーに置き換えます。
 
 ![古い結果を置き換える](images/micro-compact.ja.svg)
 
 ```python
-for block in results[:-self.KEEP_RECENT_RESULTS]:
+unseen = self.unseen_tool_result_positions(messages)
+consumed = [entry for entry in results if entry[:2] not in unseen]
+
+for _, _, block in consumed[:-self.KEEP_RECENT_RESULTS]:
     content = str(block.get("content", ""))
     if len(content) <= 120:
         continue
@@ -305,7 +308,7 @@ s01_agent_loop から s05_todo_write までの README.md を読み、
 各ファイルの最上位見出しを比較して、命名の規則をまとめてください。
 ```
 
-このタスクでは少なくとも 5 件のファイル結果が生成されます。最新 3 件は完全に残り、それより前の長い結果は `[Earlier tool result omitted.]` に変わります。保存済みの結果には保存先のパスが残ります。
+このタスクでは少なくとも 5 件のファイル結果が生成されます。各新規結果はモデルが初めて読むまで完全に保持されます。以降のターンでは、すでに読まれた最新 3 件を残し、それより前の長い結果は `[Earlier tool result omitted.]` に変わります。保存済みの結果には保存先のパスが残ります。
 
 ### 実験 2：大きな結果を保存する
 

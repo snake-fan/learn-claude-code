@@ -195,6 +195,10 @@ function extractDocVersion(filename: string): string | null {
   return match ? match[1] : null;
 }
 
+function readText(filePath: string): string {
+  return fs.readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+}
+
 function titleFromMarkdown(content: string, fallback: string): string {
   const titleMatch = content.match(/^#\s+(.+)$/m);
   return titleMatch ? titleMatch[1] : fallback;
@@ -268,7 +272,7 @@ function rewriteChapterMarkdown(
 function buildRootVersions(chapters: ChapterSource[]): AgentVersion[] {
   const versions: AgentVersion[] = [];
   for (const chapter of chapters) {
-    const source = fs.readFileSync(chapter.codePath, "utf-8");
+    const source = readText(chapter.codePath);
     const lines = source.split("\n");
     const meta = VERSION_META[chapter.id];
     const localTools = extractTools(source);
@@ -310,7 +314,7 @@ function buildLegacyVersions(): AgentVersion[] {
       if (!id) return null;
 
       const filePath = path.join(LEGACY_AGENTS_DIR, filename);
-      const source = fs.readFileSync(filePath, "utf-8");
+      const source = readText(filePath);
       const lines = source.split("\n");
       const meta = VERSION_META[id];
 
@@ -346,7 +350,7 @@ function buildRootDocs(chapters: ChapterSource[]): DocContent[] {
       const filePath = path.join(chapter.dirPath, filename);
       if (!fs.existsSync(filePath)) continue;
 
-      const raw = fs.readFileSync(filePath, "utf-8");
+      const raw = readText(filePath);
       const content = rewriteChapterMarkdown(raw, chapter, locale);
       docs.push({
         version: chapter.id,
@@ -376,7 +380,7 @@ function buildLegacyDocs(): DocContent[] {
 
       const relPath = path.join(locale, filename);
       const filePath = path.join(LEGACY_DOCS_DIR, relPath);
-      const content = fs.readFileSync(filePath, "utf-8");
+      const content = readText(filePath);
       docs.push({
         version,
         locale: detectLocale(relPath),

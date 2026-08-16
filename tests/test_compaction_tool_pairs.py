@@ -79,10 +79,31 @@ def tool_use_message(tool_id="tool-1"):
     }
 
 
+def tool_use_batch(*tool_ids):
+    return {
+        "role": "assistant",
+        "content": [
+            types.SimpleNamespace(type="tool_use", id=tool_id, name="bash")
+            for tool_id in tool_ids
+        ],
+    }
+
+
 def tool_result_message(tool_id="tool-1"):
     return {
         "role": "user",
         "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "ok"}],
+    }
+
+
+def long_tool_result_batch(*tool_ids):
+    return {
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": tool_id,
+             "content": f"{tool_id}: " + "x" * 160}
+            for tool_id in tool_ids
+        ],
     }
 
 
@@ -112,6 +133,63 @@ def compaction_api(module):
 
 
 class CompactionToolPairTests(unittest.TestCase):
+    def test_micro_compact_keeps_unseen_tool_result_batch(self):
+        for name, path in MODULES.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                messages = [
+                    tool_use_message("old-1"),
+                    long_tool_result_batch("old-1"),
+                    tool_use_message("old-2"),
+                    long_tool_result_batch("old-2"),
+                    tool_use_message("old-3"),
+                    long_tool_result_batch("old-3"),
+                    tool_use_message("old-4"),
+                    long_tool_result_batch("old-4"),
+                    tool_use_batch("latest-1", "latest-2", "latest-3", "latest-4"),
+                    long_tool_result_batch(
+                        "latest-1", "latest-2", "latest-3", "latest-4"
+                    ),
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "<task_notification>done</task_notification>"}
+                    ]},
+                    {"role": "user", "content": "<reminder>Update your todos.</reminder>"},
+                ]
+                module = load_module(f"{name}_micro_batch_under_test", path, Path(tmp))
+                compacted = compaction_api(module).micro_compact(messages)
+                results = {
+                    block["tool_use_id"]: block["content"]
+                    for message in compacted
+                    if isinstance(message["content"], list)
+                    for block in message["content"]
+                    if isinstance(block, dict) and block.get("type") == "tool_result"
+                }
+                self.assertNotIn("old-1: ", results["old-1"])
+                for tool_id in ("old-2", "old-3", "old-4",
+                                "latest-1", "latest-2", "latest-3", "latest-4"):
+                    self.assertIn(f"{tool_id}: ", results[tool_id])
+
+    def test_micro_compact_releases_batch_after_model_consumes_it(self):
+        for name, path in MODULES.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                messages = [
+                    tool_use_batch("seen-1", "seen-2", "seen-3", "seen-4"),
+                    long_tool_result_batch("seen-1", "seen-2", "seen-3", "seen-4"),
+                    assistant_text(),
+                    user_text(),
+                ]
+                module = load_module(f"{name}_consumed_batch_under_test", path, Path(tmp))
+                compacted = compaction_api(module).micro_compact(messages)
+                results = {
+                    block["tool_use_id"]: block["content"]
+                    for message in compacted
+                    if isinstance(message["content"], list)
+                    for block in message["content"]
+                    if isinstance(block, dict) and block.get("type") == "tool_result"
+                }
+                self.assertNotIn("seen-1: ", results["seen-1"])
+                for tool_id in ("seen-2", "seen-3", "seen-4"):
+                    self.assertIn(f"{tool_id}: ", results[tool_id])
+
     def test_snip_compact_keeps_head_tool_pair(self):
         messages = [
             user_text(),

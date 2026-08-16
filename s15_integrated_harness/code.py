@@ -1903,6 +1903,23 @@ def collect_tool_results(messages: list):
     return found
 
 
+def unseen_tool_result_positions(messages: list) -> set[tuple[int, int]]:
+    """Return results added since the model's most recent response."""
+    last_assistant = next(
+        (index for index in range(len(messages) - 1, -1, -1)
+         if messages[index].get("role") == "assistant"),
+        -1,
+    )
+    return {
+        (message_index, block_index)
+        for message_index in range(last_assistant + 1, len(messages))
+        if messages[message_index].get("role") == "user"
+        and isinstance(messages[message_index].get("content"), list)
+        for block_index, block in enumerate(messages[message_index]["content"])
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    }
+
+
 def persist_large_output(tool_use_id: str, output: str) -> str:
     if len(output) <= PERSIST_THRESHOLD:
         return output
@@ -1959,9 +1976,9 @@ def snip_compact(messages: list, max_messages: int = 50) -> list:
 
 def micro_compact(messages: list) -> list:
     tool_results = collect_tool_results(messages)
-    if len(tool_results) <= KEEP_RECENT_TOOL_RESULTS:
-        return messages
-    for _, _, block in tool_results[:-KEEP_RECENT_TOOL_RESULTS]:
+    unseen = unseen_tool_result_positions(messages)
+    consumed = [entry for entry in tool_results if entry[:2] not in unseen]
+    for _, _, block in consumed[:-KEEP_RECENT_TOOL_RESULTS]:
         if len(str(block.get("content", ""))) > 120:
             block["content"] = "[Earlier tool result compacted. Re-run if needed.]"
     return messages

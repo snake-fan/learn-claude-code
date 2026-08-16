@@ -267,6 +267,23 @@ class ContextCompactor:
                     for block in content)
         )
 
+    @staticmethod
+    def unseen_tool_result_positions(messages: list) -> set[tuple[int, int]]:
+        """Return results added since the model's most recent response."""
+        last_assistant = next(
+            (index for index in range(len(messages) - 1, -1, -1)
+             if messages[index].get("role") == "assistant"),
+            -1,
+        )
+        return {
+            (message_index, block_index)
+            for message_index in range(last_assistant + 1, len(messages))
+            if messages[message_index].get("role") == "user"
+            and isinstance(messages[message_index].get("content"), list)
+            for block_index, block in enumerate(messages[message_index]["content"])
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        }
+
     def write_transcript(self, messages: list) -> Path:
         self.transcript_dir.mkdir(parents=True, exist_ok=True)
         path = self.transcript_dir / f"transcript_{uuid.uuid4().hex}.jsonl"
@@ -325,13 +342,15 @@ class ContextCompactor:
 
     def micro_compact(self, messages: list) -> list:
         results = [
-            block
-            for message in messages
+            (message_index, block_index, block)
+            for message_index, message in enumerate(messages)
             if message.get("role") == "user" and isinstance(message.get("content"), list)
-            for block in message["content"]
+            for block_index, block in enumerate(message["content"])
             if isinstance(block, dict) and block.get("type") == "tool_result"
         ]
-        for block in results[:-self.KEEP_RECENT_RESULTS]:
+        unseen = self.unseen_tool_result_positions(messages)
+        consumed = [entry for entry in results if entry[:2] not in unseen]
+        for _, _, block in consumed[:-self.KEEP_RECENT_RESULTS]:
             content = str(block.get("content", ""))
             if len(content) <= 120:
                 continue
